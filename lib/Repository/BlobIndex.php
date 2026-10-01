@@ -55,6 +55,13 @@ final class BlobIndex {
 		$this->pending[$id] = true;
 	}
 
+	/** @param list<string> $ids */
+	public function dropPending(array $ids): void {
+		foreach ($ids as $id) {
+			unset($this->pending[$id]);
+		}
+	}
+
 	/** @param list<array{id:string, offset:int, length:int, raw:int, flags:int}> $entries */
 	public function addPack(string $packId, array $entries): void {
 		$stream = fopen('php://memory', 'w+b');

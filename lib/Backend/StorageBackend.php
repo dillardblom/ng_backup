@@ -23,6 +23,7 @@ final class StorageBackend implements IBackend {
 		private string $base = '',
 	) {
 		$this->base = trim($base, '/');
+		self::validate($this->base, true);
 		$this->atomicPut = $storage->instanceOfStorage(\OCA\Files_External\Lib\Storage\AmazonS3::class);
 		if ($this->base !== '') {
 			$this->mkdirs($this->base);
@@ -37,13 +38,18 @@ final class StorageBackend implements IBackend {
 			if ($this->storage->instanceOfStorage(IWriteStreamStorage::class)) {
 				/** @var IWriteStreamStorage $s */
 				$s = $this->storage;
-				$s->writeStream($writeTo, $stream);
+				$written = $s->writeStream($writeTo, $stream);
+				if ($written <= 0 && $this->storage->filesize($writeTo) !== 0) {
+					throw new BackendException('Write reported no data for ' . $path);
+				}
 			} else {
 				$out = $this->storage->fopen($writeTo, 'w');
-				if ($out === false || stream_copy_to_stream($stream, $out) === false) {
+				if ($out === false || stream_copy_to_stream($stream, $out) === false || !fflush($out)) {
 					throw new BackendException('Write failed for ' . $path);
 				}
-				fclose($out);
+				if (!fclose($out)) {
+					throw new BackendException('Close failed for ' . $path);
+				}
 			}
 			if (is_resource($stream)) {
 				fclose($stream);
@@ -139,10 +145,23 @@ final class StorageBackend implements IBackend {
 		$this->storage->mkdir($dir);
 	}
 
-	private function abs(string $path): string {
-		if (str_contains($path, '..')) {
+	/** Reject empty segments, '.', '..', NUL, backslashes and absolute paths. */
+	private static function validate(string $path, bool $allowEmpty = false): void {
+		if ($path === '' && $allowEmpty) {
+			return;
+		}
+		if ($path === '' || str_starts_with($path, '/') || str_contains($path, "\\") || str_contains($path, "\0")) {
 			throw new BackendException('Invalid path: ' . $path);
 		}
+		foreach (explode('/', $path) as $segment) {
+			if ($segment === '' || $segment === '.' || $segment === '..') {
+				throw new BackendException('Invalid path: ' . $path);
+			}
+		}
+	}
+
+	private function abs(string $path): string {
+		self::validate(ltrim($path, '/'));
 		return ltrim(($this->base === '' ? '' : $this->base . '/') . ltrim($path, '/'), '/');
 	}
 }

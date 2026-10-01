@@ -31,6 +31,8 @@ use OCA\NgBackup\Repository\Repository;
  */
 final class DbDumper {
 	private const BATCH = 2000;
+	/** Tables without a primary key are read in one query; refuse that above this size. */
+	private const MAX_ROWS_WITHOUT_PK = 50000;
 
 	public function __construct(
 		private Connection $db,
@@ -66,11 +68,12 @@ final class DbDumper {
 				}
 				$result[$table] = ['blobs' => $writer->finish(), 'rows' => $rows, 'bytes' => $writer->bytes(), 'sha256' => hash_final($hash)];
 			}
+			$sequences = $this->sequenceStates($tables);
 		} finally {
 			$this->db->rollBack();
 		}
 		$repo->flushPacks();
-		return ['tables' => $result, 'provider' => get_class($this->db->getDatabasePlatform())];
+		return ['tables' => $result, 'sequences' => $sequences, 'provider' => get_class($this->db->getDatabasePlatform())];
 	}
 
 	/**
@@ -106,6 +109,9 @@ final class DbDumper {
 					$row = [];
 					foreach ($columns as $i => $col) {
 						$value = $data[$i];
+						if (is_array($value) && isset($value['$b'])) {
+							$value = base64_decode($value['$b'], true); // text that was not valid UTF-8
+						}
 						$row[$col] = ($value !== null && isset($binary[$col])) ? base64_decode($value, true) : $value;
 					}
 					$batch[] = $row;
@@ -117,8 +123,8 @@ final class DbDumper {
 				if ($batch !== []) {
 					$total += $this->insertBatch($table, $batch, $binary);
 				}
-				$this->resetSequences($table, $sm->introspectTable($table));
 			}
+			$this->restoreSequences($manifest['sequences'] ?? []);
 			$this->db->commit();
 		} catch (\Throwable $e) {
 			$this->db->rollBack();
@@ -158,7 +164,11 @@ final class DbDumper {
 		$select = 'SELECT ' . implode(', ', array_map($q, $columns)) . ' FROM ' . $q($table->getName());
 
 		if ($pk === []) {
-			// Nextcloud requires primary keys; fall back to one query for odd tables.
+			// Nextcloud requires primary keys; small odd tables are read in one query.
+			$count = (int)$this->db->fetchOne('SELECT COUNT(*) FROM ' . $q($table->getName()));
+			if ($count > self::MAX_ROWS_WITHOUT_PK) {
+				throw new \RuntimeException("Table {$table->getName()} has no primary key and $count rows; cannot dump it with bounded memory");
+			}
 			$batches = [$this->db->fetchAllNumeric($select)];
 		} else {
 			$batches = $this->keysetBatches($select, $pk, $columns);
@@ -171,12 +181,15 @@ final class DbDumper {
 					}
 					if ($row[$i] !== null && isset($binaryFlip[$col])) {
 						$row[$i] = base64_encode((string)$row[$i]);
+					} elseif (is_string($row[$i]) && !mb_check_encoding($row[$i], 'UTF-8')) {
+						// Keep invalid UTF-8 byte-exact instead of substituting characters.
+						$row[$i] = ['$b' => base64_encode($row[$i])];
 					} elseif (is_int($row[$i]) || is_float($row[$i]) || is_bool($row[$i])) {
 						// Normalise: drivers differ in returning numbers as int or string.
 						$row[$i] = (string)(is_bool($row[$i]) ? (int)$row[$i] : $row[$i]);
 					}
 				}
-				yield 'row' => json_encode($row, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
+				yield 'row' => json_encode($row, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 			}
 		}
 	}
@@ -219,15 +232,60 @@ final class DbDumper {
 		return count($rows);
 	}
 
-	private function resetSequences(string $table, \Doctrine\DBAL\Schema\Table $schema): void {
+	/**
+	 * Exact state of every sequence owned by a dumped column (PostgreSQL), so a restore continues
+	 * where the original left off, not at MAX(id)+1.
+	 *
+	 * @return array<string, array{table:string, column:string, last:int|null, called:bool}>
+	 */
+	private function sequenceStates(array $tables): array {
 		if (!$this->db->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\PostgreSQLPlatform) {
-			return; // MySQL/SQLite derive AUTO_INCREMENT from the data
+			return []; // MySQL/SQLite derive AUTO_INCREMENT from the data
 		}
-		foreach ($schema->getColumns() as $column) {
-			if ($column->getAutoincrement()) {
-				$this->db->executeStatement(sprintf(
-					"SELECT setval(pg_get_serial_sequence('%s', '%s'), COALESCE((SELECT MAX(%s) FROM %s), 0) + 1, false)",
-					$table, $column->getName(), $this->db->quoteIdentifier($column->getName()), $this->db->quoteIdentifier($table)));
+		$rows = $this->db->fetchAllAssociative(
+			"SELECT c.table_name, c.column_name, pg_get_serial_sequence(quote_ident(c.table_name), c.column_name) AS seq
+			 FROM information_schema.columns c
+			 WHERE c.table_schema = current_schema() AND pg_get_serial_sequence(quote_ident(c.table_name), c.column_name) IS NOT NULL");
+		$wanted = array_flip($tables);
+		$result = [];
+		foreach ($rows as $r) {
+			if (!isset($wanted[$r['table_name']])) {
+				continue;
+			}
+			$state = $this->db->fetchAssociative('SELECT last_value, is_called FROM ' . self::sequenceIdentifier($r['seq']));
+			$result[$r['seq']] = ['table' => $r['table_name'], 'column' => $r['column_name'],
+				// A never-used sequence reports last_value = start value with is_called = false.
+				'last' => $state ? (int)$state['last_value'] : null,
+				'called' => (bool)($state['is_called'] ?? false)];
+		}
+		return $result;
+	}
+
+	/** pg_get_serial_sequence() returns a catalog name like public.oc_x_id_seq or "My"."seq"; refuse anything else. */
+	private static function sequenceIdentifier(string $name): string {
+		if (!preg_match('/^("[^"]+"|[a-z_][a-z0-9_$]*)\.("[^"]+"|[a-z_][a-z0-9_$]*)$/i', $name)) {
+			throw new \RuntimeException('Unexpected sequence name: ' . $name);
+		}
+		return $name;
+	}
+
+	private function restoreSequences(array $sequences): void {
+		if (!$this->db->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\PostgreSQLPlatform) {
+			return;
+		}
+		foreach ($sequences as $info) {
+			$seq = $this->db->fetchOne('SELECT pg_get_serial_sequence(quote_ident(?), ?)', [$info['table'], $info['column']]);
+			if ($seq === false || $seq === null) {
+				continue;
+			}
+			if ($info['last'] === null) {
+				// Never used: start at 1 (or after the data, if rows were inserted with explicit ids).
+				$max = (int)$this->db->fetchOne(sprintf('SELECT COALESCE(MAX(%s), 0) FROM %s',
+					$this->db->quoteIdentifier($info['column']), $this->db->quoteIdentifier($info['table'])));
+				$this->db->executeQuery('SELECT setval(CAST(? AS regclass), ?, false)', [$seq, $max + 1]);
+			} else {
+				$this->db->executeQuery('SELECT setval(CAST(? AS regclass), ?, ?)', [$seq, $info['last'], $info['called']],
+					[\Doctrine\DBAL\ParameterType::STRING, \Doctrine\DBAL\ParameterType::INTEGER, \Doctrine\DBAL\ParameterType::BOOLEAN]);
 			}
 		}
 	}

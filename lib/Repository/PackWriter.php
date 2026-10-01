@@ -59,9 +59,17 @@ final class PackWriter {
 		fwrite($this->buffer, $header . pack('N', strlen($header)));
 		rewind($this->buffer);
 		$path = 'packs/' . substr($packId, 0, 2) . '/' . $packId;
-		$this->backend->put($path, $this->buffer); // closes the buffer
-		unset($this->buffer);
-		$this->index->addPack($packId, $this->entries);
+		try {
+			$this->backend->put($path, $this->buffer); // closes the buffer
+			unset($this->buffer);
+			$this->index->addPack($packId, $this->entries);
+		} catch (\Throwable $e) {
+			// The blobs of this pack are not durable: forget them, so a retry stores them again.
+			$this->index->dropPending(array_column($this->entries, 'id'));
+			unset($this->buffer);
+			$this->reset();
+			throw $e;
+		}
 		$this->reset();
 	}
 

@@ -73,7 +73,15 @@ final class BackupRun {
 					continue;
 				}
 
-				$cur = $state['cur'] ?? ['path' => $relative, 'offset' => 0, 'blobs' => []];
+				$version = Repository::fileVersion($path);
+				$cur = $state['cur'];
+				if ($cur === null || $cur['version'] !== $version) {
+					// New file, or it changed since the previous step: (re)start reading it.
+					if ($cur !== null) {
+						$stats['retried'] = ($stats['retried'] ?? 0) + 1;
+					}
+					$cur = ['path' => $relative, 'offset' => 0, 'blobs' => [], 'version' => $version];
+				}
 				$fh = fopen($path, 'rb');
 				fseek($fh, $cur['offset']);
 				$finished = true;
@@ -86,6 +94,15 @@ final class BackupRun {
 					}
 				}
 				fclose($fh);
+				if (Repository::fileVersion($path) !== $cur['version']) {
+					// Changed while reading: start this file again (in this or the next step).
+					$stats['retried'] = ($stats['retried'] ?? 0) + 1;
+					$state['cur'] = null;
+					if (microtime(true) >= $deadline) {
+						break;
+					}
+					continue;
+				}
 				if (!$finished) {
 					$state['cur'] = $cur;
 					break;

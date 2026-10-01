@@ -58,6 +58,17 @@ switch ($mode) {
 		$repo = Repository::open(new LocalBackend("$work/repo"), $pass);
 		$t = microtime(true);
 		$state = BackupRun::step($repo, $state, $t + $seconds);
+		// Simulate a user overwriting the big file (same size) while the run is in the middle of it.
+		if (getenv('NGB_MUTATE') === '1' && ($state['cur']['path'] ?? '') === 'huge.bin' && !file_exists("$work/mutated")) {
+			$fh = fopen("$src/huge.bin", 'r+b');
+			fseek($fh, 10 * 1048576);
+			fwrite($fh, random_bytes(1048576));
+			fclose($fh);
+			touch("$src/huge.bin", time() + 5);
+			file_put_contents("$work/expected.json", json_encode($hashTree($src)));
+			touch("$work/mutated");
+			echo "  -> huge.bin overwritten (same size) between steps\n";
+		}
 		// Save the state atomically: a kill before this point means the step is simply redone.
 		file_put_contents("$stateFile.tmp", json_encode($state));
 		rename("$stateFile.tmp", $stateFile);

@@ -35,7 +35,13 @@ final class RepositoryImportSource implements IImportSource {
 		// Phase 0: buffer in php://temp (memory up to 8 MiB, then a temp file for this one file).
 		$stream = fopen('php://temp/maxmemory:' . (8 * 1048576), 'w+b');
 		foreach ($this->repo->readBlobs($entry['b']) as $data) {
-			fwrite($stream, $data);
+			for ($done = 0, $len = strlen($data); $done < $len; $done += $n) {
+				$n = fwrite($stream, $done === 0 ? $data : substr($data, $done));
+				if ($n === false || $n === 0) {
+					fclose($stream);
+					throw new UserMigrationException('Cannot buffer ' . $path);
+				}
+			}
 		}
 		rewind($stream);
 		return $stream;
@@ -48,11 +54,13 @@ final class RepositoryImportSource implements IImportSource {
 		foreach (array_keys($this->manifest['entries']) as $p) {
 			if ($prefix === '' || str_starts_with($p, $prefix)) {
 				$rest = substr($p, strlen($prefix));
-				if ($rest !== '' && !str_contains($rest, '/')) {
-					$names[] = $rest;
+				if ($rest !== '') {
+					// First path segment: also lists folders that only exist as a parent of a file.
+					$names[explode('/', $rest, 2)[0]] = true;
 				}
 			}
 		}
+		$names = array_keys($names);
 		sort($names);
 		return $names;
 	}
@@ -72,7 +80,8 @@ final class RepositoryImportSource implements IImportSource {
 
 	public function copyToFolder(Folder $destination, string $sourcePath): void {
 		foreach ($this->getFolderListing($sourcePath) as $name) {
-			$path = trim($sourcePath, '/') . '/' . $name;
+			$base = trim($sourcePath, '/');
+			$path = $base === '' ? $name : $base . '/' . $name;
 			$entry = $this->manifest['entries'][$path] ?? ['t' => 'd'];
 			if ($entry['t'] === 'd') {
 				$sub = $destination->nodeExists($name) ? $destination->get($name) : $destination->newFolder($name);

@@ -11,6 +11,7 @@ use OCA\NgBackup\Repository\Repository;
 use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\UserMigration\IExportDestination;
+use OCP\UserMigration\UserMigrationException;
 
 /**
  * Export destination for user_migration that writes straight into the encrypted repository:
@@ -42,7 +43,7 @@ final class RepositoryExportDestination implements IExportDestination {
 		while (!feof($stream)) {
 			$chunk = fread($stream, 1048576);
 			if ($chunk === false) {
-				break;
+				throw new UserMigrationException('Read error while exporting ' . $path);
 			}
 			$writer->write($chunk);
 		}

@@ -18,30 +18,40 @@ final class LocalBackend implements IBackend {
 	}
 
 	public function put(string $path, $stream): void {
-		$target = $this->abs($path);
-		$dir = dirname($target);
-		if (!is_dir($dir) && !mkdir($dir, 0700, true) && !is_dir($dir)) {
-			throw new BackendException('Cannot create ' . $dir);
-		}
-		// Write to a temporary name and rename, so a crash never leaves a partial object.
-		$tmp = $target . '.part-' . bin2hex(random_bytes(4));
-		$out = fopen($tmp, 'wb');
-		if ($out === false) {
-			throw new BackendException('Cannot write ' . $path);
-		}
+		$tmp = null;
+		$out = false;
+		$done = false;
 		try {
+			$target = $this->abs($path);
+			$dir = dirname($target);
+			if (!is_dir($dir) && !mkdir($dir, 0700, true) && !is_dir($dir)) {
+				throw new BackendException('Cannot create ' . $dir);
+			}
+			// Write to a temporary name and rename, so a crash never leaves a partial object.
+			$tmp = $target . '.part-' . bin2hex(random_bytes(4));
+			$out = fopen($tmp, 'wb');
+			if ($out === false) {
+				throw new BackendException('Cannot write ' . $path);
+			}
 			if (stream_copy_to_stream($stream, $out) === false || !fflush($out)) {
 				throw new BackendException('Write failed for ' . $path);
 			}
-		} finally {
 			fclose($out);
+			$out = false;
+			if (!rename($tmp, $target)) {
+				throw new BackendException('Cannot finalise ' . $path);
+			}
+			$done = true;
+		} finally {
+			if ($out !== false) {
+				fclose($out);
+			}
 			if (is_resource($stream)) {
 				fclose($stream);
 			}
-		}
-		if (!rename($tmp, $target)) {
-			@unlink($tmp);
-			throw new BackendException('Cannot finalise ' . $path);
+			if (!$done && $tmp !== null) {
+				@unlink($tmp);
+			}
 		}
 	}
 

@@ -45,3 +45,32 @@ All spikes run on the standard `nextcloud:34-apache` image (PHP 8.5, sodium 1.0.
 - Real hosted environment (webcron/AJAX cron, `max_execution_time`); spike F simulates it.
 - Restore of the database while Nextcloud is running (spike C restored with Nextcloud idle).
 - Schema introspection still uses the Doctrine connection behind `IDBConnection` (private API).
+
+## Code review (2026-10-01)
+
+No way was found to reorder or drop secretstream frames, substitute a blob, or decrypt with the
+wrong key/associated data without detection. Fixed after the review (all spikes re-run, all pass):
+
+- Files that change while being read, or between two resumable steps, are detected (size, mtime,
+  ctime, inode before/after) and read again instead of producing a torn file; spike F now
+  overwrites the big file mid-run and the restore matches the new content.
+- A failed pack/index upload no longer leaves its blobs marked as present.
+- PostgreSQL sequences are dumped and restored exactly (not MAX+1); spike C advances one
+  sequence 50 steps ahead of the data and checks all 115 sequences.
+- Text that is not valid UTF-8 is kept byte-exact (tagged base64) instead of being substituted.
+- Sequence SQL uses bound parameters; sequence names from the catalog are validated.
+- Tables without a primary key are refused above 50,000 rows (bounded memory).
+- `StorageBackend` checks `writeStream()`/`fflush()`/`fclose()` results and validates its base path.
+- user_migration import: root-level paths, intermediate folders and partial writes handled;
+  export fails on a read error instead of storing a truncated file.
+
+Design items for phase 1 (from the review):
+
+- **Rollback/freshness:** a malicious backend can replay an older valid object at the same path or
+  hide snapshots. Add a chained, MACed generation catalog (repository id + object type/path in the
+  associated data) and keep the latest generation id outside the backend (Nextcloud DB + recovery kit).
+- **Decrypt output is uncommitted until the FINAL frame:** callers must stage and only publish
+  after success (restore already writes `*.ngb-restore` and renames; make this a rule for all sinks).
+- **Restore mode:** "merge" (current: extra files stay) vs "replace" (target equals snapshot).
+- **Size metadata:** object and pack-header sizes reveal approximate sizes/compressibility;
+  optional padding if that matters.

@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 // Spike E: per-user backup/restore through user_migration with our own export/import classes.
-//   php -d memory_limit=128M /var/www/html/custom_apps/ng_backup/spikes/05-user-migration.php
+//   php -d memory_limit=512M /var/www/html/custom_apps/ng_backup/spikes/05-user-migration.php
 
 require '/var/www/html/lib/base.php';
 set_exception_handler(null);
@@ -32,11 +32,12 @@ $root = \OCP\Server::get(IRootFolder::class);
 $caldav = \OCP\Server::get(CalDavBackend::class);
 $carddav = \OCP\Server::get(CardDavBackend::class);
 $migration = \OCP\Server::get(UserMigrationService::class);
-$uid = 'alice';
+$uid = 'ngb-spike-alice';
 $principal = 'principals/users/' . $uid;
 
-if ($old = $users->get($uid)) {
-	$old->delete();
+if ($users->userExists($uid)) {
+	fwrite(STDERR, "User $uid already exists; refusing to touch an existing account.\n");
+	exit(2);
 }
 
 // 1. Test user with files, a calendar event, a contact and profile data.

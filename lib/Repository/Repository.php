@@ -92,12 +92,7 @@ final class Repository {
 				$blobs = $prev['b'];
 				$stats['reused']++;
 			} else {
-				$blobs = [];
-				$fh = fopen($info->getPathname(), 'rb');
-				while (($data = self::readFull($fh, self::BLOB_SIZE)) !== '') {
-					$blobs[] = $this->storeBlob($data, $packs, $stats);
-				}
-				fclose($fh);
+				$blobs = $this->readStable($info->getPathname(), $packs, $stats);
 				$stats['read']++;
 			}
 			fwrite($tree, json_encode(['p' => $relative, 's' => $info->getSize(), 'm' => $info->getMTime(), 'b' => $blobs], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n");
@@ -242,6 +237,36 @@ final class Repository {
 
 	public function blobCount(): int {
 		return $this->index->count();
+	}
+
+	/**
+	 * Read a file into blobs and make sure it did not change while reading (size, mtime, ctime
+	 * before and after). A file that keeps changing is an error rather than a torn backup.
+	 *
+	 * @return list<string>
+	 */
+	private function readStable(string $path, PackWriter $packs, array &$stats): array {
+		for ($attempt = 1; $attempt <= 3; $attempt++) {
+			$before = self::fileVersion($path);
+			$blobs = [];
+			$fh = fopen($path, 'rb');
+			while (($data = self::readFull($fh, self::BLOB_SIZE)) !== '') {
+				$blobs[] = $this->storeBlob($data, $packs, $stats);
+			}
+			fclose($fh);
+			if (self::fileVersion($path) === $before) {
+				return $blobs;
+			}
+			$stats['retried'] = ($stats['retried'] ?? 0) + 1;
+		}
+		throw new RepositoryException('File keeps changing while being read: ' . $path);
+	}
+
+	/** Cheap file identity: changes when the content may have changed. */
+	public static function fileVersion(string $path): string {
+		clearstatcache(true, $path);
+		$st = @stat($path);
+		return $st === false ? 'missing' : implode(':', [$st['size'], $st['mtime'], $st['ctime'], $st['ino']]);
 	}
 
 	private function storeBlob(string $data, PackWriter $packs, array &$stats): string {

@@ -33,6 +33,26 @@ printf("database: %s, prefix %s\n", get_class($db->getDatabasePlatform()), $pref
 
 $tables = array_values(array_filter($db->createSchemaManager()->listTableNames(), fn ($t) => str_starts_with($t, $prefix)));
 sort($tables);
+// Fixture the damage step relies on, so the check does not depend on existing data.
+$db->executeStatement('DELETE FROM ' . $prefix . 'preferences WHERE userid = ? AND appid = ? AND configkey = ?', ['admin', 'core', 'lang']);
+$db->insert($prefix . 'preferences', ['userid' => 'admin', 'appid' => 'core', 'configkey' => 'lang', 'configvalue' => 'nl']);
+$seqStates = static function () use ($db, $prefix): array {
+	if (!$db->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\PostgreSQLPlatform) {
+		return [];
+	}
+	$out = [];
+	foreach ($db->fetchFirstColumn("SELECT schemaname || '.' || sequencename FROM pg_sequences WHERE sequencename LIKE ? ORDER BY 1", [$prefix . '%']) as $s) {
+		$r = $db->fetchAssociative('SELECT last_value, is_called FROM ' . $s);
+		$out[$s] = [(int)$r['last_value'], (bool)$r['is_called']];
+	}
+	return $out;
+};
+// Let one sequence run ahead of the data (deleted rows, rollbacks): MAX+1 would be wrong.
+$fcSeq = $db->fetchOne("SELECT pg_get_serial_sequence(?, 'fileid')", [$prefix . 'filecache']);
+for ($i = 0; $i < 50; $i++) {
+	$db->fetchOne('SELECT nextval(CAST(? AS regclass))', [$fcSeq]);
+}
+$seqBefore = $seqStates();
 $before = [];
 foreach ($tables as $t) {
 	$before[$t] = $dumper->checksum($t);
@@ -58,7 +78,7 @@ printf("dump 2 (no changes): %s\n", json_encode($stats2));
 $check('unchanged database: (almost) nothing new stored', $stats2['uploaded'] < 0.05 * max(1, $stats['uploaded']));
 
 // Damage the database.
-$db->executeStatement('DELETE FROM ' . $prefix . 'filecache WHERE path LIKE ?', ['files/Docs/%']);
+$db->executeStatement('DELETE FROM ' . $prefix . 'preferences WHERE userid = ? AND appid = ? AND configkey = ?', ['admin', 'core', 'lang']);
 $db->executeStatement('UPDATE ' . $prefix . 'appconfig SET configvalue = ? WHERE appid = ? AND configkey = ?', ['damaged', 'core', 'installedat']);
 $db->insert($prefix . 'users', ['uid' => 'intruder', 'displayname' => 'Intruder', 'password' => 'x', 'uid_lower' => 'intruder']);
 $changed = array_filter($tables, fn ($tb) => $dumper->checksum($tb)['sha256'] !== $before[$tb]['sha256']);
@@ -86,26 +106,15 @@ if ($mismatch) {
 }
 
 
-// Sequences must continue after the restored maximum (PostgreSQL).
-if ($db->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\PostgreSQLPlatform) {
-	$serials = $db->fetchAllAssociative("SELECT table_name, column_name, pg_get_serial_sequence(table_name, column_name) AS seq
-		FROM information_schema.columns WHERE table_schema = current_schema() AND table_name LIKE ?
-		AND pg_get_serial_sequence(table_name, column_name) IS NOT NULL", [$prefix . '%']);
-	$bad = [];
-	foreach ($serials as $s) {
-		$max = (int)$db->fetchOne(sprintf('SELECT COALESCE(MAX(%s), 0) FROM %s', $db->quoteIdentifier($s['column_name']), $db->quoteIdentifier($s['table_name'])));
-		$seq = $db->fetchAssociative('SELECT last_value, is_called FROM ' . $s['seq']);
-		$next = (int)$seq['last_value'] + ($seq['is_called'] ? 1 : 0);
-		if ($next <= $max) {
-			$bad[] = "{$s['table_name']}.{$s['column_name']} next=$next max=$max";
-		}
-	}
-	$check(sprintf('all %d sequences continue above the restored maximum', count($serials)), $bad === []);
-	if ($bad) {
-		echo implode("\n", $bad), "\n";
+// Sequences must be restored exactly (PostgreSQL), including one that ran ahead of the data.
+$seqAfter = $seqStates();
+$diff = array_filter(array_keys($seqBefore), fn ($k) => ($seqAfter[$k] ?? null) !== $seqBefore[$k]);
+$check(sprintf('all %d sequences restored exactly (filecache seq 50 ahead of data)', count($seqBefore)), $diff === [] && count($seqBefore) > 0);
+if ($diff) {
+	foreach (array_slice($diff, 0, 5) as $k) {
+		echo "$k before=" . json_encode($seqBefore[$k]) . ' after=' . json_encode($seqAfter[$k] ?? null) . "\n";
 	}
 }
-
 
 exec('rm -rf ' . escapeshellarg($repoDir));
 echo $ok ? "ALL PASS\n" : "FAILURES\n";
