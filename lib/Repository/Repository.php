@@ -180,6 +180,39 @@ final class Repository {
 		}
 	}
 
+	/** Store one blob of file data in the current run (deduplicated); returns its id. */
+	public function storeData(string $data, array &$stats): string {
+		$this->runPacks ??= new PackWriter($this->backend, $this->cipher, $this->index);
+		return $this->storeBlob($data, $this->runPacks, $stats);
+	}
+
+	/**
+	 * Write a snapshot from a meta record and the tree lines (JSON, one per file). Must be called
+	 * after flushPacks(), so the snapshot only references stored blobs.
+	 *
+	 * @param iterable<string> $lines
+	 */
+	public function writeSnapshot(string $snapshotId, array $meta, iterable $lines): void {
+		$tree = fopen('php://temp/maxmemory:' . (4 * 1048576), 'w+b');
+		fwrite($tree, json_encode(['snapshot' => $snapshotId] + $meta, JSON_THROW_ON_ERROR) . "\n");
+		foreach ($lines as $line) {
+			if ($line !== '') {
+				fwrite($tree, $line . "\n");
+			}
+		}
+		rewind($tree);
+		$encrypted = fopen('php://temp/maxmemory:' . (4 * 1048576), 'w+b');
+		$this->cipher->encrypt($tree, $encrypted, 'snapshot:' . $snapshotId);
+		fclose($tree);
+		rewind($encrypted);
+		$this->backend->put('snapshots/' . $snapshotId, $encrypted);
+	}
+
+	/** @return array<string, array{s:int, m:int, b:list<string>}> */
+	public function snapshotEntries(string $snapshotId): array {
+		return $this->loadEntries($snapshotId);
+	}
+
 	/**
 	 * @param list<string> $blobIds
 	 * @return \Generator<string> verified blob contents, in order
