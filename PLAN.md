@@ -151,9 +151,13 @@ backuplocatie nergens als koppeling of share:
 - instellingen en inloggegevens in de eigen tabellen van ng_backup, versleuteld met `ICrypto`.
 
 **Installatie en instellingen van files_external:**
-- ng_backup vereist files_external (meegeleverde app, op AIO, losse installaties en de meeste
-  hosters aanwezig). Staat het uit, dan biedt de instellingenpagina aan het in te schakelen
-  (`IAppManager::enableApp`, alleen door een beheerder, met uitleg).
+- files_external is een meegeleverde app (`core/shipped.json`): aanwezig in elke reguliere
+  installatie, standaard **uitgeschakeld**. ng_backup **verandert de status niet**: staat het uit,
+  dan blijft het uit en laadt ng_backup alleen de klassen (in fase 0 getest: werkt); staat het
+  aan omdat de beheerder het zelf gebruikt, dan blijft het aan. Uit is hier juist goed:
+  onzichtbaarheid van de backuplocatie beperkt wat ransomware of een overgenomen account kan zien.
+  Laden van een uitgeschakelde app gaat via interne API → in de adapter, met CI per NC-versie.
+  Ontbreekt files_external helemaal (aangepaste installatie), dan alleen de eigen doelen.
 - Gebruikers hoeven files_external niet te zien: "gebruikers mogen externe opslag koppelen" kan
   uit blijven en er hoeven geen koppelingen te bestaan. ng_backup controleert dat en waarschuwt
   als gebruikers zelf externe opslag mogen koppelen (geen vereiste, wel een tip).
@@ -233,10 +237,20 @@ die bij restore uit een herstelpunt leest. Het aansturen gaat via `UserMigration
 - `UserMigrationService` is een interne klasse van user_migration (geen publieke API); net als bij
   files_external via een eigen adapter, met CI op elke NC-versie. Zonder user_migration valt alleen
   de gebruikersbackup weg; de volledige backup werkt dan nog.
-- **Restore over een bestaande gebruiker:** user_migration is gemaakt voor importeren in een
-  (nieuw) account. Nagaan per migrator wat er gebeurt als de gegevens al bestaan (dubbele
-  agenda's of mappen?). Mogelijke aanpak: terugzetten naar een tijdelijke gebruiker en daarna
-  gericht overzetten, of de gebruiker eerst leegmaken (met bevestiging en een extra backup vooraf).
+- **Restore over een bestaande gebruiker** is in fase 0 getest en niet schoon (contacten dubbel,
+  extra `migrated-*`-agenda's). Daarom twee keuzes in de restore-wizard, nooit importeren over
+  een bestaand account heen:
+  1. **Vervangen:** eerst automatisch een veiligheidsexport van de huidige stand naar de
+     repository, dan het account verwijderen, dan uit de backup opnieuw aanmaken.
+  2. **Naast het bestaande account:** de backup terugzetten in een nieuw account
+     `<gebruiker>-bak` (of `<gebruiker>-<datum>`), zodat de beheerder kan vergelijken en gericht
+     overzetten. (Een gebruikers-id hernoemen kan Nextcloud niet; daarom krijgt de *backup* de
+     nieuwe naam, niet het bestaande account.)
+- Agenda's en adresboeken komen terug als `migrated-*` met nieuwe URI's: clients synchroniseren
+  opnieuw, delen van die agenda's moeten opnieuw. In de wizard vermelden.
+- **Versies en prullenbak gaan mee:** de FilesMigrator exporteert ook `files_versions` van de
+  gebruiker, de trashbin-migrator de prullenbak. Alleen bestanden in de eigen opslag van de
+  gebruiker; externe opslag en groepsmappen niet (die gaan wel mee in de volledige backup).
 - Een terugzetting per bestand of map blijft via de eigen bestandsboom gaan (sneller, geen migrators nodig).
 
 Niet alle apps hebben een migrator (bijv. Talk-gesprekken); in de restore-wizard tonen welke
@@ -305,8 +319,11 @@ een backup-app die niet betrouwbaar is, is erger dan geen backup-app.
 4. **Naam:** "NG Backup", app-id `ng_backup`, occ-voorvoegsel `backup:`.
 5. **Herstelkit:** verplicht downloaden + expliciete bevestiging door de beheerder (vinkje +
    "Yes, I confirm"), zie 3.2; versleuteld per e-mail als optionele extra kopie.
-6. **Opslag:** files_external is een vereiste en wordt door ng_backup aangestuurd zonder koppeling
-   of (verborgen) share, zie 3.5.
+6. **Opslag:** files_external wordt door ng_backup aangestuurd zonder koppeling of (verborgen)
+   share; de app-status blijft zoals de beheerder hem had (uit blijft uit), zie 3.5.
+7. **Restore per gebruiker:** nooit over een bestaand account heen; óf vervangen (veiligheids-
+   export, verwijderen, opnieuw aanmaken), óf terugzetten als `<gebruiker>-bak`, zie 3.8.
+8. **Fase 0 afgerond (2026-10-01),** resultaten in `spikes/RESULTS.md`.
 
 ## Bijlage: lessen uit nextcloud/backup (test NC34, 2026-10-01)
 
