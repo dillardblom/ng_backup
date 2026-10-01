@@ -180,6 +180,16 @@ final class Repository {
 		}
 	}
 
+	/**
+	 * @param list<string> $blobIds
+	 * @return \Generator<string> verified blob contents, in order
+	 */
+	public function readBlobs(array $blobIds): \Generator {
+		foreach ($blobIds as $id) {
+			yield $this->loadBlob($id);
+		}
+	}
+
 	/** Small encrypted objects (manifests). */
 	public function putObject(string $path, string $data): void {
 		self::putString($this->backend, $path, $this->cipher->encryptString($data, 'object:' . $path));
