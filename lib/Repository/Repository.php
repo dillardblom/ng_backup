@@ -342,6 +342,23 @@ final class Repository {
 		return $map;
 	}
 
+	/** @return \Generator<array{p:string, s:int, m:int, b:list<string>}> entries of a snapshot, in stored order */
+	public function entries(string $snapshotId): \Generator {
+		return $this->streamEntries($snapshotId);
+	}
+
+	/** The meta record (first line) of a snapshot. */
+	public function snapshotMeta(string $snapshotId): array {
+		$plain = fopen('php://temp/maxmemory:' . (4 * 1048576), 'w+b');
+		$fh = $this->backend->get('snapshots/' . $snapshotId);
+		$this->cipher->decrypt($fh, $plain, 'snapshot:' . $snapshotId);
+		fclose($fh);
+		rewind($plain);
+		$meta = json_decode((string)fgets($plain), true, 512, JSON_THROW_ON_ERROR);
+		fclose($plain);
+		return $meta;
+	}
+
 	/** @return \Generator<array{p:string, s:int, m:int, b:list<string>}> */
 	private function streamEntries(string $snapshotId): \Generator {
 		$plain = fopen('php://temp/maxmemory:' . (4 * 1048576), 'w+b');

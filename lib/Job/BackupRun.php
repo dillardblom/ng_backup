@@ -10,156 +10,140 @@ namespace OCA\NgBackup\Job;
 use OCA\NgBackup\Repository\Repository;
 
 /**
- * A backup run as a resumable state machine, for environments with short PHP time limits
- * (webcron/AJAX cron on hosted Nextcloud). Each step works until its deadline, then uploads
- * what it has (pack + tree segment) and returns the new state. Even a single large file is
- * resumed at the blob where the previous step stopped.
+ * A file backup as a resumable state machine, for environments with short PHP time limits.
+ * Each step works until its deadline, uploads what it has (pack + tree segment) and returns
+ * the new state; a large file is resumed at the next blob.
  *
- * The state is a plain array (in the app: a database row). It is only saved after a step
- * completes; if a process is killed mid-step, the next step redoes that work. Blobs uploaded by
- * the killed step are not referenced and are removed later by pruning; nothing is corrupted,
- * because the snapshot is written last.
+ * The state holds no file list: the position is a cursor in TreeWalker order, and the previous
+ * snapshot is merge-joined through ParentCursor, so memory and state size stay small however
+ * many files there are. The snapshot is written last; a killed step is simply redone.
  */
 final class BackupRun {
-	public static function start(string $source, ?string $parent = null, string $label = ''): array {
+	/**
+	 * @param string|array<string, string> $roots one directory, or name => directory (walked in order)
+	 * @param list<string> $exclude logical path prefixes to skip
+	 * @param array<string, mixed> $meta extra fields for the snapshot meta record
+	 */
+	public static function start(string|array $roots, ?string $parent = null, string $label = '', array $exclude = [], array $meta = []): array {
+		$roots = is_string($roots) ? ['' => rtrim($roots, '/')] : $roots;
+		uksort($roots, fn ($a, $b) => TreeWalker::compare((string)$a, (string)$b)); // walk order = compare order
 		return [
 			'snapshot' => bin2hex(random_bytes(16)),
-			'source' => rtrim($source, '/'),
+			'roots' => $roots,
+			'exclude' => $exclude,
 			'parent' => $parent,
 			'label' => $label,
+			'meta' => $meta,
 			'started' => gmdate('c'),
-			'phase' => 'scan',
-			'files' => [],
-			'pos' => 0,
+			'phase' => 'files',
+			'after' => null,
+			'parentPos' => 0,
 			'cur' => null,
 			'segments' => [],
 			'steps' => 0,
-			'stats' => ['files' => 0, 'reused' => 0, 'read' => 0, 'newBlobs' => 0, 'dupBlobs' => 0, 'uploaded' => 0],
+			'stats' => ['files' => 0, 'bytes' => 0, 'reused' => 0, 'read' => 0, 'newBlobs' => 0, 'dupBlobs' => 0, 'uploaded' => 0],
 		];
 	}
 
 	/** Run one step until $deadline (microtime(true)); returns the new state. */
 	public static function step(Repository $repo, array $state, float $deadline): array {
 		$state['steps']++;
-		if ($state['phase'] === 'scan') {
-			$state['files'] = self::scan($state['source']);
-			$state['phase'] = 'files';
-			// Scanning can take a while on big trees; continue in the same step if time is left.
-		}
-
 		if ($state['phase'] === 'files') {
-			$previous = $state['parent'] !== null ? $repo->snapshotEntries($state['parent']) : [];
+			$walker = new TreeWalker($state['roots'], $state['exclude']);
+			$parent = new ParentCursor($repo, $state['parent'], $state['parentPos']);
 			$stats = $state['stats'];
 			$lines = [];
-			$total = count($state['files']);
-			while ($state['pos'] < $total) {
-				$relative = $state['files'][$state['pos']];
-				$path = $state['source'] . '/' . $relative;
-				clearstatcache(true, $path);
-				$size = @filesize($path);
-				$mtime = @filemtime($path);
-				if ($size === false) {
-					// Deleted since the scan: skip.
-					$state['pos']++;
-					$state['cur'] = null;
-					continue;
+			$finishedWalk = true;
+
+			foreach ($walker->walk($state['after']) as $logical => $path) {
+				$version = Repository::fileVersion($path);
+				if ($version === 'missing') {
+					continue; // deleted while walking
 				}
-				$prev = $previous[$relative] ?? null;
+				[$size, $mtime] = array_map('intval', explode(':', $version, 3));
+				$prev = $parent->find($logical);
+
 				if ($state['cur'] === null && $prev !== null && $prev['s'] === $size && $prev['m'] === $mtime) {
-					$lines[] = self::line($relative, $size, $mtime, $prev['b']);
-					$stats['files']++;
+					$blobs = $prev['b'];
 					$stats['reused']++;
-					$state['pos']++;
-					continue;
+				} else {
+					$cur = $state['cur'];
+					if ($cur === null || $cur['path'] !== $logical || $cur['version'] !== $version) {
+						if ($cur !== null && $cur['path'] === $logical) {
+							$stats['retried'] = ($stats['retried'] ?? 0) + 1; // changed since the previous step
+						}
+						$cur = ['path' => $logical, 'offset' => 0, 'blobs' => [], 'version' => $version];
+					}
+					$fh = fopen($path, 'rb');
+					if ($fh === false) {
+						$stats['unreadable'] = ($stats['unreadable'] ?? 0) + 1;
+						$state['cur'] = null;
+						continue;
+					}
+					fseek($fh, $cur['offset']);
+					$complete = true;
+					while (($data = self::readFull($fh, Repository::BLOB_SIZE)) !== '') {
+						$cur['blobs'][] = $repo->storeData($data, $stats);
+						$cur['offset'] += strlen($data);
+						if (microtime(true) >= $deadline && !feof($fh)) {
+							$complete = false;
+							break;
+						}
+					}
+					fclose($fh);
+					if (Repository::fileVersion($path) !== $cur['version']) {
+						// Changed while reading: read it again from the start (now or next step).
+						$stats['retried'] = ($stats['retried'] ?? 0) + 1;
+						$state['cur'] = null;
+						$finishedWalk = false;
+						break;
+					}
+					if (!$complete) {
+						$state['cur'] = $cur;
+						$finishedWalk = false;
+						break;
+					}
+					$blobs = $cur['blobs'];
+					$state['cur'] = null;
+					$stats['read']++;
 				}
 
-				$version = Repository::fileVersion($path);
-				$cur = $state['cur'];
-				if ($cur === null || $cur['version'] !== $version) {
-					// New file, or it changed since the previous step: (re)start reading it.
-					if ($cur !== null) {
-						$stats['retried'] = ($stats['retried'] ?? 0) + 1;
-					}
-					$cur = ['path' => $relative, 'offset' => 0, 'blobs' => [], 'version' => $version];
-				}
-				$fh = fopen($path, 'rb');
-				fseek($fh, $cur['offset']);
-				$finished = true;
-				while (($data = self::readFull($fh, Repository::BLOB_SIZE)) !== '') {
-					$cur['blobs'][] = $repo->storeData($data, $stats);
-					$cur['offset'] += strlen($data);
-					if (microtime(true) >= $deadline && !feof($fh)) {
-						$finished = false;
-						break;
-					}
-				}
-				fclose($fh);
-				if (Repository::fileVersion($path) !== $cur['version']) {
-					// Changed while reading: start this file again (in this or the next step).
-					$stats['retried'] = ($stats['retried'] ?? 0) + 1;
-					$state['cur'] = null;
-					if (microtime(true) >= $deadline) {
-						break;
-					}
-					continue;
-				}
-				if (!$finished) {
-					$state['cur'] = $cur;
-					break;
-				}
-				$lines[] = self::line($relative, $size, $mtime, $cur['blobs']);
+				$lines[] = json_encode(['p' => $logical, 's' => $size, 'm' => $mtime, 'b' => $blobs], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
 				$stats['files']++;
-				$stats['read']++;
-				$state['cur'] = null;
-				$state['pos']++;
+				$stats['bytes'] += $size;
+				$state['after'] = $logical;
 				if (microtime(true) >= $deadline) {
+					$finishedWalk = false;
 					break;
 				}
 			}
 
-			// Persist this step's tree lines as a blob stream segment and upload the open pack.
 			if ($lines !== []) {
 				$writer = $repo->blobWriter($stats);
 				$writer->write(implode("\n", $lines) . "\n");
 				$state['segments'][] = $writer->finish();
 			}
 			$repo->flushPacks();
+			$state['parentPos'] = $parent->position();
 			$state['stats'] = $stats;
-			if ($state['pos'] >= $total) {
+			if ($finishedWalk) {
 				$state['phase'] = 'finish';
 			}
 		}
 
-		if ($state['phase'] === 'finish' && microtime(true) < $deadline + 5) {
+		if ($state['phase'] === 'finish') {
 			$segments = $state['segments'];
 			$repo->writeSnapshot($state['snapshot'],
-				['time' => $state['started'], 'parent' => $state['parent'], 'label' => $state['label'], 'source' => $state['source']],
+				['time' => $state['started'], 'parent' => $state['parent'], 'label' => $state['label'],
+					'roots' => array_keys($state['roots']), 'stats' => $state['stats']] + $state['meta'],
 				(function () use ($repo, $segments) {
 					foreach ($segments as $blobs) {
 						yield from $repo->readLines($blobs);
 					}
 				})());
 			$state['phase'] = 'done';
-			$state['files'] = [];
 		}
 		return $state;
-	}
-
-	/** @return list<string> */
-	private static function scan(string $root): array {
-		$files = [];
-		$it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS));
-		foreach ($it as $file) {
-			if ($file->isFile()) {
-				$files[] = substr($file->getPathname(), strlen($root) + 1);
-			}
-		}
-		sort($files, SORT_STRING);
-		return $files;
-	}
-
-	private static function line(string $path, int $size, int $mtime, array $blobs): string {
-		return json_encode(['p' => $path, 's' => $size, 'm' => $mtime, 'b' => $blobs], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
 	}
 
 	private static function readFull($fh, int $length): string {

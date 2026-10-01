@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\NgBackup\Tests\Unit\Job;
 
 use OCA\NgBackup\Backend\LocalBackend;
+use OCA\NgBackup\Crypto\KeyRing;
 use OCA\NgBackup\Job\BackupRun;
 use OCA\NgBackup\Repository\Repository;
 use OCA\NgBackup\Tests\Unit\TempDirTrait;
@@ -21,13 +22,14 @@ class BackupRunTest extends TestCase {
 		}
 		file_put_contents("$src/big.bin", random_bytes(13 * 1048576));
 		$backend = new LocalBackend($this->tempDir());
-		Repository::init($backend, 'pw');
+		$keys = KeyRing::generate();
+		Repository::initWithKey($backend, $keys, $keys->wrap('pw'));
 
 		$state = BackupRun::start($src);
 		$steps = 0;
 		while ($state['phase'] !== 'done' && $steps < 500) {
 			// Fresh repository object per step, state through JSON: as separate processes would.
-			$repo = Repository::open($backend, 'pw');
+			$repo = Repository::openWithKey($backend, $keys);
 			$state = json_decode(json_encode(BackupRun::step($repo, $state, microtime(true) + 0.05)), true);
 			$steps++;
 		}
@@ -35,7 +37,7 @@ class BackupRunTest extends TestCase {
 		$this->assertGreaterThan(2, $steps, 'the run was actually split into steps');
 
 		$target = $this->tempDir();
-		Repository::open($backend, 'pw')->restore($state['snapshot'], $target);
+		Repository::openWithKey($backend, $keys)->restore($state['snapshot'], $target);
 		$this->assertSame(self::hashTree($src), self::hashTree($target));
 	}
 
@@ -43,12 +45,13 @@ class BackupRunTest extends TestCase {
 		$src = $this->tempDir();
 		file_put_contents("$src/big.bin", random_bytes(20 * 1048576));
 		$backend = new LocalBackend($this->tempDir());
-		Repository::init($backend, 'pw');
+		$keys = KeyRing::generate();
+		Repository::initWithKey($backend, $keys, $keys->wrap('pw'));
 
 		$state = BackupRun::start($src);
 		$mutated = false;
 		for ($i = 0; $i < 500 && $state['phase'] !== 'done'; $i++) {
-			$state = BackupRun::step(Repository::open($backend, 'pw'), $state, microtime(true) + 0.01);
+			$state = BackupRun::step(Repository::openWithKey($backend, $keys), $state, microtime(true) + 0.01);
 			if (!$mutated && $state['cur'] !== null && $state['cur']['offset'] > 0) {
 				$fh = fopen("$src/big.bin", 'r+b');
 				fwrite($fh, random_bytes(1024)); // same size, new content at the start
@@ -60,7 +63,34 @@ class BackupRunTest extends TestCase {
 		$this->assertTrue($mutated);
 		$this->assertGreaterThanOrEqual(1, $state['stats']['retried'] ?? 0);
 		$target = $this->tempDir();
-		Repository::open($backend, 'pw')->restore($state['snapshot'], $target);
+		Repository::openWithKey($backend, $keys)->restore($state['snapshot'], $target);
 		$this->assertSame(self::hashTree($src), self::hashTree($target));
+	}
+
+	public function testIncrementalRunInTinyStepsReadsNothing(): void {
+		$src = $this->tempDir();
+		for ($i = 0; $i < 200; $i++) {
+			@mkdir("$src/d" . ($i % 7), 0700, true);
+			file_put_contents("$src/d" . ($i % 7) . "/f$i", random_bytes(3000));
+		}
+		$backend = new LocalBackend($this->tempDir());
+		$keys = KeyRing::generate();
+		Repository::initWithKey($backend, $keys, $keys->wrap('pw'));
+		$run = function (?string $parent) use ($backend, $src, $keys): array {
+			$state = BackupRun::start(['data' => $src], $parent);
+			for ($i = 0; $i < 2000 && $state['phase'] !== 'done'; $i++) {
+				$state = json_decode(json_encode(BackupRun::step(Repository::openWithKey($backend, $keys), $state, microtime(true))), true);
+			}
+			return $state;
+		};
+		$first = $run(null);
+		$second = $run($first['snapshot']);
+		$this->assertSame('done', $second['phase']);
+		$this->assertGreaterThan(150, $second["steps"], "one file per step");
+		$this->assertSame(0, $second['stats']['read'], 'merge-join with the parent across steps reuses every file');
+		$this->assertSame(200, $second['stats']['reused']);
+		$target = $this->tempDir();
+		Repository::openWithKey($backend, $keys)->restore($second['snapshot'], $target);
+		$this->assertSame(self::hashTree($src), self::hashTree("$target/data"));
 	}
 }
