@@ -31,6 +31,7 @@ final class Repository {
 
 	private StreamCipher $cipher;
 	private BlobIndex $index;
+	private ?PackWriter $runPacks = null;
 
 	private function __construct(
 		private IBackend $backend,
@@ -143,6 +144,53 @@ final class Repository {
 			$count++;
 		}
 		return $count;
+	}
+
+	/**
+	 * Start writing a generated stream (e.g. a table dump) as blobs. Call flushPacks() when the
+	 * run is done, so the last pack is uploaded before anything references it.
+	 */
+	public function blobWriter(array &$stats): BlobWriter {
+		$this->runPacks ??= new PackWriter($this->backend, $this->cipher, $this->index);
+		$packs = $this->runPacks;
+		return new BlobWriter(function (string $data) use ($packs, &$stats): string {
+			return $this->storeBlob($data, $packs, $stats);
+		});
+	}
+
+	public function flushPacks(): void {
+		$this->runPacks?->flush();
+	}
+
+	/**
+	 * Read a blob stream back as lines (lines may span blob boundaries).
+	 *
+	 * @param list<string> $blobIds
+	 * @return \Generator<string>
+	 */
+	public function readLines(array $blobIds): \Generator {
+		$carry = '';
+		foreach ($blobIds as $id) {
+			$data = $carry . $this->loadBlob($id);
+			$lines = explode("\n", $data);
+			$carry = array_pop($lines);
+			yield from $lines;
+		}
+		if ($carry !== '') {
+			yield $carry;
+		}
+	}
+
+	/** Small encrypted objects (manifests). */
+	public function putObject(string $path, string $data): void {
+		self::putString($this->backend, $path, $this->cipher->encryptString($data, 'object:' . $path));
+	}
+
+	public function getObject(string $path): string {
+		$fh = $this->backend->get($path);
+		$data = $this->cipher->decryptString((string)stream_get_contents($fh), 'object:' . $path);
+		fclose($fh);
+		return $data;
 	}
 
 	/** @return list<string> */
