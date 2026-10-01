@@ -17,7 +17,8 @@ namespace OCA\NgBackup\Job;
 final class TreeWalker {
 	/**
 	 * @param array<string, string> $roots name => absolute directory, walked in this order
-	 * @param list<string> $exclude path prefixes ("<root>/<relative>") that are skipped entirely
+	 * @param list<string> $exclude path prefixes ("<root>/<relative>") that are skipped entirely;
+	 *                              a pattern with "*" matches one path segment (fnmatch, FNM_PATHNAME)
 	 */
 	public function __construct(
 		private array $roots,
@@ -51,10 +52,8 @@ final class TreeWalker {
 	}
 
 	private function walkDir(string $abs, string $logical, ?string $after): \Generator {
-		foreach ($this->exclude as $prefix) {
-			if ($logical !== '' && ($logical === $prefix || str_starts_with($logical, $prefix . '/'))) {
-				return;
-			}
+		if ($logical !== '' && $this->isExcluded($logical, true)) {
+			return;
 		}
 		$names = @scandir($abs);
 		if ($names === false) {
@@ -78,18 +77,24 @@ final class TreeWalker {
 				if ($after !== null && self::compare($childLogical, $after) <= 0) {
 					continue;
 				}
-				$excluded = false;
-				foreach ($this->exclude as $prefix) {
-					if ($childLogical === $prefix) {
-						$excluded = true;
-						break;
-					}
-				}
-				if (!$excluded) {
+				if (!$this->isExcluded($childLogical, false)) {
 					yield $childLogical => $childAbs;
 				}
 			}
 		}
+	}
+
+	private function isExcluded(string $logical, bool $isDir): bool {
+		foreach ($this->exclude as $pattern) {
+			if (str_contains($pattern, '*')) {
+				if (fnmatch($pattern, $logical, FNM_PATHNAME)) {
+					return true;
+				}
+			} elseif ($logical === $pattern || ($isDir && str_starts_with($logical, $pattern . '/'))) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static function isPrefix(string $dir, string $path): bool {

@@ -5,7 +5,7 @@
     <name>NG Backup</name>
     <summary>Encrypted, incremental backups of your Nextcloud with restore from the web interface</summary>
     <description><![CDATA[Work in progress, not ready for use.]]></description>
-    <version>0.0.1</version>
+    <version>0.0.2</version>
     <licence>agpl</licence>
     <author>Dillard Blom</author>
     <namespace>NgBackup</namespace>
@@ -16,6 +16,9 @@
         <lib>sodium</lib>
         <nextcloud min-version="32" max-version="35"/>
     </dependencies>
+    <background-jobs>
+        <job>OCA\NgBackup\BackgroundJob\BackupJob</job>
+    </background-jobs>
     <commands>
         <command>OCA\NgBackup\Command\KeyInit</command>
         <command>OCA\NgBackup\Command\KeyKit</command>
@@ -24,5 +27,8 @@
         <command>OCA\NgBackup\Command\TargetAdd</command>
         <command>OCA\NgBackup\Command\TargetList</command>
         <command>OCA\NgBackup\Command\TargetRemove</command>
+        <command>OCA\NgBackup\Command\RunBackup</command>
+        <command>OCA\NgBackup\Command\Status</command>
+        <command>OCA\NgBackup\Command\ListSnapshots</command>
     </commands>
 </info>
