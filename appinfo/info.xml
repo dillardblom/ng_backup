@@ -5,7 +5,7 @@
     <name>NG Backup</name>
     <summary>Encrypted, incremental backups of your Nextcloud with restore from the web interface</summary>
     <description><![CDATA[Work in progress, not ready for use.]]></description>
-    <version>0.0.4</version>
+    <version>0.0.5</version>
     <licence>agpl</licence>
     <author>Dillard Blom</author>
     <namespace>NgBackup</namespace>
@@ -33,4 +33,8 @@
         <command>OCA\NgBackup\Command\Browse</command>
         <command>OCA\NgBackup\Command\Restore</command>
     </commands>
+    <settings>
+        <admin>OCA\NgBackup\Settings\Admin</admin>
+        <admin-section>OCA\NgBackup\Settings\AdminSection</admin-section>
+    </settings>
 </info>

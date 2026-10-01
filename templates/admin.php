@@ -1,0 +1,5 @@
+<?php
+// SPDX-FileCopyrightText: 2026 Dillard Blom
+// SPDX-License-Identifier: AGPL-3.0-or-later
+?>
+<div id="ng-backup-admin"></div>

@@ -26,16 +26,32 @@ final class ExternalStorageFactory {
 	}
 
 	/**
-	 * @return list<array{id:string, name:string, auth:list<string>, parameters:array<string, mixed>}>
+	 * @return list<array{id:string, name:string, auth:list<array{id:string, name:string, parameters:array}>, parameters:array<string, mixed>}>
 	 *         available backends, to build the settings form from
 	 */
 	public function describeBackends(): array {
 		$result = [];
 		foreach ($this->backends->getAvailableBackends() as $backend) {
+			$auth = [];
+			foreach ($this->backends->getAuthMechanismsByScheme(array_keys($backend->getAuthSchemes())) as $mech) {
+				// Mechanisms that need the logged-in user's session cannot work for unattended backups.
+				if (in_array($mech->getScheme(), ['builtin', 'null'], true) && $mech->getIdentifier() !== 'null::null') {
+					continue;
+				}
+				if (str_starts_with($mech->getIdentifier(), 'password::session') || str_starts_with($mech->getIdentifier(), 'password::logincredentials')
+					|| str_starts_with($mech->getIdentifier(), 'password::userprovided') || str_starts_with($mech->getIdentifier(), 'password::global')) {
+					continue;
+				}
+				$auth[] = [
+					'id' => $mech->getIdentifier(),
+					'name' => $mech->getText(),
+					'parameters' => array_map(fn ($p) => $p->jsonSerialize(), $mech->getParameters()),
+				];
+			}
 			$result[] = [
 				'id' => $backend->getIdentifier(),
 				'name' => $backend->getText(),
-				'auth' => array_keys($backend->getAuthSchemes()),
+				'auth' => $auth,
 				'parameters' => array_map(fn ($p) => $p->jsonSerialize(), $backend->getParameters()),
 			];
 		}

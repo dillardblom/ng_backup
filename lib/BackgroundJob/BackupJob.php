@@ -40,7 +40,7 @@ class BackupJob extends TimedJob {
 		$budget = PHP_SAPI === 'cli' ? 240.0 : 20.0;
 		$deadline = microtime(true) + $budget;
 		$this->startScheduled();
-		foreach ($this->runs->findRunning() as $run) {
+		foreach ($this->runs->findRunning(null, BackupService::KIND_FULL) as $run) {
 			while (microtime(true) < $deadline && $run->getStatus() === 'running') {
 				$run = $this->backups->step($run, min($deadline, microtime(true) + $budget));
 			}
@@ -59,7 +59,7 @@ class BackupJob extends TimedJob {
 		}
 		foreach ($this->targets->list() as $t) {
 			$last = $this->runs->lastFinished($t->getId(), BackupService::KIND_FULL);
-			if ($this->runs->findRunning($t->getId()) !== [] || ($last !== null && $last->getStartedAt() >= $todayAt)) {
+			if ($this->runs->findRunning($t->getId(), BackupService::KIND_FULL) !== [] || ($last !== null && $last->getStartedAt() >= $todayAt)) {
 				continue;
 			}
 			try {

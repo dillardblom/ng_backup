@@ -1,5 +1,5 @@
-/vendor/
-/node_modules/
-/js/
 /build/
+/js/
+/node_modules/
 /spikes/out/
+/vendor/

@@ -32,9 +32,15 @@ class TargetBackends extends Base {
 			return 0;
 		}
 		foreach ($backends as $b) {
-			$output->writeln(sprintf('<info>%s</info> (%s)  auth schemes: %s', $b['id'], $b['name'], implode(', ', $b['auth'])));
+			$output->writeln(sprintf('<info>%s</info> (%s)', $b['id'], $b['name']));
 			foreach ($b['parameters'] as $key => $p) {
 				$output->writeln(sprintf('    -o %s=...   %s', $key, is_array($p) ? ($p['value'] ?? '') : ''));
+			}
+			foreach ($b['auth'] as $a) {
+				$output->writeln(sprintf('  -a %s  (%s)', $a['id'], $a['name']));
+				foreach ($a['parameters'] as $key => $p) {
+					$output->writeln(sprintf('      -o %s=...   %s', $key, is_array($p) ? ($p['value'] ?? '') : ''));
+				}
 			}
 		}
 		return 0;

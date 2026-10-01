@@ -24,9 +24,12 @@ class RunMapper extends QBMapper {
 	}
 
 	/** @return list<Run> */
-	public function findRunning(?int $targetId = null): array {
+	public function findRunning(?int $targetId = null, ?string $kind = null): array {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('*')->from($this->getTableName())->where($qb->expr()->eq('status', $qb->createNamedParameter(Run::RUNNING)));
+		if ($kind !== null) {
+			$qb->andWhere($qb->expr()->eq('kind', $qb->createNamedParameter($kind)));
+		}
 		if ($targetId !== null) {
 			$qb->andWhere($qb->expr()->eq('target_id', $qb->createNamedParameter($targetId, IQueryBuilder::PARAM_INT)));
 		}

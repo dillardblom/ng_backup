@@ -1,0 +1,27 @@
+{
+	"name": "ng_backup",
+	"version": "0.0.5",
+	"private": true,
+	"license": "AGPL-3.0-or-later",
+	"type": "module",
+	"scripts": {
+		"build": "vite --mode production build",
+		"dev": "vite --mode development build --watch"
+	},
+	"dependencies": {
+		"@nextcloud/axios": "^2.5.1",
+		"@nextcloud/dialogs": "^7.4.0",
+		"@nextcloud/l10n": "^3.4.0",
+		"@nextcloud/router": "^3.0.1",
+		"@nextcloud/vue": "^9.0.0",
+		"vue": "^3.5.0"
+	},
+	"devDependencies": {
+		"@nextcloud/vite-config": "^2.3.5",
+		"typescript": "^5.9.3",
+		"vite": "^7.3.6"
+	},
+	"engines": {
+		"node": "^22.0.0"
+	}
+}
