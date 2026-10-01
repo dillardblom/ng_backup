@@ -37,6 +37,11 @@ final class KeyRing {
 		return new self(sodium_crypto_kdf_keygen());
 	}
 
+	/** Raw master key, only for storing it encrypted on the server (ICrypto). */
+	public function exportMasterKey(): string {
+		return $this->masterKey;
+	}
+
 	public function dataKey(): string {
 		return $this->dataKey;
 	}

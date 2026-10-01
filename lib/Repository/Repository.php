@@ -43,17 +43,43 @@ final class Repository {
 	}
 
 	public static function init(IBackend $backend, #[\SensitiveParameter] string $passphrase): self {
+		$keys = KeyRing::generate();
+		return self::initWithKey($backend, $keys, $keys->wrap($passphrase));
+	}
+
+	/**
+	 * Create a repository with an existing master key. $wrappedKey is the passphrase-wrapped
+	 * copy (KeyRing::wrap) stored in the repository config, so the repository can be opened
+	 * with the passphrase from the recovery kit even when the server is gone.
+	 */
+	public static function initWithKey(IBackend $backend, KeyRing $keys, array $wrappedKey): self {
 		if ($backend->exists('config')) {
 			throw new RepositoryException('A repository already exists at this location');
 		}
-		$keys = KeyRing::generate();
 		$id = bin2hex(random_bytes(16));
-		$config = ['format' => self::FORMAT, 'id' => $id, 'created' => gmdate('c'), 'key' => $keys->wrap($passphrase)];
+		$config = ['format' => self::FORMAT, 'id' => $id, 'created' => gmdate('c'), 'key' => $wrappedKey,
+			'check' => base64_encode((new StreamCipher($keys))->encryptString($id, 'config-check'))];
 		self::putString($backend, 'config', json_encode($config, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
 		return new self($backend, $keys, $id);
 	}
 
-	public static function open(IBackend $backend, #[\SensitiveParameter] string $passphrase): self {
+	/** Open with the master key the server holds (scheduled backups, no passphrase needed). */
+	public static function openWithKey(IBackend $backend, KeyRing $keys): self {
+		$config = self::readConfig($backend);
+		try {
+			$ok = isset($config['check']) && (new StreamCipher($keys))->decryptString((string)base64_decode($config['check'], true), 'config-check') === $config['id'];
+		} catch (\OCA\NgBackup\Crypto\CryptoException) {
+			$ok = false;
+		}
+		if (!$ok) {
+			throw new RepositoryException('This repository was created with a different key');
+		}
+		$repo = new self($backend, $keys, $config['id']);
+		$repo->index->load();
+		return $repo;
+	}
+
+	private static function readConfig(IBackend $backend): array {
 		try {
 			$fh = $backend->get('config');
 		} catch (BackendException) {
@@ -64,6 +90,15 @@ final class Repository {
 		if (($config['format'] ?? 0) !== self::FORMAT) {
 			throw new RepositoryException('Unsupported repository format');
 		}
+		return $config;
+	}
+
+	public function id(): string {
+		return $this->repositoryId;
+	}
+
+	public static function open(IBackend $backend, #[\SensitiveParameter] string $passphrase): self {
+		$config = self::readConfig($backend);
 		$repo = new self($backend, KeyRing::unwrap($config['key'], $passphrase), $config['id']);
 		$repo->index->load();
 		return $repo;

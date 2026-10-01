@@ -16,4 +16,13 @@
         <lib>sodium</lib>
         <nextcloud min-version="32" max-version="35"/>
     </dependencies>
+    <commands>
+        <command>OCA\NgBackup\Command\KeyInit</command>
+        <command>OCA\NgBackup\Command\KeyKit</command>
+        <command>OCA\NgBackup\Command\KeyConfirm</command>
+        <command>OCA\NgBackup\Command\TargetBackends</command>
+        <command>OCA\NgBackup\Command\TargetAdd</command>
+        <command>OCA\NgBackup\Command\TargetList</command>
+        <command>OCA\NgBackup\Command\TargetRemove</command>
+    </commands>
 </info>
