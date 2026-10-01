@@ -28,6 +28,7 @@ class TargetService {
 		private KeyService $keys,
 		private ICrypto $crypto,
 		private IAppManager $appManager,
+		private \OCA\NgBackup\Db\DbIndexCache $indexCache,
 	) {
 	}
 
@@ -98,7 +99,7 @@ class TargetService {
 	}
 
 	public function repository(Target $target): Repository {
-		$repo = Repository::openWithKey($this->backend($target), $this->keys->keyRing());
+		$repo = Repository::openWithKey($this->backend($target), $this->keys->keyRing(), $this->indexCache);
 		if ($target->getRepositoryId() !== null && $repo->id() !== $target->getRepositoryId()) {
 			throw new \RuntimeException('The target now contains a different repository than when it was added');
 		}

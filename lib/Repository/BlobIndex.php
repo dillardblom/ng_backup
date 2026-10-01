@@ -24,21 +24,50 @@ final class BlobIndex {
 	/** @var array<string, true> blobs added in this run but whose pack is not uploaded yet */
 	private array $pending = [];
 
+	private ?IIndexCache $cache = null;
+	private string $repositoryId = '';
+	/** @var int index files downloaded by the last load() (for tests and diagnostics) */
+	public int $downloaded = 0;
+
 	public function __construct(
 		private IBackend $backend,
 		private StreamCipher $cipher,
 	) {
 	}
 
+	public function setCache(IIndexCache $cache, string $repositoryId): void {
+		$this->cache = $cache;
+		$this->repositoryId = $repositoryId;
+	}
+
+	/**
+	 * Load the index: one listing of index/, entries from the local cache where available,
+	 * and only the index files that are not cached yet are downloaded. Cached packs that no
+	 * longer exist on the backend are dropped from the cache.
+	 */
 	public function load(): void {
+		$cached = $this->cache?->all($this->repositoryId) ?? [];
+		$present = [];
+		$this->downloaded = 0;
 		foreach ($this->backend->list('index') as $path) {
 			$packId = basename($path);
-			$fh = $this->backend->get($path);
-			$entries = json_decode($this->cipher->decryptString((string)stream_get_contents($fh), 'index:' . $packId), true, 512, JSON_THROW_ON_ERROR);
-			fclose($fh);
+			$present[$packId] = true;
+			if (isset($cached[$packId])) {
+				$entries = $cached[$packId];
+			} else {
+				$fh = $this->backend->get($path);
+				$entries = json_decode($this->cipher->decryptString((string)stream_get_contents($fh), 'index:' . $packId), true, 512, JSON_THROW_ON_ERROR);
+				fclose($fh);
+				$this->downloaded++;
+				$this->cache?->put($this->repositoryId, $packId, $entries);
+			}
 			foreach ($entries as $e) {
 				$this->blobs[$e['id']] = [$packId, $e['offset'], $e['length'], $e['raw'], $e['flags']];
 			}
+		}
+		$stale = array_keys(array_diff_key($cached, $present));
+		if ($stale !== []) {
+			$this->cache?->remove($this->repositoryId, $stale);
 		}
 	}
 
@@ -68,6 +97,7 @@ final class BlobIndex {
 		fwrite($stream, $this->cipher->encryptString(json_encode($entries, JSON_THROW_ON_ERROR), 'index:' . $packId));
 		rewind($stream);
 		$this->backend->put('index/' . $packId, $stream);
+		$this->cache?->put($this->repositoryId, $packId, $entries);
 		foreach ($entries as $e) {
 			$this->blobs[$e['id']] = [$packId, $e['offset'], $e['length'], $e['raw'], $e['flags']];
 			unset($this->pending[$e['id']]);

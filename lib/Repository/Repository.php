@@ -64,7 +64,7 @@ final class Repository {
 	}
 
 	/** Open with the master key the server holds (scheduled backups, no passphrase needed). */
-	public static function openWithKey(IBackend $backend, KeyRing $keys): self {
+	public static function openWithKey(IBackend $backend, KeyRing $keys, ?IIndexCache $cache = null): self {
 		$config = self::readConfig($backend);
 		try {
 			$ok = isset($config['check']) && (new StreamCipher($keys))->decryptString((string)base64_decode($config['check'], true), 'config-check') === $config['id'];
@@ -75,8 +75,16 @@ final class Repository {
 			throw new RepositoryException('This repository was created with a different key');
 		}
 		$repo = new self($backend, $keys, $config['id']);
+		if ($cache !== null) {
+			$repo->index->setCache($cache, $config['id']);
+		}
 		$repo->index->load();
 		return $repo;
+	}
+
+	/** Index files downloaded when this repository was opened (0 when the local cache was complete). */
+	public function indexDownloads(): int {
+		return $this->index->downloaded;
 	}
 
 	private static function readConfig(IBackend $backend): array {
