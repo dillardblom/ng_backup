@@ -111,7 +111,6 @@ final class Repository {
 		rewind($encrypted);
 		$this->backend->put('snapshots/' . $snapshotId, $encrypted);
 		fclose($tree);
-		fclose($encrypted);
 
 		return ['snapshot' => $snapshotId] + $stats;
 	}
@@ -272,7 +271,6 @@ final class Repository {
 		fwrite($s, $data);
 		rewind($s);
 		$backend->put($path, $s);
-		fclose($s);
 	}
 
 	private static function readFull($fh, int $length): string {

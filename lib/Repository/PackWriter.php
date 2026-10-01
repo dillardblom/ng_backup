@@ -59,7 +59,8 @@ final class PackWriter {
 		fwrite($this->buffer, $header . pack('N', strlen($header)));
 		rewind($this->buffer);
 		$path = 'packs/' . substr($packId, 0, 2) . '/' . $packId;
-		$this->backend->put($path, $this->buffer);
+		$this->backend->put($path, $this->buffer); // closes the buffer
+		unset($this->buffer);
 		$this->index->addPack($packId, $this->entries);
 		$this->reset();
 	}

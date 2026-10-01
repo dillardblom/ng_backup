@@ -61,7 +61,6 @@ final class BlobIndex {
 		fwrite($stream, $this->cipher->encryptString(json_encode($entries, JSON_THROW_ON_ERROR), 'index:' . $packId));
 		rewind($stream);
 		$this->backend->put('index/' . $packId, $stream);
-		fclose($stream);
 		foreach ($entries as $e) {
 			$this->blobs[$e['id']] = [$packId, $e['offset'], $e['length'], $e['raw'], $e['flags']];
 			unset($this->pending[$e['id']]);

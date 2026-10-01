@@ -35,6 +35,9 @@ final class LocalBackend implements IBackend {
 			}
 		} finally {
 			fclose($out);
+			if (is_resource($stream)) {
+				fclose($stream);
+			}
 		}
 		if (!rename($tmp, $target)) {
 			@unlink($tmp);

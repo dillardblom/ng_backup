@@ -12,7 +12,11 @@ namespace OCA\NgBackup\Backend;
  * Implementations: a local directory (spike, tests), and adapters over files_external storages.
  */
 interface IBackend {
-	/** Store an object; the stream is read to EOF. Must not leave a partial object behind on failure. */
+	/**
+	 * Store an object; the stream is read to EOF. Takes ownership of the stream: it is always
+	 * closed afterwards (some storages, like files_external's S3, close it themselves).
+	 * Must not leave a partial object behind on failure.
+	 */
 	public function put(string $path, $stream): void;
 
 	/** @return resource readable stream of the whole object */
