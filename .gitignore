@@ -1,5 +1,7 @@
 /build/
+/css/
 /js/
 /node_modules/
+.phpunit.result.cache
 /spikes/out/
 /vendor/
