@@ -272,7 +272,7 @@ final class Repository {
 	private function storeBlob(string $data, PackWriter $packs, array &$stats): string {
 		$id = $this->keys->blobId($data);
 		if ($this->index->has($id)) {
-			$stats['dupBlobs']++;
+			$stats['dupBlobs'] = ($stats['dupBlobs'] ?? 0) + 1;
 			return $id;
 		}
 		$flags = 0;
@@ -282,8 +282,8 @@ final class Repository {
 			$payload = $deflated;
 			$flags |= self::FLAG_DEFLATE;
 		}
-		$stats['uploaded'] += $packs->add($id, $this->cipher->encryptString($payload, 'blob:' . $id), strlen($data), $flags);
-		$stats['newBlobs']++;
+		$stats['uploaded'] = ($stats['uploaded'] ?? 0) + $packs->add($id, $this->cipher->encryptString($payload, 'blob:' . $id), strlen($data), $flags);
+		$stats['newBlobs'] = ($stats['newBlobs'] ?? 0) + 1;
 		return $id;
 	}
 
