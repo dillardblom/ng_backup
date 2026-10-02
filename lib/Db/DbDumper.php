@@ -31,6 +31,8 @@ use OCA\NgBackup\Repository\Repository;
  */
 final class DbDumper {
 	private const BATCH = 2000;
+	/** Rows per INSERT on restore; keeps the number of bound parameters well below database limits. */
+	private const INSERT_ROWS = 100;
 	/** Tables without a primary key are read in one query; refuse that above this size. */
 	private const MAX_ROWS_WITHOUT_PK = 50000;
 
@@ -41,39 +43,87 @@ final class DbDumper {
 	}
 
 	/**
-	 * @return array{tables: array<string, array{blobs: list<string>, rows: int, bytes: int, sha256: string}>, provider: string}
+	 * Dump everything in one go (one transaction, fully consistent).
+	 *
+	 * @return array{tables: array<string, array{blobs: list<string>, rows: int, bytes: int, sha256: string}>, sequences: array, provider: string, consistent: bool}
 	 */
 	public function dump(Repository $repo, array &$stats): array {
-		$sm = $this->db->createSchemaManager();
-		$tables = array_values(array_filter($sm->listTableNames(), fn (string $t) => str_starts_with($t, $this->prefix)));
-		sort($tables);
+		$state = $this->startDump();
+		while (!$state['done']) {
+			$state = $this->dumpStep($repo, $state, PHP_FLOAT_MAX, $stats);
+		}
+		return $this->manifest($state);
+	}
 
+	/** State for a resumable dump (see dumpStep()). */
+	public function startDump(): array {
+		$tables = array_values(array_filter($this->db->createSchemaManager()->listTableNames(), fn (string $t) => str_starts_with($t, $this->prefix)));
+		sort($tables);
+		return ['tables' => $tables, 'i' => 0, 'after' => null, 'segments' => [], 'rows' => 0, 'bytes' => 0, 'hash' => null,
+			'result' => [], 'sequences' => [], 'steps' => 0, 'done' => false];
+	}
+
+	/**
+	 * Dump tables until $deadline, inside one REPEATABLE READ transaction for this step. A table
+	 * that does not fit is resumed in the next step at the last primary key written. If the whole
+	 * dump fits in one step it is fully consistent; otherwise each step is consistent on its own
+	 * ('consistent' => false in the manifest).
+	 */
+	public function dumpStep(Repository $repo, array $state, float $deadline, array &$stats): array {
+		$state['steps']++;
+		$sm = $this->db->createSchemaManager();
 		$this->db->setTransactionIsolation(TransactionIsolationLevel::REPEATABLE_READ);
 		$this->db->beginTransaction();
 		try {
 			if ($this->db->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\PostgreSQLPlatform) {
 				$this->db->executeStatement('SET TRANSACTION READ ONLY');
 			}
-			$result = [];
-			foreach ($tables as $table) {
+			while ($state['i'] < count($state['tables'])) {
+				$table = $state['tables'][$state['i']];
+				$schema = $sm->introspectTable($table);
 				$writer = $repo->blobWriter($stats);
-				$hash = hash_init('sha256');
-				$rows = 0;
-				foreach ($this->tableLines($sm->introspectTable($table)) as $kind => $line) {
+				$hash = $state['hash'] !== null ? unserialize(base64_decode($state['hash']), ['allowed_classes' => [\HashContext::class]]) : hash_init('sha256');
+				if ($state['after'] === null && $state['segments'] === []) {
+					$writer->write($this->header($schema) . "\n");
+				}
+				$complete = true;
+				foreach ($this->rowLines($schema, $state['after']) as [$key, $line]) {
 					$writer->write($line . "\n");
-					if ($kind === 'row') {
-						hash_update($hash, $line . "\n");
-						$rows++;
+					hash_update($hash, $line . "\n");
+					$state['rows']++;
+					$state['after'] = $key;
+					if (microtime(true) >= $deadline) {
+						$complete = false;
+						break;
 					}
 				}
-				$result[$table] = ['blobs' => $writer->finish(), 'rows' => $rows, 'bytes' => $writer->bytes(), 'sha256' => hash_final($hash)];
+				$state['segments'][] = $writer->finish();
+				$state['bytes'] += $writer->bytes();
+				if (!$complete) {
+					$state['hash'] = base64_encode(serialize($hash));
+					break;
+				}
+				$state['result'][$table] = ['blobs' => array_merge(...$state['segments']), 'rows' => $state['rows'],
+					'bytes' => $state['bytes'], 'sha256' => hash_final($hash)];
+				$state = array_merge($state, ['i' => $state['i'] + 1, 'after' => null, 'segments' => [], 'rows' => 0, 'bytes' => 0, 'hash' => null]);
+				if (microtime(true) >= $deadline && $state['i'] < count($state['tables'])) {
+					break;
+				}
 			}
-			$sequences = $this->sequenceStates($tables);
+			if ($state['i'] >= count($state['tables'])) {
+				$state['sequences'] = $this->sequenceStates($state['tables']);
+				$state['done'] = true;
+			}
 		} finally {
 			$this->db->rollBack();
 		}
 		$repo->flushPacks();
-		return ['tables' => $result, 'sequences' => $sequences, 'provider' => get_class($this->db->getDatabasePlatform())];
+		return $state;
+	}
+
+	public function manifest(array $state): array {
+		return ['tables' => $state['result'], 'sequences' => $state['sequences'],
+			'provider' => get_class($this->db->getDatabasePlatform()), 'consistent' => $state['steps'] === 1];
 	}
 
 	/**
@@ -82,15 +132,22 @@ final class DbDumper {
 	 *
 	 * @param array{tables: array<string, array{blobs: list<string>, rows: int}>} $manifest
 	 */
-	public function restore(Repository $repo, array $manifest): int {
+	public function restore(Repository $repo, array $manifest, ?array &$report = null): int {
 		$sm = $this->db->createSchemaManager();
 		$existing = array_flip($sm->listTableNames());
 		$total = 0;
+		$report = ['skipped' => [], 'restored' => []];
 		$this->db->beginTransaction();
 		try {
 			foreach ($manifest['tables'] as $table => $info) {
 				if (!isset($existing[$table])) {
 					throw new \RuntimeException("Table $table from the backup does not exist here (different app versions?)");
+				}
+				// Unchanged since the backup: leave it alone (much faster than delete + insert).
+				$live = $this->checksum($table);
+				if ($live['rows'] === $info['rows'] && hash_equals($info['sha256'], $live['sha256'])) {
+					$report['skipped'][] = $table;
+					continue;
 				}
 				$this->db->executeStatement('DELETE FROM ' . $this->db->quoteIdentifier($table));
 				$columns = null;
@@ -112,17 +169,18 @@ final class DbDumper {
 						if (is_array($value) && isset($value['$b'])) {
 							$value = base64_decode($value['$b'], true); // text that was not valid UTF-8
 						}
-						$row[$col] = ($value !== null && isset($binary[$col])) ? base64_decode($value, true) : $value;
+						$row[] = ($value !== null && isset($binary[$col])) ? base64_decode($value, true) : $value;
 					}
 					$batch[] = $row;
-					if (count($batch) >= 500) {
-						$total += $this->insertBatch($table, $batch, $binary);
+					if (count($batch) >= self::INSERT_ROWS) {
+						$total += $this->insertBatch($table, $columns, $batch, $binary);
 						$batch = [];
 					}
 				}
 				if ($batch !== []) {
-					$total += $this->insertBatch($table, $batch, $binary);
+					$total += $this->insertBatch($table, $columns, $batch, $binary);
 				}
+				$report['restored'][] = $table;
 			}
 			$this->restoreSequences($manifest['sequences'] ?? []);
 			$this->db->commit();
@@ -135,20 +193,22 @@ final class DbDumper {
 
 	/** Same checksum as dump(): sha256 over the row lines in primary-key order. */
 	public function checksum(string $table): array {
-		$sm = $this->db->createSchemaManager();
 		$hash = hash_init('sha256');
 		$rows = 0;
-		foreach ($this->tableLines($sm->introspectTable($table)) as $kind => $line) {
-			if ($kind === 'row') {
-				hash_update($hash, $line . "\n");
-				$rows++;
-			}
+		foreach ($this->rowLines($this->db->createSchemaManager()->introspectTable($table)) as [, $line]) {
+			hash_update($hash, $line . "\n");
+			$rows++;
 		}
 		return ['rows' => $rows, 'sha256' => hash_final($hash)];
 	}
 
-	/** @return \Generator<string, string> 'header' => line, then 'row' => line ... */
-	private function tableLines(\Doctrine\DBAL\Schema\Table $table): \Generator {
+	private function header(\Doctrine\DBAL\Schema\Table $table): string {
+		[$columns, $binary, $pk] = $this->describe($table);
+		return json_encode(['table' => $table->getName(), 'columns' => $columns, 'binary' => $binary, 'pk' => $pk], JSON_THROW_ON_ERROR);
+	}
+
+	/** @return array{0: list<string>, 1: list<string>, 2: list<string>} columns, binary columns, primary key */
+	private function describe(\Doctrine\DBAL\Schema\Table $table): array {
 		$columns = array_values(array_map(fn ($c) => $c->getName(), $table->getColumns()));
 		$binary = [];
 		foreach ($table->getColumns() as $c) {
@@ -156,25 +216,34 @@ final class DbDumper {
 				$binary[] = $c->getName();
 			}
 		}
-		$pk = $table->getPrimaryKey()?->getColumns() ?? [];
-		yield 'header' => json_encode(['table' => $table->getName(), 'columns' => array_values($columns), 'binary' => $binary, 'pk' => $pk], JSON_THROW_ON_ERROR);
+		return [$columns, $binary, $table->getPrimaryKey()?->getColumns() ?? []];
+	}
 
+	/**
+	 * Rows in primary-key order, after the key $after (resume), as [key, JSON line].
+	 *
+	 * @return \Generator<array{0: list<mixed>|null, 1: string}>
+	 */
+	private function rowLines(\Doctrine\DBAL\Schema\Table $table, ?array $after = null): \Generator {
+		[$columns, $binary, $pk] = $this->describe($table);
 		$binaryFlip = array_flip($binary);
 		$q = fn (string $c) => $this->db->quoteIdentifier($c);
 		$select = 'SELECT ' . implode(', ', array_map($q, $columns)) . ' FROM ' . $q($table->getName());
-
 		if ($pk === []) {
-			// Nextcloud requires primary keys; small odd tables are read in one query.
+			// Nextcloud requires primary keys; small odd tables are read in one query (not resumable).
 			$count = (int)$this->db->fetchOne('SELECT COUNT(*) FROM ' . $q($table->getName()));
 			if ($count > self::MAX_ROWS_WITHOUT_PK) {
 				throw new \RuntimeException("Table {$table->getName()} has no primary key and $count rows; cannot dump it with bounded memory");
 			}
 			$batches = [$this->db->fetchAllNumeric($select)];
+			$pkIdx = [];
 		} else {
-			$batches = $this->keysetBatches($select, $pk, $columns);
+			$batches = $this->keysetBatches($select, $pk, $columns, $after);
+			$pkIdx = array_map(fn ($c) => array_search($c, $columns, true), $pk);
 		}
 		foreach ($batches as $rows) {
 			foreach ($rows as $row) {
+				$key = $pkIdx === [] ? null : array_map(fn ($i) => $row[$i], $pkIdx);
 				foreach ($columns as $i => $col) {
 					if (is_resource($row[$i])) {
 						$row[$i] = stream_get_contents($row[$i]);
@@ -189,23 +258,23 @@ final class DbDumper {
 						$row[$i] = (string)(is_bool($row[$i]) ? (int)$row[$i] : $row[$i]);
 					}
 				}
-				yield 'row' => json_encode($row, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+				yield [$key, json_encode($row, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)];
 			}
 		}
 	}
 
 	/** @return \Generator<list<list<mixed>>> */
-	private function keysetBatches(string $select, array $pk, array $columns): \Generator {
+	private function keysetBatches(string $select, array $pk, array $columns, ?array $after): \Generator {
 		$q = fn (string $c) => $this->db->quoteIdentifier($c);
 		$order = ' ORDER BY ' . implode(', ', array_map($q, $pk));
-		$pkIdx = array_map(fn ($c) => array_search($c, $columns, true), $pk);
-		$last = null;
+		$cols = array_map(fn ($c) => $q($c), $pk);
+		$last = $after;
 		while (true) {
 			$sql = $select;
 			$params = [];
 			if ($last !== null) {
 				// Row-value comparison (a, b) > (?, ?), supported by PostgreSQL, MySQL/MariaDB and SQLite.
-				$sql .= ' WHERE (' . implode(', ', array_map($q, $pk)) . ') > (' . implode(', ', array_fill(0, count($pk), '?')) . ')';
+				$sql .= ' WHERE (' . implode(', ', $cols) . ') > (' . implode(', ', array_fill(0, count($pk), '?')) . ')';
 				$params = $last;
 			}
 			$rows = $this->db->fetchAllNumeric($sql . $order . ' LIMIT ' . self::BATCH, $params);
@@ -213,22 +282,29 @@ final class DbDumper {
 				return;
 			}
 			yield $rows;
-			$end = end($rows);
-			$last = array_map(fn ($i) => $end[$i], $pkIdx);
 			if (count($rows) < self::BATCH) {
 				return;
 			}
+			$end = end($rows);
+			$last = array_map(fn ($c) => $end[array_search($c, $columns, true)], $pk);
 		}
 	}
 
-	private function insertBatch(string $table, array $rows, array $binary): int {
+	/** One INSERT with several rows (portable multi-row VALUES). */
+	private function insertBatch(string $table, array $columns, array $rows, array $binary): int {
+		$q = fn (string $c) => $this->db->quoteIdentifier($c);
+		$placeholders = '(' . implode(', ', array_fill(0, count($columns), '?')) . ')';
+		$sql = 'INSERT INTO ' . $q($table) . ' (' . implode(', ', array_map($q, $columns)) . ') VALUES '
+			. implode(', ', array_fill(0, count($rows), $placeholders));
+		$params = [];
+		$types = [];
 		foreach ($rows as $row) {
-			$types = [];
-			foreach ($row as $col => $_) {
-				$types[$col] = isset($binary[$col]) ? \Doctrine\DBAL\ParameterType::LARGE_OBJECT : \Doctrine\DBAL\ParameterType::STRING;
+			foreach ($columns as $i => $col) {
+				$params[] = $row[$i];
+				$types[] = isset($binary[$col]) ? \Doctrine\DBAL\ParameterType::LARGE_OBJECT : ($row[$i] === null ? \Doctrine\DBAL\ParameterType::NULL : \Doctrine\DBAL\ParameterType::STRING);
 			}
-			$this->db->insert($this->db->quoteIdentifier($table), array_combine(array_map(fn ($c) => $this->db->quoteIdentifier($c), array_keys($row)), $row), array_values($types));
 		}
+		$this->db->executeStatement($sql, $params, $types);
 		return count($rows);
 	}
 

@@ -71,6 +71,17 @@ $dumpBytes = array_sum(array_column($manifest['tables'], 'bytes'));
 printf("dump size (plain JSON lines): %.1f MiB\n", $dumpBytes / 1048576);
 $check('checksums in dump match live tables', array_map(fn ($x) => $x['sha256'], $manifest['tables']) === array_map(fn ($x) => $x['sha256'], $before));
 
+// The same dump in many tiny steps (as under web cron) must give identical table checksums.
+$stepped = $dumper->startDump();
+$stepStats = [];
+while (!$stepped['done']) {
+	$stepped = $dumper->dumpStep($repo, $stepped, microtime(true) + 0.05, $stepStats);
+}
+$sm = $dumper->manifest($stepped);
+printf("stepped dump: %d steps, consistent=%s\n", $stepped['steps'], json_encode($sm['consistent']));
+$check('stepped dump: same checksums as the one-shot dump', array_map(fn ($x) => $x['sha256'], $sm['tables']) === array_map(fn ($x) => $x['sha256'], $manifest['tables']));
+$check('stepped dump is marked as not fully consistent', $stepped['steps'] === 1 || $sm['consistent'] === false);
+
 // Second dump without changes: blobs are reused.
 $stats2 = ['newBlobs' => 0, 'dupBlobs' => 0, 'uploaded' => 0];
 $dumper->dump($repo, $stats2);
@@ -90,8 +101,10 @@ memory_reset_peak_usage();
 $t = microtime(true);
 $repo2 = Repository::open(new LocalBackend($repoDir), 'spike passphrase');
 $m = json_decode($repo2->getObject('db/1'), true, 512, JSON_THROW_ON_ERROR);
-$rows = $dumper->restore($repo2, $m);
-printf("restore: %d rows in %.1fs, peak %.1f MiB\n", $rows, microtime(true) - $t, memory_get_peak_usage() / 1048576);
+$report = [];
+$rows = $dumper->restore($repo2, $m, $report);
+printf("restore: %d rows in %.1fs, peak %.1f MiB, %d tables restored, %d unchanged skipped\n", $rows, microtime(true) - $t, memory_get_peak_usage() / 1048576, count($report['restored']), count($report['skipped']));
+$check('restore only rewrote the damaged tables', count($report['restored']) === count($changed));
 
 $mismatch = [];
 foreach ($tables as $tb) {

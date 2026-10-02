@@ -127,14 +127,24 @@ class BackupService {
 			$state = json_decode($run->getState(), true, 512, JSON_THROW_ON_ERROR);
 
 			if ($run->getPhase() === 'db') {
-				@set_time_limit(0); // the dump is one transaction; it cannot be split across requests yet
-				$dbStats = [];
-				$manifest = (new DbDumper($this->db->getInner(), $this->config->getSystemValueString('dbtableprefix', 'oc_')))->dump($repo, $dbStats);
-				$repo->putObject('db/' . $state['files']['snapshot'], json_encode($manifest, JSON_THROW_ON_ERROR));
-				$state['files']['meta']['db'] = 'db/' . $state['files']['snapshot'];
-				$state['dbStats'] = $dbStats + ['tables' => count($manifest['tables']),
-					'rows' => array_sum(array_column($manifest['tables'], 'rows'))];
-				$run->setPhase('files');
+				$dumper = new DbDumper($this->db->getInner(), $this->config->getSystemValueString('dbtableprefix', 'oc_'));
+				$dbStats = $state['dbStats'] ?? [];
+				// With system cron the whole dump usually fits in one step (one transaction, fully
+				// consistent). Under web cron it continues per step; the snapshot then says so.
+				$dump = $dumper->dumpStep($repo, $state['dump'] ?? $dumper->startDump(), $deadline, $dbStats);
+				$state['dbStats'] = $dbStats;
+				if ($dump['done']) {
+					$manifest = $dumper->manifest($dump);
+					$repo->putObject('db/' . $state['files']['snapshot'], json_encode($manifest, JSON_THROW_ON_ERROR));
+					$state['files']['meta']['db'] = 'db/' . $state['files']['snapshot'];
+					$state['files']['meta']['dbConsistent'] = $manifest['consistent'];
+					$state['dbStats'] += ['tables' => count($manifest['tables']), 'rows' => array_sum(array_column($manifest['tables'], 'rows')),
+						'steps' => $dump['steps'], 'consistent' => $manifest['consistent']];
+					unset($state['dump']);
+					$run->setPhase('files');
+				} else {
+					$state['dump'] = $dump;
+				}
 			} else {
 				$state['files'] = BackupRun::step($repo, $state['files'], $deadline);
 				if ($state['files']['phase'] === 'done') {
