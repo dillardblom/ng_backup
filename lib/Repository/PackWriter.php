@@ -32,6 +32,7 @@ final class PackWriter {
 		private StreamCipher $cipher,
 		private BlobIndex $index,
 		private int $targetSize = 32 * 1048576,
+		private ?int $maxBytes = null,
 	) {
 		$this->reset();
 	}
@@ -63,6 +64,12 @@ final class PackWriter {
 	public function flush(): void {
 		if ($this->entries === []) {
 			return;
+		}
+		if ($this->maxBytes !== null && $this->index->storedBytes() + $this->size > $this->maxBytes) {
+			$this->index->dropPending(array_column($this->entries, 'id'));
+			$this->reset();
+			throw new QuotaExceededException(sprintf('Storage limit of this location reached (%.1f GiB): backup stopped',
+				$this->maxBytes / 1073741824));
 		}
 		$packId = bin2hex(random_bytes(16));
 		$header = $this->cipher->encryptString(json_encode($this->entries, JSON_THROW_ON_ERROR), 'pack-header:' . $packId);

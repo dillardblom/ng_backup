@@ -146,4 +146,16 @@ class RepositoryTest extends TestCase {
 		$this->assertFileDoesNotExist(dirname($target, 2) . '/escaped.txt');
 		$this->assertFileDoesNotExist(dirname($target) . '/escaped.txt');
 	}
+
+	public function testStorageLimitStopsTheBackup(): void {
+		$repo = Repository::init($this->backend, 'pw');
+		$repo->setMaxBytes(6 * 1048576); // less than the test tree
+		try {
+			$repo->backupDirectory($this->src);
+			$this->fail('backup should hit the limit');
+		} catch (\OCA\NgBackup\Repository\QuotaExceededException) {
+		}
+		$this->assertLessThanOrEqual(6 * 1048576, $repo->storedBytes());
+		$this->assertSame([], $repo->listSnapshots(), 'no snapshot from an incomplete backup');
+	}
 }

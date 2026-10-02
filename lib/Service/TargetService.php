@@ -90,6 +90,12 @@ class TargetService {
 		return ctype_digit($nameOrId) ? $this->mapper->find((int)$nameOrId) : $this->mapper->findByName($nameOrId);
 	}
 
+	/** Size limit for the data stored on this location (null = none). */
+	public function setMaxBytes(Target $target, ?int $maxBytes): Target {
+		$target->setMaxBytes($maxBytes);
+		return $this->mapper->update($target);
+	}
+
 	public function setAppendOnly(Target $target, bool $appendOnly): Target {
 		$target->setAppendOnly($appendOnly);
 		return $this->mapper->update($target);
@@ -109,6 +115,7 @@ class TargetService {
 		if ($target->getRepositoryId() !== null && $repo->id() !== $target->getRepositoryId()) {
 			throw new \RuntimeException('The target now contains a different repository than when it was added');
 		}
+		$repo->setMaxBytes($target->getMaxBytes());
 		return $repo;
 	}
 

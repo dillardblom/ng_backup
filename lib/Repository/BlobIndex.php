@@ -139,6 +139,15 @@ final class BlobIndex {
 		}
 	}
 
+	/** Bytes of all blobs in the index (encrypted size, i.e. what is stored in packs). */
+	public function storedBytes(): int {
+		$total = 0;
+		foreach ($this->blobs as [, , $length]) {
+			$total += $length;
+		}
+		return $total;
+	}
+
 	public function count(): int {
 		return count($this->blobs);
 	}

@@ -24,6 +24,8 @@ use OCP\AppFramework\Db\Entity;
  * @method void setRepositoryId(?string $v)
  * @method bool|null getAppendOnly()
  * @method void setAppendOnly(bool $v)
+ * @method int|null getMaxBytes()
+ * @method void setMaxBytes(?int $v)
  * @method int getCreatedAt()
  * @method void setCreatedAt(int $v)
  */
@@ -36,9 +38,11 @@ class Target extends Entity {
 	protected ?string $repositoryId = null;
 	protected int $createdAt = 0;
 	protected ?bool $appendOnly = null;
+	protected ?int $maxBytes = null;
 
 	public function __construct() {
 		$this->addType('createdAt', 'integer');
 		$this->addType('appendOnly', 'boolean');
+		$this->addType('maxBytes', 'integer');
 	}
 }

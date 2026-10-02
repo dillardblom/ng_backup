@@ -1,7 +1,10 @@
 /build/
+cred-*
+*credentials*
 /css/
 /js/
 /node_modules/
 .phpunit.result.cache
+*.secret
 /spikes/out/
 /vendor/

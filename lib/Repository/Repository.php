@@ -32,6 +32,7 @@ final class Repository {
 	private StreamCipher $cipher;
 	private BlobIndex $index;
 	private ?PackWriter $runPacks = null;
+	private ?int $maxBytes = null;
 	private Catalog $catalog;
 
 	private function __construct(
@@ -93,6 +94,15 @@ final class Repository {
 			fn () => array_map('basename', $this->backend->list('trash/info')));
 	}
 
+	/** Refuse uploads that would make the stored data larger than this (null = no limit). */
+	public function setMaxBytes(?int $maxBytes): void {
+		$this->maxBytes = $maxBytes;
+	}
+
+	public function storedBytes(): int {
+		return $this->index->storedBytes();
+	}
+
 	/** Current catalog generation (for status and tests). */
 	public function catalogGeneration(): int {
 		return $this->catalog->gen;
@@ -145,7 +155,7 @@ final class Repository {
 	public function backupDirectory(string $source, ?string $parent = null, string $label = ''): array {
 		$source = rtrim($source, '/');
 		$previous = $parent !== null ? $this->loadEntries($parent) : [];
-		$packs = new PackWriter($this->backend, $this->cipher, $this->index);
+		$packs = new PackWriter($this->backend, $this->cipher, $this->index, 32 * 1048576, $this->maxBytes);
 		$stats = ['files' => 0, 'reused' => 0, 'read' => 0, 'newBlobs' => 0, 'dupBlobs' => 0, 'uploaded' => 0];
 
 		$tree = fopen('php://temp/maxmemory:' . (4 * 1048576), 'w+b');
@@ -226,7 +236,7 @@ final class Repository {
 	 * run is done, so the last pack is uploaded before anything references it.
 	 */
 	public function blobWriter(array &$stats): BlobWriter {
-		$this->runPacks ??= new PackWriter($this->backend, $this->cipher, $this->index);
+		$this->runPacks ??= new PackWriter($this->backend, $this->cipher, $this->index, 32 * 1048576, $this->maxBytes);
 		$packs = $this->runPacks;
 		return new BlobWriter(function (string $data) use ($packs, &$stats): string {
 			return $this->storeBlob($data, $packs, $stats);
@@ -258,7 +268,7 @@ final class Repository {
 
 	/** Store one blob of file data in the current run (deduplicated); returns its id. */
 	public function storeData(string $data, array &$stats): string {
-		$this->runPacks ??= new PackWriter($this->backend, $this->cipher, $this->index);
+		$this->runPacks ??= new PackWriter($this->backend, $this->cipher, $this->index, 32 * 1048576, $this->maxBytes);
 		return $this->storeBlob($data, $this->runPacks, $stats);
 	}
 
@@ -481,6 +491,7 @@ final class Repository {
 			} else {
 				$stats['repacked']++;
 				if (!$dryRun) {
+					// No size limit here: repacking is how space is freed.
 					$writer ??= new PackWriter($this->backend, $this->cipher, $this->index);
 					$path = 'packs/' . substr($packId, 0, 2) . '/' . $packId;
 					foreach ($blobs as $b) {
