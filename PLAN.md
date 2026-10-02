@@ -325,6 +325,19 @@ een backup-app die niet betrouwbaar is, is erger dan geen backup-app.
    export, verwijderen, opnieuw aanmaken), óf terugzetten als `<gebruiker>-bak`, zie 3.8.
 8. **Fase 0 afgerond (2026-10-01),** resultaten in `spikes/RESULTS.md`.
 
+## 9. Releases en versies (besluit 2026-10-02)
+
+| Versie | Betekenis |
+|---|---|
+| 0.1.0-alpha.N | publiek; meetesten gewaardeerd op een kopie van productie (dev, test, staging) |
+| 0.9.0-beta.N | mag meedraaien op productie, naast de reguliere backup; volledige restore aanwezig en getest |
+| 1.0.0-rc.N | releasekandidaten, alleen bugfixes |
+| 1.0.0 | stabiel: vervanging van de reguliere backup, noodherstel bewezen |
+| 1.2.0 e.v. | functies van fase 2 (restore per gebruiker, FTP/SMB, verificatie, ...) |
+
+Volgorde: fase 1 grondig testen, reviewen en debuggen; dan nadenken over 0.1.0-alpha.1. Een
+minimale volledige restore (`occ backup:restore:full` op een verse installatie) komt vóór de beta.
+
 ## Bijlage: lessen uit nextcloud/backup (test NC34, 2026-10-01)
 
 - Externe programma's (`pg_dump`) en extensies (`pgsql`, `mysqli`) → onbruikbaar op standaard/hosted.
