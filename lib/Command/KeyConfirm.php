@@ -28,7 +28,9 @@ class KeyConfirm extends Command {
 	protected function configure(): void {
 		$this->setName('backup:key:confirm')
 			->setDescription('Confirm that the recovery kit is stored safely (required before the first backup)')
-			->addOption('user', 'u', InputOption::VALUE_REQUIRED, 'Admin user id recorded with the confirmation', 'occ');
+			->addOption('user', 'u', InputOption::VALUE_REQUIRED, 'Admin user id recorded with the confirmation', 'occ')
+			->addOption('code', null, InputOption::VALUE_REQUIRED, 'Confirmation code from the kit file (for scripts; asked otherwise)')
+			->addOption('confirm', null, InputOption::VALUE_REQUIRED, 'The confirmation phrase "' . self::CONFIRMATION . '" (for scripts; asked otherwise)');
 	}
 
 	protected function execute(InputInterface $input, OutputInterface $output): int {
@@ -40,12 +42,12 @@ class KeyConfirm extends Command {
 		$output->writeln('');
 		$output->writeln(wordwrap(self::STATEMENT, 78));
 		$output->writeln('');
-		$code = (string)$this->getHelper('question')->ask($input, $output, new Question('Confirmation code from the recovery kit file ("confirmation_code"): '));
+		$code = $input->getOption('code') ?? (string)$this->getHelper('question')->ask($input, $output, new Question('Confirmation code from the recovery kit file ("confirmation_code"): '));
 		if (!$this->keys->checkKitCode($code)) {
 			$output->writeln('<error>That code does not match the current recovery kit (download it with occ backup:key:kit first).</error>');
 			return 1;
 		}
-		$answer = (string)$this->getHelper('question')->ask($input, $output, new Question('Type "' . self::CONFIRMATION . '" to proceed: '));
+		$answer = $input->getOption('confirm') ?? (string)$this->getHelper('question')->ask($input, $output, new Question('Type "' . self::CONFIRMATION . '" to proceed: '));
 		if (trim($answer) !== self::CONFIRMATION) {
 			$output->writeln('<error>Not confirmed.</error>');
 			return 1;

@@ -48,9 +48,11 @@ $seqStates = static function () use ($db, $prefix): array {
 	return $out;
 };
 // Let one sequence run ahead of the data (deleted rows, rollbacks): MAX+1 would be wrong.
-$fcSeq = $db->fetchOne("SELECT pg_get_serial_sequence(?, 'fileid')", [$prefix . 'filecache']);
-for ($i = 0; $i < 50; $i++) {
-	$db->fetchOne('SELECT nextval(CAST(? AS regclass))', [$fcSeq]);
+if ($db->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\PostgreSQLPlatform) {
+	$fcSeq = $db->fetchOne("SELECT pg_get_serial_sequence(?, 'fileid')", [$prefix . 'filecache']);
+	for ($i = 0; $i < 50; $i++) {
+		$db->fetchOne('SELECT nextval(CAST(? AS regclass))', [$fcSeq]);
+	}
 }
 $seqBefore = $seqStates();
 $before = [];
@@ -122,7 +124,8 @@ if ($mismatch) {
 // Sequences must be restored exactly (PostgreSQL), including one that ran ahead of the data.
 $seqAfter = $seqStates();
 $diff = array_filter(array_keys($seqBefore), fn ($k) => ($seqAfter[$k] ?? null) !== $seqBefore[$k]);
-$check(sprintf('all %d sequences restored exactly (filecache seq 50 ahead of data)', count($seqBefore)), $diff === [] && count($seqBefore) > 0);
+$isPg = $db->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\PostgreSQLPlatform;
+$check(sprintf('all %d sequences restored exactly%s', count($seqBefore), $isPg ? ' (filecache seq 50 ahead of data)' : ' (n/a on this database)'), $diff === [] && (!$isPg || count($seqBefore) > 0));
 if ($diff) {
 	foreach (array_slice($diff, 0, 5) as $k) {
 		echo "$k before=" . json_encode($seqBefore[$k]) . ' after=' . json_encode($seqAfter[$k] ?? null) . "\n";

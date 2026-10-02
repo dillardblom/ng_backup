@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: 2026 Dillard Blom
+# SPDX-License-Identifier: AGPL-3.0-or-later
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.2', '8.3', '8.4']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: sodium, zip
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      - run: vendor/bin/phpunit -c tests/phpunit.xml
+
+  integration:
+    # Full round trip (key, kit, location, backup, incremental, restore modes, database dump and
+    # restore, retention, trash) on a fresh Nextcloud per version and database.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        nextcloud: ['32', '33', '34', '35']
+        database: ['sqlite', 'mariadb', 'pgsql']
+    steps:
+      - uses: actions/checkout@v4
+      - name: Round trip on Nextcloud ${{ matrix.nextcloud }} / ${{ matrix.database }}
+        run: tests/integration/matrix.sh "${{ matrix.nextcloud }}" "${{ matrix.database }}"

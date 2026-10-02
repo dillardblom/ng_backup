@@ -218,6 +218,15 @@ class BackupService {
 			'data/*/cache',
 			'data/*/uploads',
 		];
+		// SQLite: the database file is in the data directory; it is backed up by the logical dump,
+		// and copying the live file would give an inconsistent copy.
+		if ($this->config->getSystemValueString('dbtype') === 'sqlite3') {
+			$dbName = $this->config->getSystemValueString('dbname', 'owncloud');
+			$exclude[] = "data/$dbName.db";
+			$exclude[] = "data/$dbName.db-journal";
+			$exclude[] = "data/$dbName.db-wal";
+			$exclude[] = "data/$dbName.db-shm";
+		}
 		$logFile = $this->config->getSystemValueString('logfile', '');
 		if ($logFile !== '' && str_starts_with($logFile, $dataDir . '/')) {
 			$exclude[] = 'data/' . substr($logFile, strlen($dataDir) + 1);

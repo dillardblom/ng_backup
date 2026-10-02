@@ -121,11 +121,33 @@ class TargetService {
 		return new StorageBackend($this->factory()->create($backend, $auth, $options), $basePath);
 	}
 
+	private ?ExternalStorageFactory $factory = null;
+
+	/**
+	 * files_external's connection code, without changing the app's state:
+	 * - enabled: it is booted by Nextcloud; use its own BackendService;
+	 * - disabled: do NOT boot it (booting registers its mount provider and listeners, which use
+	 *   its database tables; on installations where it was never enabled those do not exist).
+	 *   Only its classes are loaded, and a private BackendService gets its backends and auth
+	 *   mechanisms from its Application class.
+	 */
 	private function factory(): ExternalStorageFactory {
-		// Load files_external's classes without enabling the app (its state stays as the admin set it).
-		if (!class_exists(\OCA\Files_External\Service\BackendService::class)) {
-			$this->appManager->loadApp('files_external');
+		if ($this->factory !== null) {
+			return $this->factory;
 		}
-		return new ExternalStorageFactory(Server::get(\OCA\Files_External\Service\BackendService::class));
+		if ($this->appManager->isEnabledForAnyone('files_external')) {
+			$this->appManager->loadApp('files_external');
+			return $this->factory = new ExternalStorageFactory(Server::get(\OCA\Files_External\Service\BackendService::class));
+		}
+		if (!class_exists(\OCA\Files_External\AppInfo\Application::class)) {
+			$path = $this->appManager->getAppPath('files_external');
+			require_once $path . '/composer/autoload.php';
+		}
+		$service = new \OCA\Files_External\Service\BackendService(
+			Server::get(\OCP\IAppConfig::class), Server::get(\Psr\Log\LoggerInterface::class));
+		$app = new \OCA\Files_External\AppInfo\Application();
+		$service->registerBackendProvider($app);
+		$service->registerAuthMechanismProvider($app);
+		return $this->factory = new ExternalStorageFactory($service);
 	}
 }
