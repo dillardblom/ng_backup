@@ -39,8 +39,11 @@ class BackupStatusCheck implements ISetupCheck {
 
 	public function run(): SetupResult {
 		$link = $this->url->linkToRouteAbsolute('settings.AdminSettings.index', ['section' => 'ng_backup']);
-		if (!$this->keys->isInitialized() || $this->keys->recoveryKitConfirmation() === null) {
+		if (!$this->keys->isInitialized() || !$this->keys->everConfirmed()) {
 			return SetupResult::error($this->l->t('Backups are not set up: create the backup key and confirm the recovery kit.'), $link);
+		}
+		if ($this->keys->recoveryKitConfirmation() === null) {
+			return SetupResult::error($this->l->t('The backup passphrase was changed: download and confirm the new recovery kit.'), $link);
 		}
 		$targets = $this->targets->list();
 		if ($targets === []) {

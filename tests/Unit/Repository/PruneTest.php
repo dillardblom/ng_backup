@@ -42,7 +42,11 @@ class PruneTest extends TestCase {
 		$preview = $repo->prune(true, 0.5, [$old['snapshot']]);
 		$this->assertGreaterThan(35 * 1048576, $preview['freedBytes'], 'dry run can preview forgetting a snapshot');
 
-		$repo->forget($old['snapshot']);
+		$repo->forget($old['snapshot'], 'tester');
+		$this->assertSame(0, $repo->prune(true)['freedBytes'], 'a snapshot in the trash keeps its data');
+		$this->assertArrayHasKey($old['snapshot'], $repo->trash());
+		$this->assertSame([], $repo->purgeTrash(3600), 'not purged before the delay');
+		$this->assertSame([$old['snapshot']], $repo->purgeTrash(0));
 		$plan = $repo->prune(true);
 		$this->assertSame($plan, $repo->prune(true, 0.5, []));
 		$this->assertGreaterThan(35 * 1048576, $plan['freedBytes']);
@@ -76,10 +80,36 @@ class PruneTest extends TestCase {
 		}
 		$b = $repo->backupDirectory($src, $a['snapshot']);
 		$repo->forget($a['snapshot']);
+		$repo->purgeTrash(0);
 		$r = $repo->prune(false, 0.5);
 		$this->assertGreaterThan(0, $r['repacked']);
 		$target = $this->tempDir();
 		Repository::openWithKey($backend, $keys)->restore($b['snapshot'], $target);
 		$this->assertSame(self::hashTree($src), self::hashTree($target));
+	}
+
+	public function testUntrashRestoresAWorkingSnapshot(): void {
+		$src = $this->tempDir();
+		$backend = new LocalBackend($this->tempDir());
+		$keys = KeyRing::generate();
+		$repo = Repository::initWithKey($backend, $keys, $keys->wrap('pw'));
+		file_put_contents("$src/a", random_bytes(2 * 1048576));
+		$repo->putObject('db/x', '{"tables":{}}');
+		$s = $repo->backupDirectory($src);
+		$expected = self::hashTree($src);
+		unlink("$src/a");
+		file_put_contents("$src/b", 'other');
+		$s2 = $repo->backupDirectory($src, $s['snapshot']);
+
+		$repo->forget($s['snapshot'], 'attacker');
+		$this->assertNotContains($s['snapshot'], $repo->listSnapshots());
+		$repo->prune(); // must not free the trashed snapshot's data
+		$repo->untrash($s['snapshot']);
+		$this->assertContains($s['snapshot'], $repo->listSnapshots());
+		$this->assertSame([], $repo->trash());
+
+		$target = $this->tempDir();
+		Repository::openWithKey($backend, $keys)->restore($s['snapshot'], $target);
+		$this->assertSame($expected, self::hashTree($target));
 	}
 }

@@ -53,7 +53,11 @@ class Notifier implements INotifier {
 					'target_removed' => $l->t('%1$s removed backup location %2$s', [$who, $p['target'] ?? '']),
 					'append_only_off' => $l->t('%1$s turned off append-only for backup location %2$s', [$who, $p['target'] ?? '']),
 					'retention_changed' => $l->t('%1$s changed the backup retention to %2$s', [$who, $p['policy'] ?? '']),
-					'snapshots_forgotten' => $l->t('%1$s removed %2$s snapshots from %3$s', [$who, $p['count'] ?? '', $p['target'] ?? '']),
+					'snapshots_forgotten' => $l->t('%1$s moved %2$s snapshots of %3$s to the trash; they are deleted permanently after %4$s unless restored', [$who, $p['count'] ?? '', $p['target'] ?? '', $p['until'] ?? '']),
+					'snapshot_untrashed' => $l->t('%1$s restored snapshot %2$s of %3$s from the trash', [$who, $p['snapshot'] ?? '', $p['target'] ?? '']),
+					'slot_added' => $l->t('%1$s added backup passphrase slot %2$s (%3$s); download and confirm the new recovery kit', [$who, $p['slot'] ?? '', $p['label'] ?? '']),
+					'slot_replaced' => $l->t('%1$s set a new passphrase for backup key slot %2$s (%3$s); download and confirm the new recovery kit', [$who, $p['slot'] ?? '', $p['label'] ?? '']),
+					'slot_removed' => $l->t('%1$s removed backup passphrase slot %2$s; download and confirm the new recovery kit', [$who, $p['slot'] ?? '']),
 					default => $l->t('NG Backup security event'),
 				});
 				$notification->setParsedMessage($l->t('If this was not you or another administrator, check who has admin access.'));

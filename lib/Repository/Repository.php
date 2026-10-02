@@ -101,13 +101,20 @@ final class Repository {
 		return $config;
 	}
 
+	/** Replace the passphrase-wrapped key slots in this repository's config (after a slot change). */
+	public function updateWrappedKey(array $wrappedKey): void {
+		$config = self::readConfig($this->backend);
+		$config['key'] = $wrappedKey;
+		self::putString($this->backend, 'config', json_encode($config, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
+	}
+
 	public function id(): string {
 		return $this->repositoryId;
 	}
 
 	public static function open(IBackend $backend, #[\SensitiveParameter] string $passphrase): self {
 		$config = self::readConfig($backend);
-		$repo = new self($backend, KeyRing::unwrap($config['key'], $passphrase), $config['id']);
+		$repo = new self($backend, KeyRing::unwrapAny($config['key'], $passphrase), $config['id']);
 		$repo->index->load();
 		return $repo;
 	}
@@ -273,17 +280,68 @@ final class Repository {
 		return $data;
 	}
 
-	/** Remove a snapshot (and its database dump). Its data is freed by the next prune(). */
-	public function forget(string $snapshotId): void {
-		try {
-			$meta = $this->snapshotMeta($snapshotId);
-		} catch (\Throwable) {
-			$meta = [];
+	/**
+	 * Move a snapshot (and its database dump) to the trash on the location. Its data stays in
+	 * use until purgeTrash() removes it after the deletion delay, so a malicious or mistaken
+	 * cleanup can be undone with untrash() within that time.
+	 */
+	public function forget(string $snapshotId, string $by = ''): void {
+		$meta = $this->snapshotMeta($snapshotId);
+		$dbInTrash = null;
+		if (isset($meta['db']) && is_string($meta['db']) && $this->backend->exists($meta['db'])) {
+			$dbInTrash = 'trash/' . $meta['db'];
+			$this->putObject($dbInTrash, $this->getObject($meta['db']));
 		}
-		if (isset($meta['db']) && is_string($meta['db']) && str_starts_with($meta['db'], 'db/')) {
+		// The snapshot object is bound to its id (not its path), so it can be copied as-is.
+		$this->backend->put('trash/snapshots/' . $snapshotId, $this->backend->get('snapshots/' . $snapshotId));
+		$this->putObject('trash/info/' . $snapshotId, json_encode(['forgottenAt' => time(), 'by' => $by, 'db' => $meta['db'] ?? null,
+			'dbInTrash' => $dbInTrash, 'time' => $meta['time'] ?? null, 'label' => $meta['label'] ?? ''], JSON_THROW_ON_ERROR));
+		if ($dbInTrash !== null) {
 			$this->backend->delete($meta['db']);
 		}
 		$this->backend->delete('snapshots/' . $snapshotId);
+	}
+
+	/** Undo forget(): move a snapshot back from the trash. */
+	public function untrash(string $snapshotId): void {
+		$info = $this->trashInfo($snapshotId);
+		if ($info['dbInTrash'] !== null && $this->backend->exists($info['dbInTrash'])) {
+			$this->putObject($info['db'], $this->getObject($info['dbInTrash']));
+			$this->backend->delete($info['dbInTrash']);
+		}
+		$this->backend->put('snapshots/' . $snapshotId, $this->backend->get('trash/snapshots/' . $snapshotId));
+		$this->backend->delete('trash/snapshots/' . $snapshotId);
+		$this->backend->delete('trash/info/' . $snapshotId);
+	}
+
+	/** @return array<string, array{forgottenAt:int, by:string, db:?string, dbInTrash:?string, time:?string, label:string}> */
+	public function trash(): array {
+		$out = [];
+		foreach ($this->backend->list('trash/info') as $path) {
+			$out[basename($path)] = $this->trashInfo(basename($path));
+		}
+		return $out;
+	}
+
+	/** Permanently delete trash entries older than $delaySeconds. @return list<string> purged snapshot ids */
+	public function purgeTrash(int $delaySeconds): array {
+		$purged = [];
+		foreach ($this->trash() as $id => $info) {
+			if (time() - $info['forgottenAt'] < $delaySeconds) {
+				continue;
+			}
+			if ($info['dbInTrash'] !== null) {
+				$this->backend->delete($info['dbInTrash']);
+			}
+			$this->backend->delete('trash/snapshots/' . $id);
+			$this->backend->delete('trash/info/' . $id);
+			$purged[] = $id;
+		}
+		return $purged;
+	}
+
+	private function trashInfo(string $snapshotId): array {
+		return json_decode($this->getObject('trash/info/' . $snapshotId), true, 512, JSON_THROW_ON_ERROR);
 	}
 
 	/**
@@ -308,6 +366,21 @@ final class Repository {
 			$meta = $this->snapshotMeta($sid);
 			if (isset($meta['db']) && $this->backend->exists($meta['db'])) {
 				foreach (json_decode($this->getObject($meta['db']), true, 512, JSON_THROW_ON_ERROR)['tables'] as $t) {
+					foreach ($t['blobs'] as $b) {
+						$used[$b] = true;
+					}
+				}
+			}
+		}
+		// Snapshots in the trash keep their data until purgeTrash() removed them.
+		foreach ($this->trash() as $sid => $info) {
+			foreach ($this->streamEntries($sid, 'trash/snapshots/') as $e) {
+				foreach ($e['b'] as $b) {
+					$used[$b] = true;
+				}
+			}
+			if ($info['dbInTrash'] !== null && $this->backend->exists($info['dbInTrash'])) {
+				foreach (json_decode($this->getObject($info['dbInTrash']), true, 512, JSON_THROW_ON_ERROR)['tables'] as $t) {
 					foreach ($t['blobs'] as $b) {
 						$used[$b] = true;
 					}
@@ -465,9 +538,9 @@ final class Repository {
 	}
 
 	/** @return \Generator<array{p:string, s:int, m:int, b:list<string>}> */
-	private function streamEntries(string $snapshotId): \Generator {
+	private function streamEntries(string $snapshotId, string $dir = 'snapshots/'): \Generator {
 		$plain = fopen('php://temp/maxmemory:' . (4 * 1048576), 'w+b');
-		$fh = $this->backend->get('snapshots/' . $snapshotId);
+		$fh = $this->backend->get($dir . $snapshotId);
 		$this->cipher->decrypt($fh, $plain, 'snapshot:' . $snapshotId);
 		fclose($fh);
 		rewind($plain);

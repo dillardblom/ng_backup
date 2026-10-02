@@ -16,6 +16,20 @@
 		</div>
 		<NcNoteCard v-if="error" type="error">{{ error }}</NcNoteCard>
 
+		<template v-for="target in status.targets" :key="'trash' + target.id">
+			<div v-if="trash[target.id]?.length" class="ngb-trash">
+				<h3>{{ t('ng_backup', 'Trash of {name}', { name: target.name }) }}</h3>
+				<p class="ngb-muted">{{ t('ng_backup', 'Removed restore points can be brought back until they are deleted permanently.') }}</p>
+				<ul>
+					<li v-for="item in trash[target.id]" :key="item.id">
+						{{ item.time ? new Date(item.time).toLocaleString() : item.id }}{{ item.label ? ' – ' + item.label : '' }}
+						<span class="ngb-muted">{{ t('ng_backup', 'removed by {by}, deleted after {date}', { by: item.by, date: new Date(item.deleteAfter * 1000).toLocaleDateString() }) }}</span>
+						<NcButton variant="tertiary" @click="untrash(target, item)">{{ t('ng_backup', 'Restore') }}</NcButton>
+					</li>
+				</ul>
+			</div>
+		</template>
+
 		<table v-if="status.runs.length" class="ngb-table">
 			<thead>
 				<tr>
@@ -50,12 +64,38 @@ import NcSettingsSection from '@nextcloud/vue/components/NcSettingsSection'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
 import api from '../api.js'
 import { formatSize } from '../format.js'
+import { confirmPassword } from '@nextcloud/password-confirmation'
+import { reactive } from 'vue'
 
 const props = defineProps({ status: { type: Object, required: true } })
 const emit = defineEmits(['changed'])
 const schedule = ref(props.status.schedule)
 const error = ref('')
 watch(() => props.status.schedule, (s) => { schedule.value = s })
+
+const trash = reactive({})
+async function loadTrash() {
+	for (const target of props.status.targets) {
+		try {
+			trash[target.id] = await api.trash(target.id)
+		} catch (e) {
+			trash[target.id] = []
+		}
+	}
+}
+watch(() => props.status.targets.map(tg => tg.id).join(','), loadTrash, { immediate: true })
+
+async function untrash(target, item) {
+	error.value = ''
+	try {
+		await confirmPassword()
+		await api.untrash(target.id, item.id)
+		await loadTrash()
+		emit('changed')
+	} catch (e) {
+		error.value = e?.message || ''
+	}
+}
 
 const isRunning = (targetId) => props.status.runs.some(r => r.targetId === targetId && r.kind === 'full' && r.status === 'running')
 const targetName = (id) => props.status.targets.find(tg => tg.id === id)?.name ?? '#' + id
@@ -87,5 +127,8 @@ async function saveSchedule() {
 .ngb-table { width: 100%; border-collapse: collapse; }
 .ngb-table th, .ngb-table td { text-align: start; padding: 4px 8px; border-bottom: 1px solid var(--color-border); }
 .ngb-failed { color: var(--color-error-text); }
+.ngb-muted { color: var(--color-text-maxcontrast); }
+.ngb-trash { margin: 12px 0; }
+.ngb-trash h3 { font-weight: bold; }
 .ngb-done { color: var(--color-success-text); }
 </style>

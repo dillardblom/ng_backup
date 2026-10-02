@@ -45,6 +45,8 @@ class AdminApiController extends Controller {
 		private IJobList $jobs,
 		private IUserSession $session,
 		private \OCA\NgBackup\Service\AlertService $alerts,
+		private \OCA\NgBackup\Service\KeySlotService $slots,
+		private \OCA\NgBackup\Service\PruneService $prune,
 	) {
 		parent::__construct(Application::APP_ID, $request);
 	}
@@ -58,7 +60,9 @@ class AdminApiController extends Controller {
 		$runs = array_map(fn (Run $r) => $this->runJson($r), $this->runs->findRecent(15));
 		return new JSONResponse([
 			'key' => ['initialized' => $this->keys->isInitialized(), 'fingerprint' => $this->keys->fingerprint(),
-				'confirmation' => $this->keys->recoveryKitConfirmation()],
+				'confirmation' => $this->keys->recoveryKitConfirmation(), 'everConfirmed' => $this->keys->isInitialized() && $this->keys->everConfirmed(),
+				'slots' => $this->keys->isInitialized() ? $this->keys->slots() : [], 'maxSlots' => \OCA\NgBackup\Service\KeyService::MAX_SLOTS,
+				'deleteDelayDays' => $this->keys->isInitialized() ? $this->keys->deleteDelayDays() : \OCA\NgBackup\Service\KeyService::DEFAULT_DELETE_DELAY],
 			'statement' => KeyConfirm::STATEMENT,
 			'confirmationPhrase' => KeyConfirm::CONFIRMATION,
 			'targets' => $targets,
@@ -68,9 +72,9 @@ class AdminApiController extends Controller {
 	}
 
 	#[PasswordConfirmationRequired]
-	public function initKey(string $passphrase): JSONResponse {
+	public function initKey(string $passphrase, int $deleteDelayDays = \OCA\NgBackup\Service\KeyService::DEFAULT_DELETE_DELAY, string $label = 'Slot 1'): JSONResponse {
 		try {
-			$this->keys->initialize($passphrase);
+			$this->keys->initialize($passphrase, $deleteDelayDays, $label);
 		} catch (\Throwable $e) {
 			return new JSONResponse(['error' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
 		}
@@ -100,6 +104,59 @@ class AdminApiController extends Controller {
 		}
 		$this->keys->confirmRecoveryKit($this->session->getUser()?->getUID() ?? 'unknown');
 		return new JSONResponse(['confirmation' => $this->keys->recoveryKitConfirmation()]);
+	}
+
+	#[PasswordConfirmationRequired]
+	public function addSlot(string $passphrase, string $label): JSONResponse {
+		try {
+			return new JSONResponse(['slot' => $this->slots->add($passphrase, $label)]);
+		} catch (\Throwable $e) {
+			return new JSONResponse(['error' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
+		}
+	}
+
+	#[PasswordConfirmationRequired]
+	public function replaceSlot(int $slot, string $passphrase, ?string $label = null): JSONResponse {
+		try {
+			$this->slots->replace($slot, $passphrase, $label);
+			return new JSONResponse([]);
+		} catch (\Throwable $e) {
+			return new JSONResponse(['error' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
+		}
+	}
+
+	#[PasswordConfirmationRequired]
+	public function removeSlot(int $slot): JSONResponse {
+		try {
+			$this->slots->remove($slot);
+			return new JSONResponse([]);
+		} catch (\Throwable $e) {
+			return new JSONResponse(['error' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
+		}
+	}
+
+	public function trash(int $targetId): JSONResponse {
+		try {
+			$delay = $this->keys->deleteDelayDays() * 86400;
+			$out = [];
+			foreach ($this->targets->repository($this->targets->get((string)$targetId))->trash() as $id => $info) {
+				$out[] = ['id' => $id, 'label' => $info['label'], 'time' => $info['time'], 'removedAt' => $info['forgottenAt'],
+					'by' => $info['by'], 'deleteAfter' => $info['forgottenAt'] + $delay];
+			}
+			return new JSONResponse($out);
+		} catch (\Throwable $e) {
+			return new JSONResponse(['error' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
+		}
+	}
+
+	#[PasswordConfirmationRequired]
+	public function untrash(int $targetId, string $snapshotId): JSONResponse {
+		try {
+			$this->prune->untrash($this->targets->get((string)$targetId), $snapshotId);
+			return new JSONResponse([]);
+		} catch (\Throwable $e) {
+			return new JSONResponse(['error' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
+		}
 	}
 
 	public function backends(): JSONResponse {

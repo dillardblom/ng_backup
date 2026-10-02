@@ -12,7 +12,7 @@
 
 		<template v-if="status">
 			<KeySetup :status="status" @changed="refresh" />
-			<template v-if="status.key.confirmation">
+			<template v-if="status.key.everConfirmed">
 				<Locations :status="status" @changed="refresh" />
 				<Backups v-if="status.targets.length" :status="status" @changed="refresh" />
 				<RestoreBrowser v-if="status.targets.length" :status="status" @changed="refresh" />

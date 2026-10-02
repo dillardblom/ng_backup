@@ -76,6 +76,23 @@ final class KeyRing {
 		];
 	}
 
+	/**
+	 * Open a key field that is either one wrapped key or {"slots": [{slot, label, key}, ...]}:
+	 * every slot holds the same master key under its own passphrase.
+	 */
+	public static function unwrapAny(array $field, #[\SensitiveParameter] string $passphrase): self {
+		if (!isset($field['slots'])) {
+			return self::unwrap($field, $passphrase);
+		}
+		foreach ($field['slots'] as $slot) {
+			try {
+				return self::unwrap($slot['key'], $passphrase);
+			} catch (CryptoException) {
+			}
+		}
+		throw new CryptoException('Wrong passphrase or damaged key');
+	}
+
 	/** @param array{v:int, salt:string, ops:int, mem:int, nonce:string, key:string} $wrapped */
 	public static function unwrap(array $wrapped, #[\SensitiveParameter] string $passphrase): self {
 		$b64 = static fn (string $s): string => sodium_base642bin($s, SODIUM_BASE64_VARIANT_ORIGINAL);

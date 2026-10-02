@@ -33,4 +33,19 @@ class KeyRingTest extends TestCase {
 		$this->expectException(\InvalidArgumentException::class);
 		new KeyRing('short');
 	}
+
+	public function testAnySlotOpensTheSameKey(): void {
+		$keys = KeyRing::generate();
+		$field = ['slots' => [
+			['slot' => 1, 'label' => 'Safe', 'key' => $keys->wrap('passphrase in the safe')],
+			['slot' => 2, 'label' => 'CTO', 'key' => $keys->wrap('passphrase of the cto')],
+			['slot' => 3, 'label' => 'Head of IT', 'key' => $keys->wrap('passphrase head of it')],
+		]];
+		foreach (['passphrase in the safe', 'passphrase of the cto', 'passphrase head of it'] as $p) {
+			$this->assertSame($keys->blobId('x'), KeyRing::unwrapAny($field, $p)->blobId('x'));
+		}
+		$this->assertSame($keys->blobId('x'), KeyRing::unwrapAny($keys->wrap('legacy single'), 'legacy single')->blobId('x'));
+		$this->expectException(CryptoException::class);
+		KeyRing::unwrapAny($field, 'nobody knows this');
+	}
 }

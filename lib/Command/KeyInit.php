@@ -25,6 +25,8 @@ class KeyInit extends Command {
 		$this->setName('backup:key:init')
 			->setDescription('Create the backup key, protected by a passphrase you keep safe')
 			->addOption('passphrase-file', null, InputOption::VALUE_REQUIRED, 'Read the passphrase from this file instead of asking')
+			->addOption('label', 'l', InputOption::VALUE_REQUIRED, 'Label of the first passphrase slot (who/where), e.g. "Safe"', 'Slot 1')
+			->addOption('delete-delay-days', null, InputOption::VALUE_REQUIRED, 'Days a removed snapshot stays in the trash before its data is deleted (1-365, fixed after this)', (string)KeyService::DEFAULT_DELETE_DELAY)
 			->setHelp(<<<'HELP'
 Creates the master key that encrypts all backups of this installation.
 
@@ -57,12 +59,14 @@ HELP);
 			}
 		}
 		try {
-			$this->keys->initialize($pass);
+			$this->keys->initialize($pass, (int)$input->getOption('delete-delay-days'), (string)$input->getOption('label'));
 		} catch (\InvalidArgumentException $e) {
 			$output->writeln('<error>' . $e->getMessage() . '</error>');
 			return 1;
 		}
 		$output->writeln('Backup key created, fingerprint <info>' . $this->keys->fingerprint() . '</info>.');
+		$output->writeln('Removed snapshots stay in the trash on the location for <info>' . $this->keys->deleteDelayDays() . ' days</info> (cannot be changed later).');
+		$output->writeln('Tip: add up to two more passphrases for other people with occ backup:key:slot:add (e.g. CTO, head of IT).');
 		$output->writeln('Next: save the recovery kit with <info>occ backup:key:kit --output=FILE</info> and confirm with <info>occ backup:key:confirm</info>.');
 		return 0;
 	}

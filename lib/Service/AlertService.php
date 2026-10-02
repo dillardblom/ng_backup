@@ -35,8 +35,12 @@ class AlertService {
 	 *
 	 * @param array<string, string> $params
 	 */
+	public function actor(): string {
+		return $this->session->getUser()?->getUID() ?? (PHP_SAPI === 'cli' ? 'occ' : 'unknown');
+	}
+
 	public function securityEvent(string $event, array $params = [], bool $notify = true): void {
-		$actor = $this->session->getUser()?->getUID() ?? (PHP_SAPI === 'cli' ? 'occ' : 'unknown');
+		$actor = $this->actor();
 		$params = ['actor' => $actor] + $params;
 		$this->events->dispatchTyped(new \OCP\Log\Audit\CriticalActionPerformedEvent(
 			'NG Backup: %s by %s ' . json_encode(array_diff_key($params, ['actor' => 1]), JSON_UNESCAPED_SLASHES), ['event' => $event, 'actor' => $actor]));

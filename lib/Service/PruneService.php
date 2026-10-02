@@ -28,7 +28,31 @@ class PruneService {
 		private IAppConfig $appConfig,
 		private ILockingProvider $locking,
 		private AlertService $alerts,
+		private KeyService $keys,
 	) {
+	}
+
+	public function untrash(Target $target, string $snapshotId): void {
+		$repo = $this->targets->repository($target);
+		if (!array_key_exists($snapshotId, $repo->trash())) {
+			throw new \InvalidArgumentException('That snapshot is not in the trash (or was already deleted)');
+		}
+		$repo->untrash($snapshotId);
+		// Put it back in the local snapshot list as well.
+		$meta = $repo->snapshotMeta($snapshotId);
+		$s = new \OCA\NgBackup\Db\Snapshot();
+		$s->setTargetId($target->getId());
+		$s->setSnapshotId($snapshotId);
+		$s->setKind((string)($meta['kind'] ?? 'full'));
+		$s->setLabel(($meta['label'] ?? '') !== '' ? $meta['label'] : null);
+		$s->setCreatedAt((int)strtotime((string)($meta['time'] ?? 'now')));
+		$s->setFiles((int)($meta['stats']['files'] ?? 0));
+		$s->setBytes((int)($meta['stats']['bytes'] ?? 0));
+		try {
+			$this->snapshots->insert($s);
+		} catch (\Throwable) {
+		}
+		$this->alerts->securityEvent('snapshot_untrashed', ['target' => $target->getName(), 'snapshot' => $snapshotId]);
 	}
 
 	public static function lockKey(Target $target): string {
@@ -51,7 +75,10 @@ class PruneService {
 	}
 
 	/**
-	 * @return array{kept: array<string, list<string>>, forgotten: list<string>, prune: array}
+	 * Snapshots the policy drops go to the trash on the location; trash entries older than the
+	 * deletion delay are purged, and only then is their data freed.
+	 *
+	 * @return array{kept: array<string, list<string>>, forgotten: list<string>, purged: list<string>, prune: array}
 	 */
 	public function apply(Target $target, bool $dryRun = false, bool $scheduled = false): array {
 		if ($target->getAppendOnly()) {
@@ -74,9 +101,11 @@ class PruneService {
 			}
 			$keep = $this->policy()->keep($times);
 			$forget = array_values(array_diff(array_keys($times), array_keys($keep)));
+			$actor = $scheduled ? 'retention policy' : $this->alerts->actor();
+			$purged = [];
 			if (!$dryRun) {
 				foreach ($forget as $id) {
-					$repo->forget($id);
+					$repo->forget($id, $actor);
 					try {
 						$this->snapshots->delete($this->snapshots->findOne($target->getId(), $id));
 					} catch (\Throwable) {
@@ -84,12 +113,17 @@ class PruneService {
 				}
 			}
 			// Also removes leftovers of interrupted runs. A dry run counts the snapshots it would forget as gone.
+			$delay = $this->keys->deleteDelayDays();
 			if (!$dryRun && $forget !== []) {
 				// Scheduled cleanup follows the policy: audit log only, no notification every week.
-				$this->alerts->securityEvent('snapshots_forgotten', ['target' => $target->getName(), 'count' => (string)count($forget)], !$scheduled);
+				$this->alerts->securityEvent('snapshots_forgotten', ['target' => $target->getName(), 'count' => (string)count($forget),
+					'until' => date('Y-m-d', time() + $delay * 86400)], !$scheduled);
 			}
-			$prune = $repo->prune($dryRun, 0.5, $dryRun ? $forget : []);
-			return ['kept' => $keep, 'forgotten' => $forget, 'prune' => $prune];
+			if (!$dryRun) {
+				$purged = $repo->purgeTrash($delay * 86400);
+			}
+			$prune = $repo->prune($dryRun);
+			return ['kept' => $keep, 'forgotten' => $forget, 'purged' => $purged, 'prune' => $prune];
 		} finally {
 			$this->locking->releaseLock(self::lockKey($target), ILockingProvider::LOCK_EXCLUSIVE);
 		}

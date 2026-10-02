@@ -46,7 +46,7 @@ class BackupService {
 	}
 
 	public function start(Target $target, string $label = ''): Run {
-		if ($this->keys->recoveryKitConfirmation() === null) {
+		if (!$this->keys->everConfirmed()) {
 			throw new \RuntimeException('Confirm the recovery kit first (occ backup:key:confirm)');
 		}
 		if ($this->config->getSystemValue('objectstore', null) !== null) {
