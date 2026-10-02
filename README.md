@@ -90,6 +90,10 @@ What you should do on the location (strongly recommended):
   for example **90 days**, plus versioning. Then nobody, not even with the server's credentials,
   can delete or overwrite backups younger than 90 days. Combine with an append-only location in
   NG Backup and a lifecycle rule that removes old versions after the lock expires.
+  With Object Lock, a deletion by NG Backup (or by an attacker through it) only adds a *delete
+  marker*: the locked data stays and can be brought back from the bucket's object versions until
+  the lock expires. Tested with an S3-compatible server; still to be verified on AWS itself, which
+  requires a checksum on uploads to locked buckets.
 - Use **credentials without delete rights** for the backup location where the storage supports it.
 - **SFTP / storage boxes:** enable the provider's own snapshots (e.g. daily, kept 30-90 days) and
   give the backup user access to its own folder only, without a shell.

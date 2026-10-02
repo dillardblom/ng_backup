@@ -92,7 +92,7 @@ class RestoreService {
 	}
 
 	private function doRestoreUserFiles(Target $target, string $snapshotId, string $logicalPath, string $mode, ?callable $progress): array {
-		if (!Repository::isSafePath(trim($logicalPath, '/')) || !preg_match('#^data/([^/]+)/files(?:/(.*))?$#', trim($logicalPath, '/'), $m)) {
+		if (!Repository::isSafePath($logicalPath) || !preg_match('#^data/([^/]+)/files(?:/(.*))?$#', $logicalPath, $m)) {
 			throw new \InvalidArgumentException('Expected a path like data/<user>/files/<folder or file>');
 		}
 		[$uid, $rel] = [$m[1], trim($m[2] ?? '', '/')];
@@ -144,6 +144,9 @@ class RestoreService {
 
 	/** Raw restore of any snapshot path to a local directory (administrators, disaster recovery). */
 	public function restoreToDirectory(Target $target, string $snapshotId, string $prefix, string $directory): int {
+		if ($prefix !== '' && !Repository::isSafePath($prefix)) {
+			throw new \InvalidArgumentException('Invalid path: ' . $prefix);
+		}
 		if (!is_dir($directory) && !mkdir($directory, 0750, true) && !is_dir($directory)) {
 			throw new \RuntimeException("Cannot create $directory");
 		}

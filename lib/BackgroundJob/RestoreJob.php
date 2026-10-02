@@ -45,7 +45,17 @@ class RestoreJob extends QueuedJob {
 			$run->setUpdatedAt(time());
 			$run = $this->runs->update($run);
 			@set_time_limit(0);
-			$result = $this->restore->restoreUserFiles($this->targets->get((string)$run->getTargetId()), $req['snapshot'], $req['path'], $req['mode']);
+			$lastBeat = time();
+			$result = $this->restore->restoreUserFiles($this->targets->get((string)$run->getTargetId()), $req['snapshot'], $req['path'], $req['mode'],
+				function (int $done, int $total) use (&$run, &$lastBeat): void {
+					// Heartbeat, so a long restore is not mistaken for a dead one.
+					if (time() - $lastBeat >= 60) {
+						$lastBeat = time();
+						$run->setPhase("restoring $done/$total");
+						$run->setUpdatedAt(time());
+						$run = $this->runs->update($run);
+					}
+				});
 			$run->setStatus(Run::DONE);
 			$run->setPhase('done');
 			$run->setStats(json_encode($result, JSON_THROW_ON_ERROR));

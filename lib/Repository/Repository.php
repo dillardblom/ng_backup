@@ -162,6 +162,9 @@ final class Repository {
 
 	/** Restore a snapshot (or only paths starting with $prefix) into a local directory. */
 	public function restore(string $snapshotId, string $target, string $prefix = ''): int {
+		if ($prefix !== '' && !self::isSafePath(rtrim($prefix, '/'))) {
+			throw new RepositoryException('Invalid path prefix');
+		}
 		$count = 0;
 		foreach ($this->streamEntries($snapshotId) as $entry) {
 			if ($prefix !== '' && !str_starts_with($entry['p'], $prefix)) {
@@ -179,8 +182,11 @@ final class Repository {
 			}
 			// Write next to the destination and rename after all blobs verified: at most one file
 			// is ever present twice.
-			$tmp = $dest . '.ngb-restore';
-			$out = fopen($tmp, 'wb');
+			$tmp = $dest . '.ngb-restore-' . bin2hex(random_bytes(6));
+			$out = @fopen($tmp, 'xb'); // fails if anything (including a symlink) already exists there
+			if ($out === false) {
+				throw new RepositoryException('Cannot create a temporary file for ' . $entry['p']);
+			}
 			foreach ($entry['b'] as $id) {
 				fwrite($out, $this->loadBlob($id));
 			}

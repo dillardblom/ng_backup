@@ -234,8 +234,13 @@ class AdminApiController extends Controller {
 			|| !\OCA\NgBackup\Repository\Repository::isSafePath($path) || !preg_match('#^data/[^/]+/files(/.*)?$#', $path)) {
 			return new JSONResponse(['error' => 'Invalid path or mode'], Http::STATUS_BAD_REQUEST);
 		}
+		try {
+			$target = $this->targets->get((string)$targetId);
+		} catch (\Throwable) {
+			return new JSONResponse(['error' => 'No such location'], Http::STATUS_NOT_FOUND);
+		}
 		$run = new Run();
-		$run->setTargetId($targetId);
+		$run->setTargetId($target->getId());
 		$run->setKind('restore');
 		$run->setStatus(Run::RUNNING);
 		$run->setPhase('queued');
@@ -244,7 +249,11 @@ class AdminApiController extends Controller {
 		$run->setSnapshotId($snapshotId);
 		$run->setStartedAt(time());
 		$run->setUpdatedAt(time());
-		$run = $this->runs->insert($run);
+		try {
+			$run = $this->prune->underStartLock($target, fn () => $this->runs->insert($run));
+		} catch (\Throwable $e) {
+			return new JSONResponse(['error' => $e->getMessage()], Http::STATUS_CONFLICT);
+		}
 		$this->jobs->add(RestoreJob::class, ['run' => $run->getId()]);
 		return new JSONResponse($this->runJson($run));
 	}

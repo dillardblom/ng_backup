@@ -49,7 +49,7 @@ HELP);
 		try {
 			$target = $this->targets->get($input->getArgument('target'));
 			$snapshot = $input->getArgument('snapshot');
-			$path = $input->getArgument('path');
+			$path = trim((string)$input->getArgument('path'), '/'); // CLI convenience; the service itself only accepts canonical paths
 			if ($dir = $input->getOption('to-directory')) {
 				$n = $this->restore->restoreToDirectory($target, $snapshot, $path, $dir);
 				$output->writeln("Restored <info>$n</info> files to $dir.");

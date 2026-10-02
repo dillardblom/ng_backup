@@ -42,6 +42,23 @@ class PruneService {
 	}
 
 	/**
+	 * Run $fn under the location's exclusive lock (to create a run atomically with respect to a
+	 * cleanup, which takes the same lock and then refuses while a run exists).
+	 */
+	public function underStartLock(Target $target, callable $fn): mixed {
+		try {
+			$this->locking->acquireLock(self::lockKey($target), ILockingProvider::LOCK_EXCLUSIVE);
+		} catch (LockedException) {
+			throw new \RuntimeException('A cleanup of ' . $target->getName() . ' is in progress; try again later');
+		}
+		try {
+			return $fn();
+		} finally {
+			$this->locking->releaseLock(self::lockKey($target), ILockingProvider::LOCK_EXCLUSIVE);
+		}
+	}
+
+	/**
 	 * Exclusive lock on the location, then make sure no run of any kind (backup, restore, export)
 	 * is in progress: their data may not be referenced by a snapshot yet, or is being read.
 	 */
