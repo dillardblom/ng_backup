@@ -270,8 +270,17 @@ class AdminApiController extends Controller {
 	}
 
 	private function runJson(Run $r): array {
+		$snapshot = null;
+		if ($r->getSnapshotId() !== null) {
+			try {
+				$s = $this->snapshots->findOne($r->getTargetId(), $r->getSnapshotId());
+				$snapshot = ['createdAt' => $s->getCreatedAt(), 'label' => $s->getLabel()];
+			} catch (\Throwable) {
+				// Snapshot already pruned or trashed: the run keeps its id, just not the date.
+			}
+		}
 		return ['id' => $r->getId(), 'targetId' => $r->getTargetId(), 'kind' => $r->getKind(), 'status' => $r->getStatus(),
-			'phase' => $r->getPhase(), 'snapshotId' => $r->getSnapshotId(), 'startedAt' => $r->getStartedAt(),
+			'phase' => $r->getPhase(), 'snapshotId' => $r->getSnapshotId(), 'snapshot' => $snapshot, 'startedAt' => $r->getStartedAt(),
 			'updatedAt' => $r->getUpdatedAt(), 'finishedAt' => $r->getFinishedAt(), 'error' => $r->getError(),
 			'stats' => json_decode($r->getStats() ?? 'null', true)];
 	}

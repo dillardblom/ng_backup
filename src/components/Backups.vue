@@ -36,6 +36,7 @@
 					<th>{{ t('ng_backup', 'Started') }}</th>
 					<th>{{ t('ng_backup', 'Location') }}</th>
 					<th>{{ t('ng_backup', 'Kind') }}</th>
+					<th>{{ t('ng_backup', 'Restore point') }}</th>
 					<th>{{ t('ng_backup', 'Status') }}</th>
 					<th>{{ t('ng_backup', 'Files') }}</th>
 					<th>{{ t('ng_backup', 'Uploaded') }}</th>
@@ -46,6 +47,7 @@
 					<td>{{ new Date(run.startedAt * 1000).toLocaleString() }}</td>
 					<td>{{ targetName(run.targetId) }}</td>
 					<td>{{ run.kind }}</td>
+					<td>{{ run.snapshot ? new Date(run.snapshot.createdAt * 1000).toLocaleString() + (run.snapshot.label ? ' – ' + run.snapshot.label : '') : '' }}</td>
 					<td :class="'ngb-' + run.status">{{ run.status }}{{ run.status === 'running' ? ' (' + run.phase + ')' : '' }}{{ run.error ? ': ' + run.error : '' }}</td>
 					<td>{{ run.stats?.files?.files ?? run.stats?.restored ?? '' }}</td>
 					<td>{{ run.stats?.files ? formatSize(run.stats.files.uploaded) : '' }}</td>

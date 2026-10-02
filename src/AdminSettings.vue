@@ -11,12 +11,20 @@
 		</NcSettingsSection>
 
 		<template v-if="status">
-			<KeySetup :status="status" @changed="refresh" />
-			<template v-if="status.key.everConfirmed">
+			<div class="ngb-tabs">
+				<NcButton :variant="tab === 'backup' ? 'primary' : 'secondary'" @click="tab = 'backup'">{{ t('ng_backup', 'Backup and restore') }}</NcButton>
+				<NcButton :variant="tab === 'settings' ? 'primary' : 'secondary'" @click="tab = 'settings'">{{ t('ng_backup', 'Settings') }}</NcButton>
+			</div>
+
+			<template v-if="tab === 'settings'">
+				<KeySetup :status="status" @changed="refresh" />
+			</template>
+			<template v-else-if="status.key.everConfirmed">
 				<Locations :status="status" @changed="refresh" />
 				<Backups v-if="status.targets.length" :status="status" @changed="refresh" />
 				<RestoreBrowser v-if="status.targets.length" :status="status" @changed="refresh" />
 			</template>
+			<NcNoteCard v-else type="warning">{{ t('ng_backup', 'Set up the backup key under "Settings" first.') }}</NcNoteCard>
 		</template>
 	</div>
 </template>
@@ -24,6 +32,7 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { t } from '@nextcloud/l10n'
+import NcButton from '@nextcloud/vue/components/NcButton'
 import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import NcSettingsSection from '@nextcloud/vue/components/NcSettingsSection'
@@ -35,12 +44,20 @@ import RestoreBrowser from './components/RestoreBrowser.vue'
 
 const status = ref(null)
 const error = ref('')
+const tab = ref('settings')
+let tabInitialized = false
 let timer = null
 
 async function refresh() {
 	try {
 		status.value = await api.status()
 		error.value = ''
+		// Default to the daily-use tab once the key is set up; stay on Settings otherwise.
+		// Only decided on first load, so switching tabs ourselves isn't undone by polling.
+		if (!tabInitialized) {
+			tab.value = status.value.key.everConfirmed ? 'backup' : 'settings'
+			tabInitialized = true
+		}
 	} catch (e) {
 		error.value = e.message
 	}
@@ -58,5 +75,10 @@ onBeforeUnmount(() => clearTimeout(timer))
 <style scoped>
 .ng-backup :deep(.settings-section) {
 	max-width: 900px;
+}
+.ngb-tabs {
+	display: flex;
+	gap: 8px;
+	margin: 0 0 12px;
 }
 </style>

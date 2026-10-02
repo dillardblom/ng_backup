@@ -5,7 +5,7 @@
     <name>NG Backup</name>
     <summary>Encrypted, incremental backups of your Nextcloud with restore from the web interface</summary>
     <description><![CDATA[Work in progress, not ready for use.]]></description>
-    <version>0.0.18</version>
+    <version>0.0.19</version>
     <licence>agpl</licence>
     <author>Dillard Blom</author>
     <namespace>NgBackup</namespace>

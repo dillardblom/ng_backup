@@ -30,7 +30,7 @@
 			<NcButton v-if="restorable(path) && path !== selected" variant="tertiary" @click="selected = path">{{ t('ng_backup', 'Select this folder') }}</NcButton>
 
 			<div v-if="selected" class="ngb-restore">
-				<p>{{ t('ng_backup', 'Selected: {path}', { path: selected }) }}</p>
+				<p>{{ t('ng_backup', 'Selected: {path}, from the restore point of {date}', { path: selected, date: snapshotLabel(snapshot) }) }}</p>
 				<NcCheckboxRadioSwitch v-for="m in modes" :key="m.id" v-model="mode" :value="m.id" type="radio" name="ngb-mode">{{ m.label }}</NcCheckboxRadioSwitch>
 				<NcButton variant="primary" :disabled="busy" @click="restore">{{ t('ng_backup', 'Restore') }}</NcButton>
 			</div>
