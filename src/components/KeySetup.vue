@@ -23,7 +23,7 @@
 				<NcNoteCard type="warning">
 					{{ t('ng_backup', 'Before the first backup: download the recovery kit and store it, together with your passphrase, somewhere safe outside this server.') }}
 				</NcNoteCard>
-				<NcButton :href="kitUrl" download @click="downloaded = true">
+				<NcButton @click="downloadKit">
 					{{ t('ng_backup', 'Download recovery kit') }}
 				</NcButton>
 				<NcCheckboxRadioSwitch v-model="accepted" :disabled="!downloaded">
@@ -35,7 +35,8 @@
 			</div>
 			<p v-else>
 				{{ t('ng_backup', 'Recovery kit confirmed by {user} on {date}.', { user: status.key.confirmation.uid, date: new Date(status.key.confirmation.time * 1000).toLocaleString() }) }}
-				<a :href="kitUrl" download>{{ t('ng_backup', 'Download the kit again') }}</a>
+				<NcButton variant="tertiary" @click="downloadKit">{{ t('ng_backup', 'Download the kit again') }}</NcButton>
+				<span class="ngb-muted">{{ t('ng_backup', 'Requires your password; all administrators are notified.') }}</span>
 			</p>
 		</template>
 		<NcNoteCard v-if="error" type="error">{{ error }}</NcNoteCard>
@@ -50,6 +51,8 @@ import NcCheckboxRadioSwitch from '@nextcloud/vue/components/NcCheckboxRadioSwit
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import NcPasswordField from '@nextcloud/vue/components/NcPasswordField'
 import NcSettingsSection from '@nextcloud/vue/components/NcSettingsSection'
+import { confirmPassword } from '@nextcloud/password-confirmation'
+import '@nextcloud/password-confirmation/style.css'
 import api from '../api.js'
 
 const props = defineProps({ status: { type: Object, required: true } })
@@ -63,10 +66,22 @@ const busy = ref(false)
 const error = ref('')
 const kitUrl = api.kitUrl()
 
+async function downloadKit() {
+	error.value = ''
+	try {
+		await confirmPassword()
+		window.location.href = kitUrl
+		downloaded.value = true
+	} catch (e) {
+		error.value = e?.message || ''
+	}
+}
+
 async function createKey() {
 	busy.value = true
 	error.value = ''
 	try {
+		await confirmPassword()
 		await api.initKey(pass1.value)
 		pass1.value = pass2.value = ''
 		emit('changed')
@@ -92,6 +107,7 @@ async function confirm() {
 </script>
 
 <style scoped>
+.ngb-muted { color: var(--color-text-maxcontrast); margin-inline-start: 8px; }
 .ngb-form, .ngb-confirm {
 	display: flex;
 	flex-direction: column;

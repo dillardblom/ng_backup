@@ -27,6 +27,7 @@ class BackupJob extends TimedJob {
 		ITimeFactory $time,
 		private BackupService $backups,
 		private \OCA\NgBackup\Service\PruneService $prune,
+		private \OCA\NgBackup\Service\AlertService $alerts,
 		private TargetService $targets,
 		private RunMapper $runs,
 		private IAppConfig $appConfig,
@@ -47,6 +48,9 @@ class BackupJob extends TimedJob {
 			}
 		}
 		$this->weeklyPrune();
+		foreach ($this->targets->list() as $t) {
+			$this->alerts->checkStale($t);
+		}
 	}
 
 	/** Once a week (after Sunday's backup), apply the retention policy to non-append-only locations. */
@@ -60,7 +64,7 @@ class BackupJob extends TimedJob {
 				continue;
 			}
 			try {
-				$this->prune->apply($t);
+				$this->prune->apply($t, false, true);
 			} catch (\Throwable $e) {
 				$this->logger->warning('NG Backup: cleanup of ' . $t->getName() . ' failed: ' . $e->getMessage());
 			}

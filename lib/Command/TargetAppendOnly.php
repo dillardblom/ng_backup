@@ -16,6 +16,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 class TargetAppendOnly extends Command {
 	public function __construct(
 		private TargetService $targets,
+		private \OCA\NgBackup\Service\AlertService $alerts,
 	) {
 		parent::__construct();
 	}
@@ -35,6 +36,9 @@ class TargetAppendOnly extends Command {
 			return 1;
 		}
 		$t = $this->targets->setAppendOnly($this->targets->get($input->getArgument('target')), $state === 'on');
+		if ($state === 'off') {
+			$this->alerts->securityEvent('append_only_off', ['target' => $t->getName()]);
+		}
 		$output->writeln($t->getName() . ' is ' . ($t->getAppendOnly() ? 'append-only' : 'normal') . '.');
 		return 0;
 	}

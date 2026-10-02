@@ -27,6 +27,7 @@ class PruneService {
 		private SnapshotMapper $snapshots,
 		private IAppConfig $appConfig,
 		private ILockingProvider $locking,
+		private AlertService $alerts,
 	) {
 	}
 
@@ -42,13 +43,17 @@ class PruneService {
 		if ($policy->last < 1) {
 			throw new \InvalidArgumentException('Keep at least the last snapshot');
 		}
+		$old = $this->policy()->toArray();
 		$this->appConfig->setValueString(Application::APP_ID, 'retention', json_encode($policy->toArray(), JSON_THROW_ON_ERROR));
+		if ($old !== $policy->toArray()) {
+			$this->alerts->securityEvent('retention_changed', ['policy' => json_encode($policy->toArray())]);
+		}
 	}
 
 	/**
 	 * @return array{kept: array<string, list<string>>, forgotten: list<string>, prune: array}
 	 */
-	public function apply(Target $target, bool $dryRun = false): array {
+	public function apply(Target $target, bool $dryRun = false, bool $scheduled = false): array {
 		if ($target->getAppendOnly()) {
 			throw new \RuntimeException('Location ' . $target->getName() . ' is append-only: NG Backup does not delete anything there');
 		}
@@ -79,6 +84,10 @@ class PruneService {
 				}
 			}
 			// Also removes leftovers of interrupted runs. A dry run counts the snapshots it would forget as gone.
+			if (!$dryRun && $forget !== []) {
+				// Scheduled cleanup follows the policy: audit log only, no notification every week.
+				$this->alerts->securityEvent('snapshots_forgotten', ['target' => $target->getName(), 'count' => (string)count($forget)], !$scheduled);
+			}
 			$prune = $repo->prune($dryRun, 0.5, $dryRun ? $forget : []);
 			return ['kept' => $keep, 'forgotten' => $forget, 'prune' => $prune];
 		} finally {

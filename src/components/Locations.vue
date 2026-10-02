@@ -47,6 +47,8 @@ import NcPasswordField from '@nextcloud/vue/components/NcPasswordField'
 import NcSelect from '@nextcloud/vue/components/NcSelect'
 import NcSettingsSection from '@nextcloud/vue/components/NcSettingsSection'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
+import { confirmPassword } from '@nextcloud/password-confirmation'
+import '@nextcloud/password-confirmation/style.css'
 import api from '../api.js'
 
 defineProps({ status: { type: Object, required: true } })
@@ -107,7 +109,13 @@ async function remove(target) {
 	if (!window.confirm(t('ng_backup', 'Remove "{name}" from NG Backup? The backups on the location itself are kept.', { name: target.name }))) {
 		return
 	}
-	await api.removeTarget(target.id)
+	try {
+		await confirmPassword()
+		await api.removeTarget(target.id)
+	} catch (e) {
+		error.value = e?.message || ''
+		return
+	}
 	emit('changed')
 }
 </script>

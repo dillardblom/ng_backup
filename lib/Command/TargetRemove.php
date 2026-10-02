@@ -16,6 +16,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 class TargetRemove extends Command {
 	public function __construct(
 		private TargetService $targets,
+		private \OCA\NgBackup\Service\AlertService $alerts,
 	) {
 		parent::__construct();
 	}
@@ -34,6 +35,7 @@ class TargetRemove extends Command {
 			return 1;
 		}
 		$this->targets->remove($t);
+		$this->alerts->securityEvent('target_removed', ['target' => $t->getName()]);
 		$output->writeln('Removed <info>' . $t->getName() . '</info>. The backups on the location itself were not touched; add it again to use them.');
 		return 0;
 	}

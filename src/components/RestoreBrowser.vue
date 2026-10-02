@@ -49,6 +49,8 @@ import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import NcSelect from '@nextcloud/vue/components/NcSelect'
 import NcSettingsSection from '@nextcloud/vue/components/NcSettingsSection'
+import { confirmPassword } from '@nextcloud/password-confirmation'
+import '@nextcloud/password-confirmation/style.css'
 import api from '../api.js'
 import { formatSize } from '../format.js'
 
@@ -107,6 +109,7 @@ async function restore() {
 	busy.value = true
 	error.value = message.value = ''
 	try {
+		await confirmPassword()
 		await api.startRestore(target.value.id, snapshot.value.id, selected.value, mode.value)
 		message.value = t('ng_backup', 'Restore queued. It runs with the next cron job; progress is shown under Backups.')
 		emit('changed')

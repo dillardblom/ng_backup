@@ -20,6 +20,8 @@ class Application extends App implements IBootstrap {
 	}
 
 	public function register(IRegistrationContext $context): void {
+		$context->registerNotifierService(\OCA\NgBackup\Notification\Notifier::class);
+		$context->registerSetupCheck(\OCA\NgBackup\SetupCheck\BackupStatusCheck::class);
 	}
 
 	public function boot(IBootContext $context): void {

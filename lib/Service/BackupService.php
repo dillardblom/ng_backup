@@ -41,6 +41,7 @@ class BackupService {
 		private IAppManager $appManager,
 		private ILockingProvider $locking,
 		private LoggerInterface $logger,
+		private AlertService $alerts,
 	) {
 	}
 
@@ -132,7 +133,12 @@ class BackupService {
 			$run->setError($e->getMessage());
 			$run->setFinishedAt(time());
 			$run->setUpdatedAt(time());
-			return $this->runs->update($run);
+			$run = $this->runs->update($run);
+			try {
+				$this->alerts->runFailed($run, isset($target) ? $target->getName() : '#' . $run->getTargetId());
+			} catch (\Throwable) {
+			}
+			return $run;
 		} finally {
 			$this->locking->releaseLock($lockKey, ILockingProvider::LOCK_EXCLUSIVE);
 		}

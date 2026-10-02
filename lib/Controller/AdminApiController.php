@@ -19,6 +19,8 @@ use OCA\NgBackup\Service\RestoreService;
 use OCA\NgBackup\Service\TargetService;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http;
+use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
+use OCP\AppFramework\Http\Attribute\PasswordConfirmationRequired;
 use OCP\AppFramework\Http\DataDownloadResponse;
 use OCP\AppFramework\Http\JSONResponse;
 use OCP\BackgroundJob\IJobList;
@@ -42,6 +44,7 @@ class AdminApiController extends Controller {
 		private IAppConfig $appConfig,
 		private IJobList $jobs,
 		private IUserSession $session,
+		private \OCA\NgBackup\Service\AlertService $alerts,
 	) {
 		parent::__construct(Application::APP_ID, $request);
 	}
@@ -64,6 +67,7 @@ class AdminApiController extends Controller {
 		]);
 	}
 
+	#[PasswordConfirmationRequired]
 	public function initKey(string $passphrase): JSONResponse {
 		try {
 			$this->keys->initialize($passphrase);
@@ -73,10 +77,18 @@ class AdminApiController extends Controller {
 		return new JSONResponse(['fingerprint' => $this->keys->fingerprint()]);
 	}
 
+	/**
+	 * Plain download link (no CSRF token on a navigation), therefore guarded by a recent password
+	 * confirmation instead, logged to the audit log and announced to all administrators. The kit
+	 * only holds the passphrase-wrapped key: useless without the passphrase.
+	 */
+	#[NoCSRFRequired]
+	#[PasswordConfirmationRequired]
 	public function downloadKit(): DataDownloadResponse|JSONResponse {
 		if (!$this->keys->isInitialized()) {
 			return new JSONResponse(['error' => 'No backup key yet'], Http::STATUS_BAD_REQUEST);
 		}
+		$this->alerts->securityEvent('kit_downloaded');
 		$json = json_encode($this->keys->recoveryKit(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
 		return new DataDownloadResponse($json, 'ng_backup-recovery-kit-' . $this->keys->fingerprint() . '.json', 'application/json');
 	}
@@ -103,8 +115,11 @@ class AdminApiController extends Controller {
 		return new JSONResponse(['id' => $r['target']->getId(), 'created' => $r['created']]);
 	}
 
+	#[PasswordConfirmationRequired]
 	public function removeTarget(int $id): JSONResponse {
-		$this->targets->remove($this->targets->get((string)$id));
+		$target = $this->targets->get((string)$id);
+		$this->targets->remove($target);
+		$this->alerts->securityEvent('target_removed', ['target' => $target->getName()]);
 		return new JSONResponse([]);
 	}
 
@@ -152,6 +167,7 @@ class AdminApiController extends Controller {
 	}
 
 	/** Queue a restore of user files; it runs as a background job and shows up in the runs. */
+	#[PasswordConfirmationRequired]
 	public function startRestore(int $targetId, string $snapshotId, string $path, string $mode = RestoreService::MODE_NEW_FOLDER): JSONResponse {
 		if (!in_array($mode, [RestoreService::MODE_NEW_FOLDER, RestoreService::MODE_MERGE, RestoreService::MODE_REPLACE], true)
 			|| !preg_match('#^data/[^/]+/files(/.*)?$#', $path)) {

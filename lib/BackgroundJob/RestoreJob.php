@@ -23,6 +23,7 @@ class RestoreJob extends QueuedJob {
 		private TargetService $targets,
 		private RestoreService $restore,
 		private LoggerInterface $logger,
+		private \OCA\NgBackup\Service\AlertService $alerts,
 	) {
 		parent::__construct($time);
 	}
@@ -46,6 +47,7 @@ class RestoreJob extends QueuedJob {
 			$this->logger->error('NG Backup restore ' . $run->getId() . ' failed: ' . $e->getMessage(), ['exception' => $e]);
 			$run->setStatus(Run::FAILED);
 			$run->setError($e->getMessage());
+			$this->alerts->runFailed($run, '#' . $run->getTargetId());
 		}
 		$run->setFinishedAt(time());
 		$run->setUpdatedAt(time());

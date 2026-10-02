@@ -16,6 +16,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 class KeyKit extends Command {
 	public function __construct(
 		private KeyService $keys,
+		private \OCA\NgBackup\Service\AlertService $alerts,
 	) {
 		parent::__construct();
 	}
@@ -31,6 +32,7 @@ class KeyKit extends Command {
 			$output->writeln('<error>No backup key yet: run occ backup:key:init first.</error>');
 			return 1;
 		}
+		$this->alerts->securityEvent('kit_downloaded');
 		$json = json_encode($this->keys->recoveryKit(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n";
 		$file = $input->getOption('output');
 		if ($file === null) {
