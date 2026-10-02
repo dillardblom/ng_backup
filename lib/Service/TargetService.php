@@ -29,6 +29,7 @@ class TargetService {
 		private ICrypto $crypto,
 		private IAppManager $appManager,
 		private \OCA\NgBackup\Db\DbIndexCache $indexCache,
+		private \OCA\NgBackup\Db\AppConfigCatalogAnchor $anchor,
 	) {
 	}
 
@@ -56,10 +57,10 @@ class TargetService {
 		$keys = $this->keys->keyRing();
 		$storageBackend = $this->buildBackend($backend, $auth, $options, $basePath);
 		if ($storageBackend->exists('config')) {
-			$repo = Repository::openWithKey($storageBackend, $keys);
+			$repo = Repository::openWithKey($storageBackend, $keys, $this->indexCache, $this->anchor);
 			$created = false;
 		} else {
-			$repo = Repository::initWithKey($storageBackend, $keys, $this->keys->wrappedKey());
+			$repo = Repository::initWithKey($storageBackend, $keys, $this->keys->wrappedKey(), $this->anchor);
 			$created = true;
 		}
 
@@ -104,7 +105,7 @@ class TargetService {
 	}
 
 	public function repository(Target $target): Repository {
-		$repo = Repository::openWithKey($this->backend($target), $this->keys->keyRing(), $this->indexCache);
+		$repo = Repository::openWithKey($this->backend($target), $this->keys->keyRing(), $this->indexCache, $this->anchor);
 		if ($target->getRepositoryId() !== null && $repo->id() !== $target->getRepositoryId()) {
 			throw new \RuntimeException('The target now contains a different repository than when it was added');
 		}

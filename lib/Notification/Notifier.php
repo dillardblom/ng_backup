@@ -55,6 +55,7 @@ class Notifier implements INotifier {
 					'retention_changed' => $l->t('%1$s changed the backup retention to %2$s', [$who, $p['policy'] ?? '']),
 					'snapshots_forgotten' => $l->t('%1$s moved %2$s snapshots of %3$s to the trash; they are deleted permanently after %4$s unless restored', [$who, $p['count'] ?? '', $p['target'] ?? '', $p['until'] ?? '']),
 					'snapshot_untrashed' => $l->t('%1$s restored snapshot %2$s of %3$s from the trash', [$who, $p['snapshot'] ?? '', $p['target'] ?? '']),
+					'catalog_trusted' => $l->t('%1$s accepted an older state of backup location %2$s (catalog generation %3$s)', [$who, $p['target'] ?? '', $p['generation'] ?? '']),
 					'slot_added' => $l->t('%1$s added backup passphrase slot %2$s (%3$s); download and confirm the new recovery kit', [$who, $p['slot'] ?? '', $p['label'] ?? '']),
 					'slot_replaced' => $l->t('%1$s set a new passphrase for backup key slot %2$s (%3$s); download and confirm the new recovery kit', [$who, $p['slot'] ?? '', $p['label'] ?? '']),
 					'slot_removed' => $l->t('%1$s removed backup passphrase slot %2$s; download and confirm the new recovery kit', [$who, $p['slot'] ?? '']),

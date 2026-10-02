@@ -5,7 +5,7 @@
     <name>NG Backup</name>
     <summary>Encrypted, incremental backups of your Nextcloud with restore from the web interface</summary>
     <description><![CDATA[Work in progress, not ready for use.]]></description>
-    <version>0.0.13</version>
+    <version>0.0.15</version>
     <licence>agpl</licence>
     <author>Dillard Blom</author>
     <namespace>NgBackup</namespace>
@@ -35,6 +35,7 @@
         <command>OCA\NgBackup\Command\Prune</command>
         <command>OCA\NgBackup\Command\Retention</command>
         <command>OCA\NgBackup\Command\TargetAppendOnly</command>
+        <command>OCA\NgBackup\Command\TargetTrustCurrent</command>
         <command>OCA\NgBackup\Command\Trash</command>
         <command>OCA\NgBackup\Command\TrashRestore</command>
         <command>OCA\NgBackup\Command\KeySlots</command>

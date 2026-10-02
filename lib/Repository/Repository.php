@@ -32,6 +32,7 @@ final class Repository {
 	private StreamCipher $cipher;
 	private BlobIndex $index;
 	private ?PackWriter $runPacks = null;
+	private Catalog $catalog;
 
 	private function __construct(
 		private IBackend $backend,
@@ -52,7 +53,7 @@ final class Repository {
 	 * copy (KeyRing::wrap) stored in the repository config, so the repository can be opened
 	 * with the passphrase from the recovery kit even when the server is gone.
 	 */
-	public static function initWithKey(IBackend $backend, KeyRing $keys, array $wrappedKey): self {
+	public static function initWithKey(IBackend $backend, KeyRing $keys, array $wrappedKey, ?ICatalogAnchor $anchor = null): self {
 		if ($backend->exists('config')) {
 			throw new RepositoryException('A repository already exists at this location');
 		}
@@ -60,11 +61,13 @@ final class Repository {
 		$config = ['format' => self::FORMAT, 'id' => $id, 'created' => gmdate('c'), 'key' => $wrappedKey,
 			'check' => base64_encode((new StreamCipher($keys))->encryptString($id, 'config-check'))];
 		self::putString($backend, 'config', json_encode($config, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
-		return new self($backend, $keys, $id);
+		$repo = new self($backend, $keys, $id);
+		$repo->loadCatalog($anchor);
+		return $repo;
 	}
 
 	/** Open with the master key the server holds (scheduled backups, no passphrase needed). */
-	public static function openWithKey(IBackend $backend, KeyRing $keys, ?IIndexCache $cache = null): self {
+	public static function openWithKey(IBackend $backend, KeyRing $keys, ?IIndexCache $cache = null, ?ICatalogAnchor $anchor = null): self {
 		$config = self::readConfig($backend);
 		try {
 			$ok = isset($config['check']) && (new StreamCipher($keys))->decryptString((string)base64_decode($config['check'], true), 'config-check') === $config['id'];
@@ -79,7 +82,20 @@ final class Repository {
 			$repo->index->setCache($cache, $config['id']);
 		}
 		$repo->index->load();
+		$repo->loadCatalog($anchor);
 		return $repo;
+	}
+
+	private function loadCatalog(?ICatalogAnchor $anchor): void {
+		$this->catalog = new Catalog($this->backend, $this->cipher, $this->repositoryId, $anchor);
+		$this->catalog->load(
+			fn () => array_map('basename', $this->backend->list('snapshots')),
+			fn () => array_map('basename', $this->backend->list('trash/info')));
+	}
+
+	/** Current catalog generation (for status and tests). */
+	public function catalogGeneration(): int {
+		return $this->catalog->gen;
 	}
 
 	/** Index files downloaded when this repository was opened (0 when the local cache was complete). */
@@ -116,6 +132,7 @@ final class Repository {
 		$config = self::readConfig($backend);
 		$repo = new self($backend, KeyRing::unwrapAny($config['key'], $passphrase), $config['id']);
 		$repo->index->load();
+		$repo->loadCatalog(null); // disaster recovery on a new server: no anchor yet, trust the newest valid chain
 		return $repo;
 	}
 
@@ -156,6 +173,8 @@ final class Repository {
 		rewind($encrypted);
 		$this->backend->put('snapshots/' . $snapshotId, $encrypted);
 		fclose($tree);
+		$this->catalog->snapshots[$snapshotId] = true;
+		$this->catalog->write();
 
 		return ['snapshot' => $snapshotId] + $stats;
 	}
@@ -263,6 +282,8 @@ final class Repository {
 		fclose($tree);
 		rewind($encrypted);
 		$this->backend->put('snapshots/' . $snapshotId, $encrypted);
+		$this->catalog->snapshots[$snapshotId] = true;
+		$this->catalog->write();
 	}
 
 	/** @return array<string, array{s:int, m:int, b:list<string>}> */
@@ -321,6 +342,9 @@ final class Repository {
 		$this->backend->put('trash/snapshots/' . $snapshotId, $this->backend->get('snapshots/' . $snapshotId));
 		$this->putObject('trash/info/' . $snapshotId, json_encode(['forgottenAt' => time(), 'by' => $by, 'db' => $meta['db'] ?? null,
 			'dbInTrash' => $dbInTrash, 'time' => $meta['time'] ?? null, 'label' => $meta['label'] ?? ''], JSON_THROW_ON_ERROR));
+		unset($this->catalog->snapshots[$snapshotId]);
+		$this->catalog->trash[$snapshotId] = true;
+		$this->catalog->write();
 		if ($dbInTrash !== null) {
 			$this->backend->delete($meta['db']);
 		}
@@ -335,6 +359,9 @@ final class Repository {
 			$this->backend->delete($info['dbInTrash']);
 		}
 		$this->backend->put('snapshots/' . $snapshotId, $this->backend->get('trash/snapshots/' . $snapshotId));
+		$this->catalog->snapshots[$snapshotId] = true;
+		unset($this->catalog->trash[$snapshotId]);
+		$this->catalog->write();
 		$this->backend->delete('trash/snapshots/' . $snapshotId);
 		$this->backend->delete('trash/info/' . $snapshotId);
 	}
@@ -342,8 +369,12 @@ final class Repository {
 	/** @return array<string, array{forgottenAt:int, by:string, db:?string, dbInTrash:?string, time:?string, label:string}> */
 	public function trash(): array {
 		$out = [];
-		foreach ($this->backend->list('trash/info') as $path) {
-			$out[basename($path)] = $this->trashInfo(basename($path));
+		foreach (array_keys($this->catalog->trash) as $id) {
+			try {
+				$out[$id] = $this->trashInfo($id);
+			} catch (\Throwable) {
+				throw new RepositoryException("Trash entry $id listed in the catalog is missing on the location (possible tampering)");
+			}
 		}
 		return $out;
 	}
@@ -360,7 +391,11 @@ final class Repository {
 			}
 			$this->backend->delete('trash/snapshots/' . $id);
 			$this->backend->delete('trash/info/' . $id);
+			unset($this->catalog->trash[$id]);
 			$purged[] = $id;
+		}
+		if ($purged !== []) {
+			$this->catalog->write();
 		}
 		return $purged;
 	}
@@ -470,9 +505,22 @@ final class Repository {
 		return $stats;
 	}
 
-	/** @return list<string> */
+	/**
+	 * Snapshots according to the verified catalog. A snapshot the catalog lists but the location
+	 * no longer has means it was deleted or hidden behind NG Backup's back.
+	 *
+	 * @return list<string>
+	 */
 	public function listSnapshots(): array {
-		return array_map('basename', $this->backend->list('snapshots'));
+		$present = array_flip(array_map('basename', $this->backend->list('snapshots')));
+		$listed = array_keys($this->catalog->snapshots);
+		foreach ($listed as $id) {
+			if (!isset($present[$id])) {
+				throw new RepositoryException("Snapshot $id is missing on the location (deleted or hidden outside NG Backup)");
+			}
+		}
+		sort($listed);
+		return $listed;
 	}
 
 	public function blobCount(): int {
