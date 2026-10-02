@@ -51,6 +51,9 @@ class BackupService {
 		if ($this->config->getSystemValue('objectstore', null) !== null) {
 			throw new \RuntimeException('Object storage as primary storage is not supported yet');
 		}
+		if ($this->locking->isLocked(PruneService::lockKey($target), ILockingProvider::LOCK_EXCLUSIVE)) {
+			throw new \RuntimeException('A cleanup of ' . $target->getName() . ' is running; try again later');
+		}
 		$running = $this->runs->findRunning($target->getId(), self::KIND_FULL);
 		if ($running !== []) {
 			return $running[0];

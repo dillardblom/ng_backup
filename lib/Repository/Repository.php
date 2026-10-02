@@ -273,6 +273,103 @@ final class Repository {
 		return $data;
 	}
 
+	/** Remove a snapshot (and its database dump). Its data is freed by the next prune(). */
+	public function forget(string $snapshotId): void {
+		try {
+			$meta = $this->snapshotMeta($snapshotId);
+		} catch (\Throwable) {
+			$meta = [];
+		}
+		if (isset($meta['db']) && is_string($meta['db']) && str_starts_with($meta['db'], 'db/')) {
+			$this->backend->delete($meta['db']);
+		}
+		$this->backend->delete('snapshots/' . $snapshotId);
+	}
+
+	/**
+	 * Delete packs no snapshot or user export uses any more, and repack packs where more than
+	 * $repackThreshold of the bytes are unused. Must not run while a backup to this repository
+	 * is in progress (its blobs are not referenced by a snapshot yet); callers hold the lock.
+	 *
+	 * @return array{packs:int, deleted:int, repacked:int, freedBytes:int, keptBlobs:int, unusedBlobs:int}
+	 */
+	public function prune(bool $dryRun = false, float $repackThreshold = 0.5, array $ignoreSnapshots = []): array {
+		$used = [];
+		$ignore = array_flip($ignoreSnapshots); // e.g. snapshots a dry run would forget first
+		foreach ($this->listSnapshots() as $sid) {
+			if (isset($ignore[$sid])) {
+				continue;
+			}
+			foreach ($this->streamEntries($sid) as $e) {
+				foreach ($e['b'] as $b) {
+					$used[$b] = true;
+				}
+			}
+			$meta = $this->snapshotMeta($sid);
+			if (isset($meta['db']) && $this->backend->exists($meta['db'])) {
+				foreach (json_decode($this->getObject($meta['db']), true, 512, JSON_THROW_ON_ERROR)['tables'] as $t) {
+					foreach ($t['blobs'] as $b) {
+						$used[$b] = true;
+					}
+				}
+			}
+		}
+		foreach ($this->backend->list('users') as $path) {
+			foreach (json_decode($this->getObject($path), true, 512, JSON_THROW_ON_ERROR)['entries'] as $e) {
+				foreach ($e['b'] ?? [] as $b) {
+					$used[$b] = true;
+				}
+			}
+		}
+
+		$stats = ['packs' => 0, 'deleted' => 0, 'repacked' => 0, 'freedBytes' => 0, 'keptBlobs' => count($used), 'unusedBlobs' => 0];
+		$packs = $this->index->packs();
+		$stats['packs'] = count($packs);
+		$writer = null;
+		$toRemove = [];
+		foreach ($packs as $packId => $blobs) {
+			$total = 0;
+			$unused = 0;
+			foreach ($blobs as $b) {
+				$total += $b['length'];
+				if (!isset($used[$b['id']])) {
+					$unused += $b['length'];
+					$stats['unusedBlobs']++;
+				}
+			}
+			if ($unused === 0 || ($unused < $total && $unused / $total <= $repackThreshold)) {
+				continue;
+			}
+			$stats['freedBytes'] += $unused;
+			if ($unused === $total) {
+				$stats['deleted']++;
+			} else {
+				$stats['repacked']++;
+				if (!$dryRun) {
+					$writer ??= new PackWriter($this->backend, $this->cipher, $this->index);
+					$path = 'packs/' . substr($packId, 0, 2) . '/' . $packId;
+					foreach ($blobs as $b) {
+						if (isset($used[$b['id']])) {
+							[, , , $raw, $flags] = $this->index->get($b['id']);
+							$writer->addRaw($b['id'], $this->backend->getRange($path, $b['offset'], $b['length']), $raw, $flags);
+						}
+					}
+				}
+			}
+			$toRemove[] = $packId;
+		}
+		if ($dryRun) {
+			return $stats;
+		}
+		// New packs and their index entries are durable before any old pack is removed.
+		$writer?->flush();
+		foreach ($toRemove as $packId) {
+			$this->index->removePack($packId);
+			$this->backend->delete('packs/' . substr($packId, 0, 2) . '/' . $packId);
+		}
+		return $stats;
+	}
+
 	/** @return list<string> */
 	public function listSnapshots(): array {
 		return array_map('basename', $this->backend->list('snapshots'));

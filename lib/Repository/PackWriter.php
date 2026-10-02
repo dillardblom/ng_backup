@@ -49,6 +49,16 @@ final class PackWriter {
 		return strlen($encrypted);
 	}
 
+	/** Add an already encrypted blob as-is (repacking: no decryption needed, the blob is bound to its id, not to a pack). */
+	public function addRaw(string $id, string $encrypted, int $rawLength, int $flags): void {
+		fwrite($this->buffer, $encrypted);
+		$this->entries[] = ['id' => $id, 'offset' => $this->size, 'length' => strlen($encrypted), 'raw' => $rawLength, 'flags' => $flags];
+		$this->size += strlen($encrypted);
+		if ($this->size >= $this->targetSize) {
+			$this->flush();
+		}
+	}
+
 	/** Upload the current pack (if any) and record it in the index. */
 	public function flush(): void {
 		if ($this->entries === []) {

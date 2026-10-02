@@ -26,6 +26,7 @@ class BackupJob extends TimedJob {
 	public function __construct(
 		ITimeFactory $time,
 		private BackupService $backups,
+		private \OCA\NgBackup\Service\PruneService $prune,
 		private TargetService $targets,
 		private RunMapper $runs,
 		private IAppConfig $appConfig,
@@ -45,6 +46,26 @@ class BackupJob extends TimedJob {
 				$run = $this->backups->step($run, min($deadline, microtime(true) + $budget));
 			}
 		}
+		$this->weeklyPrune();
+	}
+
+	/** Once a week (after Sunday's backup), apply the retention policy to non-append-only locations. */
+	private function weeklyPrune(): void {
+		$lastWeek = $this->appConfig->getValueString(Application::APP_ID, 'last_prune_week', '');
+		if (date('N') !== '7' || $lastWeek === date('o-W') || $this->runs->findRunning(null, BackupService::KIND_FULL) !== []) {
+			return;
+		}
+		foreach ($this->targets->list() as $t) {
+			if ($t->getAppendOnly()) {
+				continue;
+			}
+			try {
+				$this->prune->apply($t);
+			} catch (\Throwable $e) {
+				$this->logger->warning('NG Backup: cleanup of ' . $t->getName() . ' failed: ' . $e->getMessage());
+			}
+		}
+		$this->appConfig->setValueString(Application::APP_ID, 'last_prune_week', date('o-W'));
 	}
 
 	/** Daily schedule: appconfig ng_backup/schedule_time "HH:MM" (server time); empty = no schedule. */

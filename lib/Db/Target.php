@@ -22,6 +22,8 @@ use OCP\AppFramework\Db\Entity;
  * @method void setBasePath(string $v)
  * @method string|null getRepositoryId()
  * @method void setRepositoryId(?string $v)
+ * @method bool|null getAppendOnly()
+ * @method void setAppendOnly(bool $v)
  * @method int getCreatedAt()
  * @method void setCreatedAt(int $v)
  */
@@ -33,8 +35,10 @@ class Target extends Entity {
 	protected string $basePath = '';
 	protected ?string $repositoryId = null;
 	protected int $createdAt = 0;
+	protected ?bool $appendOnly = null;
 
 	public function __construct() {
 		$this->addType('createdAt', 'integer');
+		$this->addType('appendOnly', 'boolean');
 	}
 }

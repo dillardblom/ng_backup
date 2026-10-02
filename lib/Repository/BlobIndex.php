@@ -104,6 +104,26 @@ final class BlobIndex {
 		}
 	}
 
+	/** @return array<string, list<array{id:string, offset:int, length:int}>> packId => blobs currently located in that pack */
+	public function packs(): array {
+		$packs = [];
+		foreach ($this->blobs as $id => [$pack, $offset, $length]) {
+			$packs[$pack][] = ['id' => $id, 'offset' => $offset, 'length' => $length];
+		}
+		return $packs;
+	}
+
+	/** Forget a pack: delete its index file and cache row. Blobs that now live elsewhere are kept. */
+	public function removePack(string $packId): void {
+		$this->backend->delete('index/' . $packId);
+		$this->cache?->remove($this->repositoryId, [$packId]);
+		foreach ($this->blobs as $id => $loc) {
+			if ($loc[0] === $packId) {
+				unset($this->blobs[$id]);
+			}
+		}
+	}
+
 	public function count(): int {
 		return count($this->blobs);
 	}

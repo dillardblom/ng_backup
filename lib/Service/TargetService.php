@@ -89,6 +89,11 @@ class TargetService {
 		return ctype_digit($nameOrId) ? $this->mapper->find((int)$nameOrId) : $this->mapper->findByName($nameOrId);
 	}
 
+	public function setAppendOnly(Target $target, bool $appendOnly): Target {
+		$target->setAppendOnly($appendOnly);
+		return $this->mapper->update($target);
+	}
+
 	/** Remove the target from NG Backup. The backups on the target itself are not touched. */
 	public function remove(Target $target): void {
 		$this->mapper->delete($target);
