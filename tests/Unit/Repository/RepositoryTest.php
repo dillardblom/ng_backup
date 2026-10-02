@@ -120,4 +120,30 @@ class RepositoryTest extends TestCase {
 		$this->expectException(CryptoException::class);
 		$repo->getObject('db/2');
 	}
+
+	public function testSafePaths(): void {
+		foreach (['data/alice/files/a.txt', 'config/config.php', 'a b/c-d_e.f'] as $ok) {
+			$this->assertTrue(Repository::isSafePath($ok), $ok);
+		}
+		foreach (['', '/etc/passwd', '../x', 'a/../b', 'a/./b', 'a//b', 'a/', "a\0b", 'a\\b', "a\nb"] as $bad) {
+			$this->assertFalse(Repository::isSafePath($bad), json_encode($bad));
+		}
+	}
+
+	public function testMaliciousSnapshotPathIsRejectedOnRestore(): void {
+		$repo = Repository::init($this->backend, 'pw');
+		$stats = [];
+		$blob = $repo->storeData('evil', $stats);
+		$repo->flushPacks();
+		$repo->writeSnapshot('bad', ['time' => gmdate('c')], [json_encode(['p' => '../../escaped.txt', 's' => 4, 'm' => 0, 'b' => [$blob]])]);
+		$target = $this->tempDir() . '/inner';
+		mkdir($target);
+		try {
+			$repo->restore('bad', $target);
+			$this->fail('restore of a ../ path must fail');
+		} catch (RepositoryException) {
+		}
+		$this->assertFileDoesNotExist(dirname($target, 2) . '/escaped.txt');
+		$this->assertFileDoesNotExist(dirname($target) . '/escaped.txt');
+	}
 }

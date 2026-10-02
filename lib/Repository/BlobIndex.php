@@ -45,8 +45,9 @@ final class BlobIndex {
 	 * and only the index files that are not cached yet are downloaded. Cached packs that no
 	 * longer exist on the backend are dropped from the cache.
 	 */
-	public function load(): void {
-		$cached = $this->cache?->all($this->repositoryId) ?? [];
+	public function load(bool $verify = false): void {
+		$this->blobs = [];
+		$cached = $verify ? [] : ($this->cache?->all($this->repositoryId) ?? []);
 		$present = [];
 		$this->downloaded = 0;
 		foreach ($this->backend->list('index') as $path) {
@@ -64,6 +65,20 @@ final class BlobIndex {
 			foreach ($entries as $e) {
 				$this->blobs[$e['id']] = [$packId, $e['offset'], $e['length'], $e['raw'], $e['flags']];
 			}
+		}
+		if ($verify && $this->cache !== null) {
+			// Refresh the cache from what was just verified.
+			$this->cache->remove($this->repositoryId, array_keys($this->cache->all($this->repositoryId)));
+			foreach ($this->packs() as $packId => $_) {
+				$entries = [];
+				foreach ($this->blobs as $id => [$pack, $offset, $length, $raw, $flags]) {
+					if ($pack === $packId) {
+						$entries[] = ['id' => $id, 'offset' => $offset, 'length' => $length, 'raw' => $raw, 'flags' => $flags];
+					}
+				}
+				$this->cache->put($this->repositoryId, $packId, $entries);
+			}
+			return;
 		}
 		$stale = array_keys(array_diff_key($cached, $present));
 		if ($stale !== []) {

@@ -29,16 +29,22 @@ class RestoreJob extends QueuedJob {
 	}
 
 	protected function run($argument): void {
-		$run = $this->runs->find((int)$argument['run']);
+		$runId = (int)($argument['run'] ?? 0);
+		try {
+			$run = $this->runs->find($runId);
+		} catch (\Throwable $e) {
+			$this->logger->error('NG Backup restore job: run ' . $runId . ' not found', ['exception' => $e]);
+			return;
+		}
 		if ($run->getStatus() !== Run::RUNNING) {
 			return;
 		}
-		$req = json_decode($run->getState(), true, 512, JSON_THROW_ON_ERROR);
-		$run->setPhase('restoring');
-		$run->setUpdatedAt(time());
-		$this->runs->update($run);
-		@set_time_limit(0);
 		try {
+			$req = json_decode($run->getState(), true, 512, JSON_THROW_ON_ERROR);
+			$run->setPhase('restoring');
+			$run->setUpdatedAt(time());
+			$run = $this->runs->update($run);
+			@set_time_limit(0);
 			$result = $this->restore->restoreUserFiles($this->targets->get((string)$run->getTargetId()), $req['snapshot'], $req['path'], $req['mode']);
 			$run->setStatus(Run::DONE);
 			$run->setPhase('done');
@@ -47,7 +53,10 @@ class RestoreJob extends QueuedJob {
 			$this->logger->error('NG Backup restore ' . $run->getId() . ' failed: ' . $e->getMessage(), ['exception' => $e]);
 			$run->setStatus(Run::FAILED);
 			$run->setError($e->getMessage());
-			$this->alerts->runFailed($run, '#' . $run->getTargetId());
+			try {
+				$this->alerts->runFailed($run, '#' . $run->getTargetId());
+			} catch (\Throwable) {
+			}
 		}
 		$run->setFinishedAt(time());
 		$run->setUpdatedAt(time());

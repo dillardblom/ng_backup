@@ -97,10 +97,14 @@ class AdminApiController extends Controller {
 		return new DataDownloadResponse($json, 'ng_backup-recovery-kit-' . $this->keys->fingerprint() . '.json', 'application/json');
 	}
 
-	/** The admin must tick the statement and send the exact confirmation phrase. */
-	public function confirmKit(bool $accepted, string $phrase): JSONResponse {
+	/** The admin must tick the statement, send the exact phrase and the code from the kit file. */
+	#[PasswordConfirmationRequired]
+	public function confirmKit(bool $accepted, string $phrase, string $code = ''): JSONResponse {
 		if (!$accepted || $phrase !== KeyConfirm::CONFIRMATION) {
 			return new JSONResponse(['error' => 'Not confirmed'], Http::STATUS_BAD_REQUEST);
+		}
+		if (!$this->keys->checkKitCode($code)) {
+			return new JSONResponse(['error' => 'The confirmation code does not match the current recovery kit'], Http::STATUS_BAD_REQUEST);
 		}
 		$this->keys->confirmRecoveryKit($this->session->getUser()?->getUID() ?? 'unknown');
 		return new JSONResponse(['confirmation' => $this->keys->recoveryKitConfirmation()]);
@@ -227,7 +231,7 @@ class AdminApiController extends Controller {
 	#[PasswordConfirmationRequired]
 	public function startRestore(int $targetId, string $snapshotId, string $path, string $mode = RestoreService::MODE_NEW_FOLDER): JSONResponse {
 		if (!in_array($mode, [RestoreService::MODE_NEW_FOLDER, RestoreService::MODE_MERGE, RestoreService::MODE_REPLACE], true)
-			|| !preg_match('#^data/[^/]+/files(/.*)?$#', $path)) {
+			|| !\OCA\NgBackup\Repository\Repository::isSafePath($path) || !preg_match('#^data/[^/]+/files(/.*)?$#', $path)) {
 			return new JSONResponse(['error' => 'Invalid path or mode'], Http::STATUS_BAD_REQUEST);
 		}
 		$run = new Run();

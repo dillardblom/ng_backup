@@ -33,6 +33,31 @@ class PruneService {
 	}
 
 	public function untrash(Target $target, string $snapshotId): void {
+		$this->lockExclusive($target);
+		try {
+			$this->doUntrash($target, $snapshotId);
+		} finally {
+			$this->locking->releaseLock(self::lockKey($target), ILockingProvider::LOCK_EXCLUSIVE);
+		}
+	}
+
+	/**
+	 * Exclusive lock on the location, then make sure no run of any kind (backup, restore, export)
+	 * is in progress: their data may not be referenced by a snapshot yet, or is being read.
+	 */
+	private function lockExclusive(Target $target): void {
+		try {
+			$this->locking->acquireLock(self::lockKey($target), ILockingProvider::LOCK_EXCLUSIVE);
+		} catch (LockedException) {
+			throw new \RuntimeException('A backup, restore or cleanup of ' . $target->getName() . ' is in progress; try again later');
+		}
+		if ($this->runs->findRunning($target->getId()) !== []) {
+			$this->locking->releaseLock(self::lockKey($target), ILockingProvider::LOCK_EXCLUSIVE);
+			throw new \RuntimeException('A backup or restore of ' . $target->getName() . ' is running; try again later');
+		}
+	}
+
+	private function doUntrash(Target $target, string $snapshotId): void {
 		$repo = $this->targets->repository($target);
 		if (!array_key_exists($snapshotId, $repo->trash())) {
 			throw new \InvalidArgumentException('That snapshot is not in the trash (or was already deleted)');
@@ -84,14 +109,7 @@ class PruneService {
 		if ($target->getAppendOnly()) {
 			throw new \RuntimeException('Location ' . $target->getName() . ' is append-only: NG Backup does not delete anything there');
 		}
-		if ($this->runs->findRunning($target->getId(), BackupService::KIND_FULL) !== []) {
-			throw new \RuntimeException('A backup to ' . $target->getName() . ' is running; try again later');
-		}
-		try {
-			$this->locking->acquireLock(self::lockKey($target), ILockingProvider::LOCK_EXCLUSIVE);
-		} catch (LockedException) {
-			throw new \RuntimeException('Another backup or cleanup of ' . $target->getName() . ' is running');
-		}
+		$this->lockExclusive($target);
 		try {
 			$repo = $this->targets->repository($target);
 			$times = [];

@@ -171,6 +171,12 @@ final class Repository {
 			if (!is_dir(dirname($dest))) {
 				mkdir(dirname($dest), 0700, true);
 			}
+			// Defence in depth: the resolved directory must stay below the target (no symlink escapes).
+			$base = realpath($target);
+			$dir = realpath(dirname($dest));
+			if ($base === false || $dir === false || ($dir !== $base && !str_starts_with($dir, $base . '/')) || is_link($dest)) {
+				throw new RepositoryException('Refusing to write outside the restore directory: ' . $entry['p']);
+			}
 			// Write next to the destination and rename after all blobs verified: at most one file
 			// is ever present twice.
 			$tmp = $dest . '.ngb-restore';
@@ -268,6 +274,19 @@ final class Repository {
 		}
 	}
 
+	/** Relative path of non-empty segments, without ".", "..", NUL, backslash or control characters. */
+	public static function isSafePath(string $path): bool {
+		if ($path === '' || str_starts_with($path, '/') || preg_match('/[\x00-\x1f\\\\]/', $path)) {
+			return false;
+		}
+		foreach (explode('/', $path) as $segment) {
+			if ($segment === '' || $segment === '.' || $segment === '..') {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	/** Small encrypted objects (manifests). */
 	public function putObject(string $path, string $data): void {
 		self::putString($this->backend, $path, $this->cipher->encryptString($data, 'object:' . $path));
@@ -352,6 +371,8 @@ final class Repository {
 	 * @return array{packs:int, deleted:int, repacked:int, freedBytes:int, keptBlobs:int, unusedBlobs:int}
 	 */
 	public function prune(bool $dryRun = false, float $repackThreshold = 0.5, array $ignoreSnapshots = []): array {
+		// Deleting is decided on the authenticated index files on the location, never on the local cache.
+		$this->index->load(true);
 		$used = [];
 		$ignore = array_flip($ignoreSnapshots); // e.g. snapshots a dry run would forget first
 		foreach ($this->listSnapshots() as $sid) {
@@ -546,7 +567,12 @@ final class Repository {
 		rewind($plain);
 		fgets($plain); // meta line
 		while (($line = fgets($plain)) !== false) {
-			yield json_decode($line, true, 512, JSON_THROW_ON_ERROR);
+			$entry = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
+			if (!is_array($entry) || !is_string($entry['p'] ?? null) || !self::isSafePath($entry['p'])
+				|| !is_int($entry['s'] ?? null) || !is_array($entry['b'] ?? null)) {
+				throw new RepositoryException('Invalid entry in snapshot ' . $snapshotId);
+			}
+			yield $entry;
 		}
 		fclose($plain);
 	}

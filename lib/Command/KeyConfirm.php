@@ -40,6 +40,11 @@ class KeyConfirm extends Command {
 		$output->writeln('');
 		$output->writeln(wordwrap(self::STATEMENT, 78));
 		$output->writeln('');
+		$code = (string)$this->getHelper('question')->ask($input, $output, new Question('Confirmation code from the recovery kit file ("confirmation_code"): '));
+		if (!$this->keys->checkKitCode($code)) {
+			$output->writeln('<error>That code does not match the current recovery kit (download it with occ backup:key:kit first).</error>');
+			return 1;
+		}
 		$answer = (string)$this->getHelper('question')->ask($input, $output, new Question('Type "' . self::CONFIRMATION . '" to proceed: '));
 		if (trim($answer) !== self::CONFIRMATION) {
 			$output->writeln('<error>Not confirmed.</error>');

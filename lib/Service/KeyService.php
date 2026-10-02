@@ -29,6 +29,7 @@ class KeyService {
 	private const KEY_FINGERPRINT = 'master_key_fingerprint';
 	private const KEY_DELETE_DELAY = 'delete_delay_days';
 	private const KEY_KIT_VERSION = 'recovery_kit_version';
+	private const KEY_KIT_CODE = 'recovery_kit_code';
 	public const DEFAULT_DELETE_DELAY = 7;
 
 	private ?KeyRing $cached = null;
@@ -188,6 +189,7 @@ class KeyService {
 			'app' => 'NG Backup',
 			'fingerprint' => $this->fingerprint(),
 			'kit_version' => $this->kitVersion(),
+			'confirmation_code' => $this->kitCode(),
 			'created' => gmdate('c'),
 			'wrapped_key' => $this->wrappedKey(),
 			'slots' => $this->slots(),
@@ -195,6 +197,36 @@ class KeyService {
 				. 'To restore on a new server: install NG Backup, add the backup location and enter this kit with one passphrase. '
 				. 'Without the kit (or the location) and a passphrase, the backups cannot be decrypted.',
 		];
+	}
+
+	/**
+	 * Short code printed in the current kit file. Typing it back when confirming proves the
+	 * admin actually has the downloaded kit. A new code per kit version; the server only keeps
+	 * its own copy encrypted with the instance secret.
+	 */
+	private function kitCode(): string {
+		$stored = json_decode($this->appConfig->getValueString(Application::APP_ID, self::KEY_KIT_CODE, '{}', true), true) ?: [];
+		if (($stored['version'] ?? 0) === $this->kitVersion() && isset($stored['code'])) {
+			return $this->crypto->decrypt($stored['code']);
+		}
+		$alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O, 1/I
+		$code = '';
+		for ($i = 0; $i < 8; $i++) {
+			$code .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+		}
+		$code = substr($code, 0, 4) . '-' . substr($code, 4);
+		$this->appConfig->setValueString(Application::APP_ID, self::KEY_KIT_CODE,
+			json_encode(['version' => $this->kitVersion(), 'code' => $this->crypto->encrypt($code)], JSON_THROW_ON_ERROR), true, true);
+		return $code;
+	}
+
+	public function checkKitCode(string $code): bool {
+		$stored = json_decode($this->appConfig->getValueString(Application::APP_ID, self::KEY_KIT_CODE, '{}', true), true) ?: [];
+		if (($stored['version'] ?? 0) !== $this->kitVersion() || !isset($stored['code'])) {
+			return false; // no kit downloaded for this version yet
+		}
+		$normalise = static fn (string $c) => strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $c) ?? '');
+		return hash_equals($normalise($this->crypto->decrypt($stored['code'])), $normalise($code));
 	}
 
 	public function confirmRecoveryKit(string $uid): void {

@@ -52,9 +52,22 @@ class BackupService {
 		if ($this->config->getSystemValue('objectstore', null) !== null) {
 			throw new \RuntimeException('Object storage as primary storage is not supported yet');
 		}
-		if ($this->locking->isLocked(PruneService::lockKey($target), ILockingProvider::LOCK_EXCLUSIVE)) {
-			throw new \RuntimeException('A cleanup of ' . $target->getName() . ' is running; try again later');
+		// Check and create the run under the location's exclusive lock, so a cleanup cannot start
+		// in between (it takes the same lock and refuses while a run exists).
+		$lock = PruneService::lockKey($target);
+		try {
+			$this->locking->acquireLock($lock, ILockingProvider::LOCK_EXCLUSIVE);
+		} catch (LockedException) {
+			throw new \RuntimeException('A cleanup or another start for ' . $target->getName() . ' is running; try again later');
 		}
+		try {
+			return $this->createRun($target, $label);
+		} finally {
+			$this->locking->releaseLock($lock, ILockingProvider::LOCK_EXCLUSIVE);
+		}
+	}
+
+	private function createRun(Target $target, string $label): Run {
 		$running = $this->runs->findRunning($target->getId(), self::KIND_FULL);
 		if ($running !== []) {
 			return $running[0];
@@ -94,6 +107,14 @@ class BackupService {
 		try {
 			$this->locking->acquireLock($lockKey, ILockingProvider::LOCK_EXCLUSIVE);
 		} catch (LockedException) {
+			return $run;
+		}
+		// Shared lock on the location while this step writes: a cleanup (exclusive) cannot run now.
+		$targetLock = 'ng_backup/target/' . $run->getTargetId();
+		try {
+			$this->locking->acquireLock($targetLock, ILockingProvider::LOCK_SHARED);
+		} catch (LockedException) {
+			$this->locking->releaseLock($lockKey, ILockingProvider::LOCK_EXCLUSIVE);
 			return $run;
 		}
 		try {
@@ -140,6 +161,7 @@ class BackupService {
 			}
 			return $run;
 		} finally {
+			$this->locking->releaseLock($targetLock, ILockingProvider::LOCK_SHARED);
 			$this->locking->releaseLock($lockKey, ILockingProvider::LOCK_EXCLUSIVE);
 		}
 	}

@@ -47,9 +47,23 @@ class BackupJob extends TimedJob {
 				$run = $this->backups->step($run, min($deadline, microtime(true) + $budget));
 			}
 		}
+		$this->failStaleRestores();
 		$this->weeklyPrune();
 		foreach ($this->targets->list() as $t) {
 			$this->alerts->checkStale($t);
+		}
+	}
+
+	/** A restore run that has not moved for 6 hours is considered dead (it would block cleanup forever). */
+	private function failStaleRestores(): void {
+		foreach ($this->runs->findRunning(null, 'restore') as $run) {
+			if (time() - $run->getUpdatedAt() > 6 * 3600) {
+				$run->setStatus(\OCA\NgBackup\Db\Run::FAILED);
+				$run->setError('No progress for 6 hours; marked as failed');
+				$run->setFinishedAt(time());
+				$this->runs->update($run);
+				$this->alerts->runFailed($run, '#' . $run->getTargetId());
+			}
 		}
 	}
 

@@ -36,7 +36,23 @@ class RestoreService {
 	public function __construct(
 		private TargetService $targets,
 		private IRootFolder $root,
+		private \OCP\Lock\ILockingProvider $locking,
 	) {
+	}
+
+	/** Shared lock on the location while restoring: a cleanup (exclusive) must not delete what is being read. */
+	private function withSharedLock(Target $target, callable $fn): mixed {
+		$key = PruneService::lockKey($target);
+		try {
+			$this->locking->acquireLock($key, \OCP\Lock\ILockingProvider::LOCK_SHARED);
+		} catch (\OCP\Lock\LockedException) {
+			throw new \RuntimeException('A cleanup of ' . $target->getName() . ' is running; try again later');
+		}
+		try {
+			return $fn();
+		} finally {
+			$this->locking->releaseLock($key, \OCP\Lock\ILockingProvider::LOCK_SHARED);
+		}
 	}
 
 	/**
@@ -72,7 +88,11 @@ class RestoreService {
 	 * @return array{restored:int, trashed:int, target:string}
 	 */
 	public function restoreUserFiles(Target $target, string $snapshotId, string $logicalPath, string $mode = self::MODE_NEW_FOLDER, ?callable $progress = null): array {
-		if (!preg_match('#^data/([^/]+)/files(?:/(.*))?$#', trim($logicalPath, '/'), $m)) {
+		return $this->withSharedLock($target, fn () => $this->doRestoreUserFiles($target, $snapshotId, $logicalPath, $mode, $progress));
+	}
+
+	private function doRestoreUserFiles(Target $target, string $snapshotId, string $logicalPath, string $mode, ?callable $progress): array {
+		if (!Repository::isSafePath(trim($logicalPath, '/')) || !preg_match('#^data/([^/]+)/files(?:/(.*))?$#', trim($logicalPath, '/'), $m)) {
 			throw new \InvalidArgumentException('Expected a path like data/<user>/files/<folder or file>');
 		}
 		[$uid, $rel] = [$m[1], trim($m[2] ?? '', '/')];
@@ -127,7 +147,7 @@ class RestoreService {
 		if (!is_dir($directory) && !mkdir($directory, 0750, true) && !is_dir($directory)) {
 			throw new \RuntimeException("Cannot create $directory");
 		}
-		return $this->targets->repository($target)->restore($snapshotId, $directory, trim($prefix, '/') === '' ? '' : trim($prefix, '/') . '/');
+		return $this->withSharedLock($target, fn () => $this->targets->repository($target)->restore($snapshotId, $directory, trim($prefix, '/') === '' ? '' : trim($prefix, '/') . '/'));
 	}
 
 	private function writeFile(Repository $repo, Folder $dest, string $relPath, array $entry): void {

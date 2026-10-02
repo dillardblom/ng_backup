@@ -63,8 +63,10 @@
 						: t('ng_backup', 'Before the first backup: download the recovery kit and store it, together with the passphrase, somewhere safe outside this server.') }}
 				</NcNoteCard>
 				<NcButton @click="downloadKit">{{ t('ng_backup', 'Download recovery kit') }}</NcButton>
+				<NcTextField v-model="code" :disabled="!downloaded" :label="t('ng_backup', 'Confirmation code from the kit file')"
+					:helper-text="t('ng_backup', 'Open the downloaded file and type the value of confirmation_code, e.g. ABCD-2345.')" />
 				<NcCheckboxRadioSwitch v-model="accepted" :disabled="!downloaded">{{ status.statement }}</NcCheckboxRadioSwitch>
-				<NcButton variant="primary" :disabled="!downloaded || !accepted || busy" @click="confirm">{{ status.confirmationPhrase }}</NcButton>
+				<NcButton variant="primary" :disabled="!downloaded || !accepted || code.length < 8 || busy" @click="confirm">{{ status.confirmationPhrase }}</NcButton>
 			</div>
 			<p v-else>
 				{{ t('ng_backup', 'Recovery kit confirmed by {user} on {date}.', { user: status.key.confirmation.uid, date: new Date(status.key.confirmation.time * 1000).toLocaleString() }) }}
@@ -99,6 +101,7 @@ const delay = ref(props.status.key.deleteDelayDays)
 const slotForm = ref(null)
 const downloaded = ref(false)
 const accepted = ref(false)
+const code = ref('')
 const busy = ref(false)
 const error = ref('')
 const kitUrl = api.kitUrl()
@@ -148,18 +151,10 @@ const removeSlot = (slot) => guarded(async () => {
 	downloaded.value = accepted.value = false
 })
 
-async function confirm() {
-	busy.value = true
-	error.value = ''
-	try {
-		await api.confirmKit(accepted.value, props.status.confirmationPhrase)
-		emit('changed')
-	} catch (e) {
-		error.value = e.message
-	} finally {
-		busy.value = false
-	}
-}
+const confirm = () => guarded(async () => {
+	await api.confirmKit(accepted.value, props.status.confirmationPhrase, code.value)
+	code.value = ''
+})
 </script>
 
 <style scoped>

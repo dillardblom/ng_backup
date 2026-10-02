@@ -24,7 +24,7 @@ export default {
 	trash: (targetId) => call('get', `/targets/${targetId}/trash`),
 	untrash: (targetId, snapshotId) => call('post', `/targets/${targetId}/trash/${snapshotId}`),
 	kitUrl: () => url('/key/kit'),
-	confirmKit: (accepted, phrase) => call('post', '/key/confirm', { accepted, phrase }),
+	confirmKit: (accepted, phrase, code) => call('post', '/key/confirm', { accepted, phrase, code }),
 	backends: () => call('get', '/backends'),
 	addTarget: (target) => call('post', '/targets', target),
 	removeTarget: (id) => call('delete', `/targets/${id}`),
