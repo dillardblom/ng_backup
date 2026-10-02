@@ -149,6 +149,7 @@ class BackupService {
 				$state['files'] = BackupRun::step($repo, $state['files'], $deadline);
 				if ($state['files']['phase'] === 'done') {
 					$this->recordSnapshot($run, $state['files']);
+					$this->alerts->storedBytes($target, $repo->storedBytes());
 					$run->setStatus(Run::DONE);
 					$run->setPhase('done');
 					$run->setFinishedAt(time());

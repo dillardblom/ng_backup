@@ -54,6 +54,36 @@ class AlertService {
 			['kind' => $run->getKind(), 'target' => $targetName, 'error' => mb_strimwidth((string)$run->getError(), 0, 300, '…')]);
 	}
 
+	/**
+	 * Remember how much is stored on a location (for the settings page) and warn administrators
+	 * once a day when it is at 80% of its limit or more.
+	 */
+	public function storedBytes(Target $target, int $bytes): void {
+		$this->appConfig->setValueString(Application::APP_ID, 'stored_' . $target->getId(), (string)$bytes);
+		$limit = $target->getMaxBytes();
+		if ($limit === null || $limit <= 0 || $bytes < 0.8 * $limit) {
+			return;
+		}
+		$key = 'quota_notified_' . $target->getId();
+		if ($this->appConfig->getValueString(Application::APP_ID, $key, '') === date('Y-m-d')) {
+			return;
+		}
+		$this->appConfig->setValueString(Application::APP_ID, $key, date('Y-m-d'));
+		$this->notifyAdmins('quota_warning', 'quota-' . $target->getId() . '-' . date('Y-m-d'), [
+			'target' => $target->getName(), 'percent' => (string)round($bytes / $limit * 100),
+			'used' => self::gib($bytes), 'limit' => self::gib($limit)]);
+	}
+
+	private static function gib(int $bytes): string {
+		$g = $bytes / 1073741824;
+		return sprintf($g < 10 ? '%.2f GiB' : '%.1f GiB', $g);
+	}
+
+	public function lastStoredBytes(Target $target): ?int {
+		$v = $this->appConfig->getValueString(Application::APP_ID, 'stored_' . $target->getId(), '');
+		return $v === '' ? null : (int)$v;
+	}
+
 	/** At most one notification per location per day. */
 	public function checkStale(Target $target): void {
 		$last = $this->runs->lastFinished($target->getId(), BackupService::KIND_FULL);

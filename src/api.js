@@ -29,6 +29,7 @@ export default {
 	addTarget: (target) => call('post', '/targets', target),
 	removeTarget: (id) => call('delete', `/targets/${id}`),
 	testTarget: (id) => call('post', `/targets/${id}/test`),
+	setTargetLimit: (id, maxGb) => call('put', `/targets/${id}/limit`, { maxGb }),
 	startBackup: (targetId, label) => call('post', '/backups', { targetId, label }),
 	setSchedule: (time) => call('put', '/schedule', { time }),
 	snapshots: (targetId) => call('get', `/targets/${targetId}/snapshots`),

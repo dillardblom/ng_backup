@@ -55,7 +55,8 @@ class AdminApiController extends Controller {
 		$targets = [];
 		foreach ($this->targets->list() as $t) {
 			$targets[] = ['id' => $t->getId(), 'name' => $t->getName(), 'backend' => $t->getBackend(), 'path' => $t->getBasePath(),
-				'repositoryId' => $t->getRepositoryId(), 'createdAt' => $t->getCreatedAt()];
+				'repositoryId' => $t->getRepositoryId(), 'createdAt' => $t->getCreatedAt(), 'appendOnly' => (bool)$t->getAppendOnly(),
+				'maxBytes' => $t->getMaxBytes(), 'storedBytes' => $this->alerts->lastStoredBytes($t)];
 		}
 		$runs = array_map(fn (Run $r) => $this->runJson($r), $this->runs->findRecent(15));
 		return new JSONResponse([
@@ -167,13 +168,23 @@ class AdminApiController extends Controller {
 		return new JSONResponse($this->targets->availableBackends());
 	}
 
-	public function addTarget(string $name, string $backend, string $auth, array $options = [], string $path = 'ng_backup'): JSONResponse {
+	public function addTarget(string $name, string $backend, string $auth, array $options = [], string $path = 'ng_backup', ?float $maxGb = null): JSONResponse {
 		try {
 			$r = $this->targets->add($name, $backend, $auth, $options, $path);
+			if ($maxGb !== null && $maxGb > 0) {
+				$this->targets->setMaxBytes($r['target'], (int)round($maxGb * 1073741824));
+			}
 		} catch (\Throwable $e) {
 			return new JSONResponse(['error' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
 		}
 		return new JSONResponse(['id' => $r['target']->getId(), 'created' => $r['created']]);
+	}
+
+	/** Size limit in GiB; null or 0 = unlimited. */
+	#[PasswordConfirmationRequired]
+	public function setTargetLimit(int $id, ?float $maxGb = null): JSONResponse {
+		$t = $this->targets->setMaxBytes($this->targets->get((string)$id), ($maxGb !== null && $maxGb > 0) ? (int)round($maxGb * 1073741824) : null);
+		return new JSONResponse(['maxBytes' => $t->getMaxBytes()]);
 	}
 
 	#[PasswordConfirmationRequired]

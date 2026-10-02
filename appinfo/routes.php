@@ -20,6 +20,7 @@ return [
 		['name' => 'AdminApi#addTarget', 'url' => '/api/targets', 'verb' => 'POST'],
 		['name' => 'AdminApi#removeTarget', 'url' => '/api/targets/{id}', 'verb' => 'DELETE'],
 		['name' => 'AdminApi#testTarget', 'url' => '/api/targets/{id}/test', 'verb' => 'POST'],
+		['name' => 'AdminApi#setTargetLimit', 'url' => '/api/targets/{id}/limit', 'verb' => 'PUT'],
 		['name' => 'AdminApi#startBackup', 'url' => '/api/backups', 'verb' => 'POST'],
 		['name' => 'AdminApi#setSchedule', 'url' => '/api/schedule', 'verb' => 'PUT'],
 		['name' => 'AdminApi#snapshots', 'url' => '/api/targets/{targetId}/snapshots', 'verb' => 'GET'],

@@ -42,6 +42,10 @@ class Notifier implements INotifier {
 					: $l->t('Backup to %s failed', [$p['target']]));
 				$notification->setParsedMessage((string)($p['error'] ?? ''));
 				break;
+			case 'quota_warning':
+				$notification->setParsedSubject($l->t('Backup location %1$s is at %2$s%% of its limit (%3$s of %4$s)', [$p['target'], $p['percent'], $p['used'], $p['limit']]));
+				$notification->setParsedMessage($l->t('Backups stop when the limit is reached. Raise the limit, or let the retention policy remove older backups.'));
+				break;
 			case 'backup_stale':
 				$notification->setParsedSubject($l->t('No successful backup to %1$s since %2$s', [$p['target'], $p['since']]));
 				$notification->setParsedMessage($l->t('Check the backup settings and the server log.'));

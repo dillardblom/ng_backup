@@ -8,7 +8,8 @@
 		<ul v-if="status.targets.length" class="ngb-list">
 			<li v-for="target in status.targets" :key="target.id">
 				<strong>{{ target.name }}</strong>
-				<span class="ngb-muted">{{ target.backend }} · {{ target.path }}</span>
+				<span class="ngb-muted">{{ target.backend }} · {{ target.path }}{{ target.appendOnly ? ' · ' + t('ng_backup', 'append-only') : '' }}</span>
+				<span :class="usageClass(target)">{{ usageText(target) }}</span>
 				<span v-if="tests[target.id]" :class="tests[target.id].ok ? 'ngb-ok' : 'ngb-err'">
 					{{ tests[target.id].ok ? t('ng_backup', 'OK, {n} snapshots', { n: tests[target.id].snapshots }) : tests[target.id].error }}
 				</span>
@@ -28,6 +29,8 @@
 				<NcTextField v-else v-model="form.options[field.key]" :label="field.label + (field.optional ? '' : ' *')" />
 			</template>
 			<NcTextField v-model="form.path" :label="t('ng_backup', 'Folder on the location for the backups')" />
+			<NcTextField v-model="form.maxGb" type="number" min="0" :label="t('ng_backup', 'Maximum size in GiB')"
+				:helper-text="form.maxGb ? t('ng_backup', 'Backups stop at this size; administrators are warned at 80%.') : t('ng_backup', 'Empty = unlimited: everything stored is billed by your provider, and nothing stops a backup that keeps growing.')" />
 			<div class="ngb-row">
 				<NcButton type="submit" variant="primary" :disabled="busy || !form.name || !backend || !auth">{{ t('ng_backup', 'Connect and add') }}</NcButton>
 				<NcButton @click="adding = false">{{ t('ng_backup', 'Cancel') }}</NcButton>
@@ -61,7 +64,18 @@ const backends = ref([])
 const backend = ref(null)
 const auth = ref(null)
 const tests = reactive({})
-const form = reactive({ name: '', path: 'ng_backup', options: {} })
+const form = reactive({ name: '', path: 'ng_backup', options: {}, maxGb: '' })
+
+const gib = (b) => (b / 1073741824).toFixed(1) + ' GiB'
+function usageText(target) {
+	if (target.storedBytes === null || target.storedBytes === undefined) {
+		return target.maxBytes ? t('ng_backup', 'limit {limit}', { limit: gib(target.maxBytes) }) : t('ng_backup', 'no limit')
+	}
+	return target.maxBytes
+		? t('ng_backup', '{used} of {limit}', { used: gib(target.storedBytes), limit: gib(target.maxBytes) })
+		: t('ng_backup', '{used} stored, no limit', { used: gib(target.storedBytes) })
+}
+const usageClass = (target) => (target.maxBytes && target.storedBytes >= 0.8 * target.maxBytes) ? 'ngb-err' : 'ngb-muted'
 
 // files_external DefinitionParameter: type 0 text, 1 boolean, 2 password; flag 1 = optional, 4 = hidden
 const toFields = (params) => Object.entries(params || {})
@@ -90,9 +104,10 @@ async function add() {
 	busy.value = true
 	error.value = ''
 	try {
-		await api.addTarget({ name: form.name, backend: backend.value.id, auth: auth.value.id, options: form.options, path: form.path })
+		await api.addTarget({ name: form.name, backend: backend.value.id, auth: auth.value.id, options: form.options, path: form.path,
+			maxGb: form.maxGb === '' ? null : Number(form.maxGb) })
 		adding.value = false
-		Object.assign(form, { name: '', path: 'ng_backup', options: {} })
+		Object.assign(form, { name: '', path: 'ng_backup', options: {}, maxGb: '' })
 		emit('changed')
 	} catch (e) {
 		error.value = e.message
