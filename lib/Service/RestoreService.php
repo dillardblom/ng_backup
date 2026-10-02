@@ -36,22 +36,16 @@ class RestoreService {
 	public function __construct(
 		private TargetService $targets,
 		private IRootFolder $root,
-		private \OCP\Lock\ILockingProvider $locking,
+		private LeaseService $leases,
 	) {
 	}
 
 	/** Shared lock on the location while restoring: a cleanup (exclusive) must not delete what is being read. */
-	private function withSharedLock(Target $target, callable $fn): mixed {
-		$key = PruneService::lockKey($target);
+	private function withSharedLock(Target $target, callable $fn, int $ttl = 600): mixed {
 		try {
-			$this->locking->acquireLock($key, \OCP\Lock\ILockingProvider::LOCK_SHARED);
+			return $this->leases->with(PruneService::lockKey($target), LeaseService::SHARED, $ttl, $fn);
 		} catch (\OCP\Lock\LockedException) {
 			throw new \RuntimeException('A cleanup of ' . $target->getName() . ' is running; try again later');
-		}
-		try {
-			return $fn();
-		} finally {
-			$this->locking->releaseLock($key, \OCP\Lock\ILockingProvider::LOCK_SHARED);
 		}
 	}
 
@@ -88,7 +82,20 @@ class RestoreService {
 	 * @return array{restored:int, trashed:int, target:string}
 	 */
 	public function restoreUserFiles(Target $target, string $snapshotId, string $logicalPath, string $mode = self::MODE_NEW_FOLDER, ?callable $progress = null): array {
-		return $this->withSharedLock($target, fn () => $this->doRestoreUserFiles($target, $snapshotId, $logicalPath, $mode, $progress));
+		return $this->withSharedLock($target, function (callable $refresh) use ($target, $snapshotId, $logicalPath, $mode, $progress) {
+			$last = time();
+			// Keep the lease alive while files are being written.
+			$beat = function (int $done, int $total, string $name) use ($refresh, $progress, &$last): void {
+				if (time() - $last >= 60) {
+					$refresh();
+					$last = time();
+				}
+				if ($progress !== null) {
+					$progress($done, $total, $name);
+				}
+			};
+			return $this->doRestoreUserFiles($target, $snapshotId, $logicalPath, $mode, $beat);
+		});
 	}
 
 	private function doRestoreUserFiles(Target $target, string $snapshotId, string $logicalPath, string $mode, ?callable $progress): array {
@@ -150,7 +157,7 @@ class RestoreService {
 		if (!is_dir($directory) && !mkdir($directory, 0750, true) && !is_dir($directory)) {
 			throw new \RuntimeException("Cannot create $directory");
 		}
-		return $this->withSharedLock($target, fn () => $this->targets->repository($target)->restore($snapshotId, $directory, trim($prefix, '/') === '' ? '' : trim($prefix, '/') . '/'));
+		return $this->withSharedLock($target, fn () => $this->targets->repository($target)->restore($snapshotId, $directory, trim($prefix, '/') === '' ? '' : trim($prefix, '/') . '/'), 3600);
 	}
 
 	private function writeFile(Repository $repo, Folder $dest, string $relPath, array $entry): void {

@@ -29,15 +29,16 @@ class PruneService {
 		private ILockingProvider $locking,
 		private AlertService $alerts,
 		private KeyService $keys,
+		private LeaseService $leases,
 	) {
 	}
 
 	public function untrash(Target $target, string $snapshotId): void {
-		$this->lockExclusive($target);
+		$lease = $this->lockExclusive($target, 300);
 		try {
 			$this->doUntrash($target, $snapshotId);
 		} finally {
-			$this->locking->releaseLock(self::lockKey($target), ILockingProvider::LOCK_EXCLUSIVE);
+			$this->leases->release($lease);
 		}
 	}
 
@@ -47,14 +48,9 @@ class PruneService {
 	 */
 	public function underStartLock(Target $target, callable $fn): mixed {
 		try {
-			$this->locking->acquireLock(self::lockKey($target), ILockingProvider::LOCK_EXCLUSIVE);
+			return $this->leases->with(self::lockKey($target), LeaseService::EXCLUSIVE, 60, fn () => $fn());
 		} catch (LockedException) {
 			throw new \RuntimeException('A cleanup of ' . $target->getName() . ' is in progress; try again later');
-		}
-		try {
-			return $fn();
-		} finally {
-			$this->locking->releaseLock(self::lockKey($target), ILockingProvider::LOCK_EXCLUSIVE);
 		}
 	}
 
@@ -62,16 +58,17 @@ class PruneService {
 	 * Exclusive lock on the location, then make sure no run of any kind (backup, restore, export)
 	 * is in progress: their data may not be referenced by a snapshot yet, or is being read.
 	 */
-	private function lockExclusive(Target $target): void {
+	private function lockExclusive(Target $target, int $ttl): string {
 		try {
-			$this->locking->acquireLock(self::lockKey($target), ILockingProvider::LOCK_EXCLUSIVE);
+			$lease = $this->leases->acquire(self::lockKey($target), LeaseService::EXCLUSIVE, $ttl);
 		} catch (LockedException) {
 			throw new \RuntimeException('A backup, restore or cleanup of ' . $target->getName() . ' is in progress; try again later');
 		}
 		if ($this->runs->findRunning($target->getId()) !== []) {
-			$this->locking->releaseLock(self::lockKey($target), ILockingProvider::LOCK_EXCLUSIVE);
+			$this->leases->release($lease);
 			throw new \RuntimeException('A backup or restore of ' . $target->getName() . ' is running; try again later');
 		}
+		return $lease;
 	}
 
 	private function doUntrash(Target $target, string $snapshotId): void {
@@ -126,7 +123,7 @@ class PruneService {
 		if ($target->getAppendOnly()) {
 			throw new \RuntimeException('Location ' . $target->getName() . ' is append-only: NG Backup does not delete anything there');
 		}
-		$this->lockExclusive($target);
+		$lease = $this->lockExclusive($target, 1800);
 		try {
 			$repo = $this->targets->repository($target);
 			$times = [];
@@ -160,7 +157,7 @@ class PruneService {
 			$prune = $repo->prune($dryRun);
 			return ['kept' => $keep, 'forgotten' => $forget, 'purged' => $purged, 'prune' => $prune];
 		} finally {
-			$this->locking->releaseLock(self::lockKey($target), ILockingProvider::LOCK_EXCLUSIVE);
+			$this->leases->release($lease);
 		}
 	}
 }

@@ -42,6 +42,7 @@ class BackupService {
 		private ILockingProvider $locking,
 		private LoggerInterface $logger,
 		private AlertService $alerts,
+		private LeaseService $leases,
 	) {
 	}
 
@@ -54,16 +55,15 @@ class BackupService {
 		}
 		// Check and create the run under the location's exclusive lock, so a cleanup cannot start
 		// in between (it takes the same lock and refuses while a run exists).
-		$lock = PruneService::lockKey($target);
-		try {
-			$this->locking->acquireLock($lock, ILockingProvider::LOCK_EXCLUSIVE);
-		} catch (LockedException) {
-			throw new \RuntimeException('A cleanup or another start for ' . $target->getName() . ' is running; try again later');
+		// A run that is already in progress is simply continued; no lease needed for that.
+		$running = $this->runs->findRunning($target->getId(), self::KIND_FULL);
+		if ($running !== []) {
+			return $running[0];
 		}
 		try {
-			return $this->createRun($target, $label);
-		} finally {
-			$this->locking->releaseLock($lock, ILockingProvider::LOCK_EXCLUSIVE);
+			return $this->leases->with(PruneService::lockKey($target), LeaseService::EXCLUSIVE, 60, fn () => $this->createRun($target, $label));
+		} catch (LockedException) {
+			throw new \RuntimeException('A cleanup or another start for ' . $target->getName() . ' is running; try again later');
 		}
 	}
 
@@ -103,18 +103,18 @@ class BackupService {
 	 * run locked and returns immediately.
 	 */
 	public function step(Run $run, float $deadline): Run {
-		$lockKey = 'ng_backup/run/' . $run->getId();
+		// Leases expire on their own: a step killed by a time limit or OOM blocks nothing for long.
+		$ttl = (int)min(3600, max(120, $deadline - microtime(true) + 120));
 		try {
-			$this->locking->acquireLock($lockKey, ILockingProvider::LOCK_EXCLUSIVE);
+			$runLease = $this->leases->acquire('run/' . $run->getId(), LeaseService::EXCLUSIVE, $ttl);
 		} catch (LockedException) {
-			return $run;
+			return $run; // another process is doing this step
 		}
-		// Shared lock on the location while this step writes: a cleanup (exclusive) cannot run now.
-		$targetLock = 'ng_backup/target/' . $run->getTargetId();
+		// Shared lease on the location while this step writes: a cleanup (exclusive) cannot run now.
 		try {
-			$this->locking->acquireLock($targetLock, ILockingProvider::LOCK_SHARED);
+			$targetLease = $this->leases->acquire('ng_backup/target/' . $run->getTargetId(), LeaseService::SHARED, $ttl);
 		} catch (LockedException) {
-			$this->locking->releaseLock($lockKey, ILockingProvider::LOCK_EXCLUSIVE);
+			$this->leases->release($runLease);
 			return $run;
 		}
 		try {
@@ -171,15 +171,22 @@ class BackupService {
 			}
 			return $run;
 		} finally {
-			$this->locking->releaseLock($targetLock, ILockingProvider::LOCK_SHARED);
-			$this->locking->releaseLock($lockKey, ILockingProvider::LOCK_EXCLUSIVE);
+			$this->leases->release($targetLease);
+			$this->leases->release($runLease);
 		}
 	}
 
 	/** Run to completion in this process (occ, system cron), reporting progress. */
 	public function runToCompletion(Run $run, ?callable $progress = null, float $stepSeconds = 30): Run {
 		while ($run->getStatus() === Run::RUNNING) {
+			$before = $run->getUpdatedAt();
 			$run = $this->step($run, microtime(true) + $stepSeconds);
+			if ($run->getStatus() === Run::RUNNING && $run->getUpdatedAt() === $before) {
+				// Step was not possible (another process holds the run, or a crashed step's lease has
+				// not expired yet): wait instead of spinning.
+				sleep(5);
+				$run = $this->runs->find($run->getId());
+			}
 			if ($progress !== null) {
 				$progress($run);
 			}
