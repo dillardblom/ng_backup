@@ -18,11 +18,14 @@
 
 			<template v-if="tab === 'settings'">
 				<KeySetup :status="status" @changed="refresh" />
+				<Locations v-if="status.key.everConfirmed" :status="status" @changed="refresh" />
 			</template>
 			<template v-else-if="status.key.everConfirmed">
-				<Locations :status="status" @changed="refresh" />
-				<Backups v-if="status.targets.length" :status="status" @changed="refresh" />
-				<RestoreBrowser v-if="status.targets.length" :status="status" @changed="refresh" />
+				<template v-if="status.targets.length">
+					<Backups :status="status" @changed="refresh" />
+					<RestoreBrowser :status="status" @changed="refresh" />
+				</template>
+				<NcNoteCard v-else type="info">{{ t('ng_backup', 'Add a backup location under "Settings" first.') }}</NcNoteCard>
 			</template>
 			<NcNoteCard v-else type="warning">{{ t('ng_backup', 'Set up the backup key under "Settings" first.') }}</NcNoteCard>
 		</template>

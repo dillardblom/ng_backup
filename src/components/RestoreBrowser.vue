@@ -7,7 +7,7 @@
 		:description="t('ng_backup', 'Pick a restore point and a user folder or file. Restores run in the background and go through Nextcloud, so overwritten files keep their old content as a version and removed files go to the trash.')">
 		<div class="ngb-row">
 			<NcSelect v-model="target" :options="status.targets" label="name" :input-label="t('ng_backup', 'Location')" :clearable="false" />
-			<NcSelect v-if="target" v-model="snapshot" :options="snapshots" :get-option-label="snapshotLabel" :input-label="t('ng_backup', 'Restore point')" :clearable="false" />
+			<NcSelect v-if="target" v-model="snapshot" :options="snapshots" label="displayLabel" :input-label="t('ng_backup', 'Restore point')" :clearable="false" />
 		</div>
 
 		<template v-if="snapshot">
@@ -84,7 +84,8 @@ const crumbs = computed(() => {
 
 watch(target, async (tg) => {
 	snapshot.value = null
-	snapshots.value = tg ? await api.snapshots(tg.id) : []
+	const list = tg ? await api.snapshots(tg.id) : []
+	snapshots.value = list.map(s => ({ ...s, displayLabel: snapshotLabel(s) }))
 	snapshot.value = snapshots.value[0] ?? null
 }, { immediate: true })
 watch(snapshot, () => { selected.value = ''; open('data') })
