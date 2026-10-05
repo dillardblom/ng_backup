@@ -115,6 +115,14 @@ final class StorageBackend implements IBackend {
 		$this->storage->unlink($this->abs($path));
 	}
 
+	public function move(string $from, string $to): void {
+		$target = $this->abs($to);
+		$this->mkdirs(dirname($target));
+		if (!$this->storage->rename($this->abs($from), $target)) {
+			throw new BackendException("Cannot move $from to $to");
+		}
+	}
+
 	private function listInto(string $dir, array &$result): void {
 		if (!$this->storage->is_dir($dir)) {
 			return;

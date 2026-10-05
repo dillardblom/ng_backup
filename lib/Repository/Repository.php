@@ -345,20 +345,19 @@ final class Repository {
 		$meta = $this->snapshotMeta($snapshotId);
 		$dbInTrash = null;
 		if (isset($meta['db']) && is_string($meta['db']) && $this->backend->exists($meta['db'])) {
+			// Its encryption is bound to its path (object:db/...), which changes on a move, so it
+			// must be decrypted and re-encrypted under the new path, not moved as raw bytes.
 			$dbInTrash = 'trash/' . $meta['db'];
 			$this->putObject($dbInTrash, $this->getObject($meta['db']));
+			$this->backend->delete($meta['db']);
 		}
-		// The snapshot object is bound to its id (not its path), so it can be copied as-is.
-		$this->backend->put('trash/snapshots/' . $snapshotId, $this->backend->get('snapshots/' . $snapshotId));
+		// The snapshot object is bound to its id (not its path), so it can be moved as raw bytes.
+		$this->backend->move('snapshots/' . $snapshotId, 'trash/snapshots/' . $snapshotId);
 		$this->putObject('trash/info/' . $snapshotId, json_encode(['forgottenAt' => time(), 'by' => $by, 'db' => $meta['db'] ?? null,
 			'dbInTrash' => $dbInTrash, 'time' => $meta['time'] ?? null, 'label' => $meta['label'] ?? ''], JSON_THROW_ON_ERROR));
 		unset($this->catalog->snapshots[$snapshotId]);
 		$this->catalog->trash[$snapshotId] = true;
 		$this->catalog->write();
-		if ($dbInTrash !== null) {
-			$this->backend->delete($meta['db']);
-		}
-		$this->backend->delete('snapshots/' . $snapshotId);
 	}
 
 	/** Undo forget(): move a snapshot back from the trash. */
@@ -368,11 +367,10 @@ final class Repository {
 			$this->putObject($info['db'], $this->getObject($info['dbInTrash']));
 			$this->backend->delete($info['dbInTrash']);
 		}
-		$this->backend->put('snapshots/' . $snapshotId, $this->backend->get('trash/snapshots/' . $snapshotId));
+		$this->backend->move('trash/snapshots/' . $snapshotId, 'snapshots/' . $snapshotId);
 		$this->catalog->snapshots[$snapshotId] = true;
 		unset($this->catalog->trash[$snapshotId]);
 		$this->catalog->write();
-		$this->backend->delete('trash/snapshots/' . $snapshotId);
 		$this->backend->delete('trash/info/' . $snapshotId);
 	}
 

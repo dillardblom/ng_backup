@@ -106,6 +106,17 @@ final class LocalBackend implements IBackend {
 		@unlink($this->abs($path));
 	}
 
+	public function move(string $from, string $to): void {
+		$target = $this->abs($to);
+		$dir = dirname($target);
+		if (!is_dir($dir) && !mkdir($dir, 0700, true) && !is_dir($dir)) {
+			throw new BackendException('Cannot create ' . $dir);
+		}
+		if (!rename($this->abs($from), $target)) {
+			throw new BackendException("Cannot move $from to $to");
+		}
+	}
+
 	private function abs(string $path): string {
 		if (str_contains($path, '..') || str_starts_with($path, '/')) {
 			throw new BackendException('Invalid path: ' . $path);

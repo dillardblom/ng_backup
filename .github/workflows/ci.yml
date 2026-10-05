@@ -38,3 +38,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: Round trip on Nextcloud ${{ matrix.nextcloud }} / ${{ matrix.database }}
         run: tests/integration/matrix.sh "${{ matrix.nextcloud }}" "${{ matrix.database }}"
+
+  integration-targets:
+    # Same round trip, but through the real S3 (s3mock) and SFTP backends instead of a local
+    # path, so files_external's AmazonS3/SFTP backend and auth classes are actually exercised.
+    # Backend correctness does not depend on the Nextcloud version or database, so this runs once.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Round trip against S3 and SFTP
+        run: tests/integration/targets-matrix.sh

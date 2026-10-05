@@ -1,9 +1,12 @@
 #!/bin/bash
 # End-to-end round trip of NG Backup inside a Nextcloud installation (CI and local matrix).
-# Usage: roundtrip.sh "<command prefix to run occ/php as the web user in the instance>" <datadir> <apps-path>
+# Usage: roundtrip.sh "<command prefix to run occ/php as the web user in the instance>" <datadir> <apps-path> [target-args]
 #   e.g. roundtrip.sh "docker exec -u www-data ngb-nc35-pgsql" /var/www/html/data /var/www/html/custom_apps
+#   target-args defaults to a local files_external location; pass backend/auth/options to exercise
+#   a different backend (e.g. amazons3 or sftp), see tests/integration/targets-matrix.sh.
 set -euo pipefail
 X="$1"; DATA="$2"; APPS="$3"
+TARGET_ARGS="${4:-local -a null::null -o datadir=/tmp/ngb-rt-target}"
 occ() { $X php occ "$@"; }
 fail() { echo "FAIL: $*"; exit 1; }
 ok() { echo "ok   $*"; }
@@ -17,8 +20,8 @@ CODE=$(occ backup:key:kit | php -r 'echo json_decode(stream_get_contents(STDIN),
 occ backup:key:confirm -u admin --code="$CODE" --confirm="Yes, I confirm" >/dev/null || fail "confirm"
 ok "key, kit code and confirmation"
 
-occ backup:target:add ci local -a null::null -o datadir=/tmp/ngb-rt-target --path=repo >/dev/null || fail "target add"
-ok "local location added"
+occ backup:target:add ci $TARGET_ARGS --path=repo >/dev/null || fail "target add"
+ok "location added"
 
 # Test data: a user with files.
 $X sh -c "OC_PASS='Roundtrip-pw-2026' php occ user:add --password-from-env $U >/dev/null"

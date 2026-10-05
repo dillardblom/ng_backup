@@ -27,6 +27,13 @@ interface IBackend {
 
 	public function exists(string $path): bool;
 
+	/**
+	 * Move an object within the same location (used for the trash). Backends must use a native
+	 * rename, not a read+write copy: some storages (e.g. SFTP) cannot reliably read and write on
+	 * the same connection at once, since the read side is a lazily-pulled stream.
+	 */
+	public function move(string $from, string $to): void;
+
 	/** @return list<string> object paths below $prefix (recursive) */
 	public function list(string $prefix): array;
 
