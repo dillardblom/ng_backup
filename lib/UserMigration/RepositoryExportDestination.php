@@ -65,8 +65,11 @@ final class RepositoryExportDestination implements IExportDestination {
 				if ($stream === false) {
 					throw new \RuntimeException('Cannot read ' . $node->getPath());
 				}
-				$this->addFileAsStream($target, $stream);
-				fclose($stream);
+				try {
+					$this->addFileAsStream($target, $stream);
+				} finally {
+					fclose($stream);
+				}
 			}
 		}
 	}

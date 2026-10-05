@@ -31,8 +31,17 @@
             <errorLevel type="suppress">
                 <!-- Provided by files_external at runtime; not a composer dependency (PLAN.md 3.5). -->
                 <referencedClass name="OCA\Files_External\**" />
+                <!-- Provided by user_migration at runtime, an optional dependency (PLAN.md 3.8). -->
+                <referencedClass name="OCA\UserMigration\**" />
             </errorLevel>
         </UndefinedClass>
+        <UndefinedDocblockClass>
+            <errorLevel type="suppress">
+                <!-- Server::get()'s templated return type resolving the users_migration class-string
+                     constant below; same reason as the UndefinedClass suppression above. -->
+                <referencedClass name="OCA\UserMigration\**" />
+            </errorLevel>
+        </UndefinedDocblockClass>
         <!-- The #[\Override] attribute convention (PHP 8.3+) adds no behaviour; this app supports
              PHP 8.1+, and applying it to every interface-implementing method project-wide is pure
              ceremony with no bug-catching value, so it's suppressed rather than papered over. -->

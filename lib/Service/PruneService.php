@@ -98,6 +98,19 @@ final class PruneService {
 		return 'ng_backup/target/' . $target->getId();
 	}
 
+	/**
+	 * A separate, short-lived exclusive lock serializing writes to the catalog itself. The
+	 * per-target lock above only keeps readers/writers out while a cleanup runs; it does not
+	 * stop two SHARED holders (e.g. two concurrent per-user backups, or one alongside a full
+	 * backup) from both reading the same catalog generation and racing to write the next one,
+	 * silently dropping whichever's change loses. The full-backup path avoids this today only
+	 * because a Run row makes concurrent runs for the same target mutually exclusive; per-user
+	 * backup/restore has no such row, so it takes this lock around the catalog write itself.
+	 */
+	public static function catalogLockKey(Target $target): string {
+		return self::lockKey($target) . '/catalog';
+	}
+
 	public function policy(): RetentionPolicy {
 		return RetentionPolicy::fromArray(json_decode($this->appConfig->getValueString(Application::APP_ID, 'retention', '{}'), true) ?: []);
 	}

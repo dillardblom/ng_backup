@@ -109,7 +109,14 @@ final class RepositoryImportSource implements IImportSource {
 						$destination->newFile($name, $stream);
 					}
 				} finally {
-					fclose($stream);
+					// putContent()/newFile() already close the stream once they've consumed it:
+					// despite the @return resource docblock above, $stream is no longer a
+					// resource by the time we get here (verified against a real storage; a
+					// double fclose() throws a TypeError on PHP 8).
+					/** @psalm-suppress RedundantConditionGivenDocblockType */
+					if (is_resource($stream)) {
+						fclose($stream);
+					}
 				}
 			}
 		}

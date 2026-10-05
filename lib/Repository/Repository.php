@@ -91,7 +91,8 @@ final class Repository {
 		$this->catalog = new Catalog($this->backend, $this->cipher, $this->repositoryId, $anchor);
 		$this->catalog->load(
 			fn () => array_map('basename', $this->backend->list('snapshots')),
-			fn () => array_map('basename', $this->backend->list('trash/info')));
+			fn () => array_map('basename', $this->backend->list('trash/info')),
+			fn () => $this->backend->list('users'));
 	}
 
 	/** Refuse uploads that would make the stored data larger than this (null = no limit). */
@@ -372,6 +373,50 @@ final class Repository {
 		unset($this->catalog->trash[$snapshotId]);
 		$this->catalog->write();
 		$this->backend->delete('trash/info/' . $snapshotId);
+	}
+
+	/** Record a user_migration export's manifest in the catalog (rollback-protected like a snapshot). */
+	public function recordUserExport(string $manifestPath): void {
+		$this->catalog->userExports[$manifestPath] = true;
+		$this->catalog->write();
+	}
+
+	/**
+	 * User export manifests according to the verified catalog, newest first. A manifest the
+	 * catalog lists but the location no longer has means it was deleted or hidden behind NG
+	 * Backup's back, same as a missing snapshot (see listSnapshots()).
+	 *
+	 * @return list<string>
+	 */
+	public function listUserExports(?string $uid = null): array {
+		$prefix = $uid !== null ? 'users/' . $uid . '/' : 'users/';
+		$out = [];
+		foreach (array_keys($this->catalog->userExports) as $path) {
+			if (!str_starts_with($path, $prefix)) {
+				continue;
+			}
+			if (!$this->backend->exists($path)) {
+				throw new RepositoryException("User export $path is missing on the location (deleted or hidden outside NG Backup)");
+			}
+			$out[] = $path;
+		}
+		sort($out, SORT_STRING);
+		return array_reverse($out);
+	}
+
+	/** Whether $manifestPath is a user export the verified catalog actually recorded. */
+	public function isRecordedUserExport(string $manifestPath): bool {
+		return isset($this->catalog->userExports[$manifestPath]);
+	}
+
+	/** Permanently delete a user export. Its blobs are freed by the next prune() like any other. */
+	public function forgetUserExport(string $manifestPath): void {
+		if (!isset($this->catalog->userExports[$manifestPath])) {
+			throw new RepositoryException("$manifestPath is not a recorded user export");
+		}
+		$this->backend->delete($manifestPath);
+		unset($this->catalog->userExports[$manifestPath]);
+		$this->catalog->write();
 	}
 
 	/** @return array<string, array{forgottenAt:int, by:string, db:?string, dbInTrash:?string, time:?string, label:string}> */

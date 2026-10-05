@@ -28,6 +28,8 @@ final class Catalog {
 	public array $snapshots = [];
 	/** @var array<string, true> */
 	public array $trash = [];
+	/** @var array<string, true> manifest path => true, for a per-user export (users/<uid>/<exportId>) */
+	public array $userExports = [];
 	public string $hash = '';
 
 	public function __construct(
@@ -39,7 +41,7 @@ final class Catalog {
 	}
 
 	/** Load and verify the newest catalog; create the first one for repositories that have none. */
-	public function load(callable $listSnapshots, callable $listTrash): void {
+	public function load(callable $listSnapshots, callable $listTrash, callable $listUserExports): void {
 		$gens = $this->generations();
 		if ($gens === []) {
 			// First use (new or pre-catalog repository): adopt the current state as generation 1.
@@ -49,6 +51,7 @@ final class Catalog {
 			}
 			$this->snapshots = array_fill_keys($listSnapshots(), true);
 			$this->trash = array_fill_keys($listTrash(), true);
+			$this->userExports = array_fill_keys($listUserExports(), true);
 			$this->write();
 			return;
 		}
@@ -76,6 +79,9 @@ final class Catalog {
 		$this->hash = $hash;
 		$this->snapshots = array_fill_keys($data['snapshots'], true);
 		$this->trash = array_fill_keys($data['trash'], true);
+		// Catalogs written before user exports existed have no such key: default to empty rather
+		// than adopting the location's current users/ listing (that would skip verification).
+		$this->userExports = array_fill_keys($data['userExports'] ?? [], true);
 		$this->anchor?->set($this->repositoryId, $this->gen, $this->hash);
 	}
 
@@ -83,7 +89,8 @@ final class Catalog {
 	public function write(): void {
 		$next = $this->gen + 1;
 		$plain = json_encode(['repository' => $this->repositoryId, 'gen' => $next, 'time' => gmdate('c'), 'prev' => $this->hash,
-			'snapshots' => array_keys($this->snapshots), 'trash' => array_keys($this->trash)], JSON_THROW_ON_ERROR);
+			'snapshots' => array_keys($this->snapshots), 'trash' => array_keys($this->trash),
+			'userExports' => array_keys($this->userExports)], JSON_THROW_ON_ERROR);
 		$encrypted = $this->cipher->encryptString($plain, $this->ad($next));
 		$stream = fopen('php://memory', 'w+b');
 		fwrite($stream, $encrypted);
