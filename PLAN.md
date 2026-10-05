@@ -338,6 +338,11 @@ een backup-app die niet betrouwbaar is, is erger dan geen backup-app.
 Volgorde: fase 1 grondig testen, reviewen en debuggen; dan nadenken over 0.1.0-alpha.1. Een
 minimale volledige restore (`occ backup:restore:full` op een verse installatie) komt vóór de beta.
 
+**Let op (ontdekt 2026-10-05):** Nextcloud's eigen `info.xsd` staat voor `<version>` alleen
+`[0-9]+(\.[0-9]+){0,2}` toe — geen `-alpha`/`-beta`/`-rc`-achtervoegsel. De stabiliteitsaanduiding
+uit deze tabel gaat dus niet in `info.xml` (dat blijft gewoon oplopend, bijv. `0.1.0`), maar in de
+git-tag (`v0.1.0-alpha.1`), de GitHub/Gitea release (gemarkeerd als pre-release) en de CHANGELOG.
+
 ## Bijlage: lessen uit nextcloud/backup (test NC34, 2026-10-01)
 
 - Externe programma's (`pg_dump`) en extensies (`pgsql`, `mysqli`) → onbruikbaar op standaard/hosted.

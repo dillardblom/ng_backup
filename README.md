@@ -106,6 +106,19 @@ What you should do on the location (strongly recommended):
 - **Raw restore** of any path (for example `config/`) to a local directory: `occ backup:restore ... --to-directory=DIR`.
 - **Whole server** (disaster recovery onto a fresh installation): planned for phase 2.
 
+## Storage backend experiences
+
+Notes from actually running a backend, beyond what's in files_external's own documentation.
+Contributions welcome via PR — add what you ran into with your own provider.
+
+- **Hetzner Storage Box, sub-account:** the SFTP backend's `root` option must be `home`, not `/`.
+  A sub-account's SFTP login lands in `/home` (confirmed via `pwd()` after login); writing to the
+  literal chroot root (`/`) fails with a generic `NET_SFTP_STATUS_FAILURE` from the SFTP server,
+  while the same write under `home` (or a path below it) succeeds. This affects any backend option
+  form that lets you set a path relative to the account's root, not just ng_backup. Not yet
+  verified whether this also applies to a Hetzner Storage Box **main** account (only tested with a
+  sub-account so far) — if you've tried a main account, please say so in a PR.
+
 ## Commands
 
 | Command | Purpose |
