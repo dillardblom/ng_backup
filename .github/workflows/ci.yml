@@ -77,3 +77,13 @@ jobs:
           docker exec ngbu chown www-data:www-data /var/www/html/custom_apps
       - name: Per-user backup/restore round trip
         run: tests/integration/user-roundtrip.sh "docker exec -u www-data ngbu" /var/www/html/data
+
+  integration-full-restore:
+    # Disaster recovery (occ backup:restore:full) on a SECOND, fresh Nextcloud instance that
+    # never saw the first one, sharing only the backup location. Does not depend on the database
+    # beyond what the main integration job already covers, so this runs once, on one NC version.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Full restore round trip
+        run: tests/integration/full-restore-roundtrip.sh 35-apache

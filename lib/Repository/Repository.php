@@ -190,8 +190,15 @@ final class Repository {
 		return ['snapshot' => $snapshotId] + $stats;
 	}
 
-	/** Restore a snapshot (or only paths starting with $prefix) into a local directory. */
-	public function restore(string $snapshotId, string $target, string $prefix = ''): int {
+	/**
+	 * Restore a snapshot (or only paths starting with $prefix) into a local directory.
+	 *
+	 * @param bool $stripPrefix write "$target/<path without $prefix>" instead of
+	 *             "$target/<full logical path>" (disaster recovery: restoring e.g. "data/" or
+	 *             "config/" directly into the real data/config directory, not a subdirectory
+	 *             named after the prefix). Ignored when $prefix is '' (nothing to strip).
+	 */
+	public function restore(string $snapshotId, string $target, string $prefix = '', bool $stripPrefix = false): int {
 		if ($prefix !== '' && !self::isSafePath(rtrim($prefix, '/'))) {
 			throw new RepositoryException('Invalid path prefix');
 		}
@@ -200,7 +207,8 @@ final class Repository {
 			if ($prefix !== '' && !str_starts_with($entry['p'], $prefix)) {
 				continue;
 			}
-			$dest = rtrim($target, '/') . '/' . $entry['p'];
+			$relPath = ($stripPrefix && $prefix !== '') ? substr($entry['p'], strlen(rtrim($prefix, '/')) + 1) : $entry['p'];
+			$dest = rtrim($target, '/') . '/' . $relPath;
 			if (!is_dir(dirname($dest))) {
 				mkdir(dirname($dest), 0700, true);
 			}

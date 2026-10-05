@@ -71,6 +71,84 @@ final class KeyService {
 		$this->cached = $keys;
 	}
 
+	/**
+	 * Disaster recovery on a fresh installation: adopt the master key from a recovery kit
+	 * (occ backup:key:kit on the original installation) instead of generating a new one.
+	 * Afterwards occ backup:target:add opens the existing repository on the location with this
+	 * key, instead of creating a new, empty one.
+	 *
+	 * @param array<string, mixed> $kit as produced by recoveryKit()
+	 * @throws \OCA\NgBackup\Crypto\CryptoException wrong passphrase, or a damaged/foreign kit
+	 */
+	public function importRecoveryKit(array $kit, #[\SensitiveParameter] string $passphrase): void {
+		if ($this->isInitialized()) {
+			throw new \RuntimeException('A backup key already exists');
+		}
+		if (!isset($kit['wrapped_key'])) {
+			throw new \InvalidArgumentException('Not a NG Backup recovery kit file');
+		}
+		$keys = KeyRing::unwrapAny($kit['wrapped_key'], $passphrase);
+		$this->appConfig->setValueString(Application::APP_ID, self::KEY_MASTER,
+			$this->crypto->encrypt(base64_encode($keys->exportMasterKey())), true, true);
+		$this->cached = $keys;
+		$this->appConfig->setValueString(Application::APP_ID, self::KEY_WRAPPED, json_encode($kit['wrapped_key'], JSON_THROW_ON_ERROR), true, true);
+		$this->appConfig->setValueString(Application::APP_ID, self::KEY_FINGERPRINT, $this->fingerprintOf($keys), true);
+		$this->appConfig->setValueInt(Application::APP_ID, self::KEY_DELETE_DELAY, self::DEFAULT_DELETE_DELAY, true);
+		$this->appConfig->setValueInt(Application::APP_ID, self::KEY_KIT_VERSION, (int)($kit['kit_version'] ?? 1), true);
+		// Having and successfully using a real kit file is stronger proof than the normal
+		// download-and-confirm flow it replaces.
+		$this->confirmRecoveryKit('cli-import');
+	}
+
+	/**
+	 * The master key and the recovery kit code are stored encrypted with Nextcloud's own
+	 * instance secret (ICrypto), not with themselves; the wrapped key is not (it is sealed with
+	 * the admin's passphrase instead), but Nextcloud's own AppConfig additionally encrypts any
+	 * "sensitive" value with the instance secret regardless, underneath whatever we store. So
+	 * changing that secret (occ backup:restore:full merging config.php) would otherwise leave
+	 * all three permanently undecryptable. Call $applySecretChange (which must be the only thing
+	 * that changes the secret) through here instead: all three are decrypted first, then
+	 * re-encrypted under whatever secret is active once $applySecretChange returns.
+	 *
+	 * Not crash-safe: a process kill between the delete and the re-save of one of these keys
+	 * would leave it missing rather than merely stale. Disaster recovery is run once, by hand,
+	 * right after occ maintenance:install; a dedicated two-phase write is not justified yet for
+	 * that narrow a window.
+	 */
+	public function reencryptForSecretRotation(callable $applySecretChange): mixed {
+		$master = $this->appConfig->getValueString(Application::APP_ID, self::KEY_MASTER, '', true);
+		$wrapped = $this->appConfig->getValueString(Application::APP_ID, self::KEY_WRAPPED, '', true);
+		$kitCodeRaw = $this->appConfig->getValueString(Application::APP_ID, self::KEY_KIT_CODE, '', true);
+		$kitCode = $kitCodeRaw !== '' ? json_decode($kitCodeRaw, true, 512, JSON_THROW_ON_ERROR) : null;
+		$masterPlain = $master !== '' ? $this->crypto->decrypt($master) : null;
+		$kitCodePlain = $kitCode !== null && isset($kitCode['code']) ? $this->crypto->decrypt($kitCode['code']) : null;
+
+		$result = $applySecretChange();
+		$this->cached = null; // the master key is about to be re-saved; do not keep the pre-rotation copy
+
+		// Nextcloud's own AppConfig additionally encrypts a "sensitive" value itself (tied to
+		// the same secret, underneath our own encrypt() above); setValueString() on an existing
+		// key reads the old value first to compare, which would try to decrypt it with the new
+		// secret and fail the same way. Delete first so there is nothing to compare against.
+		if ($masterPlain !== null) {
+			$this->appConfig->deleteKey(Application::APP_ID, self::KEY_MASTER);
+			$this->appConfig->setValueString(Application::APP_ID, self::KEY_MASTER, $this->crypto->encrypt($masterPlain), true, true);
+		}
+		if ($wrapped !== '') {
+			// Already plaintext JSON here: getValueString() above transparently undid
+			// AppConfig's own sensitive-value encryption; there is no encrypt() of our own to
+			// redo (wrapping is sealed with the passphrase, not the instance secret).
+			$this->appConfig->deleteKey(Application::APP_ID, self::KEY_WRAPPED);
+			$this->appConfig->setValueString(Application::APP_ID, self::KEY_WRAPPED, $wrapped, true, true);
+		}
+		if ($kitCodePlain !== null) {
+			$kitCode['code'] = $this->crypto->encrypt($kitCodePlain);
+			$this->appConfig->deleteKey(Application::APP_ID, self::KEY_KIT_CODE);
+			$this->appConfig->setValueString(Application::APP_ID, self::KEY_KIT_CODE, json_encode($kitCode, JSON_THROW_ON_ERROR), true, true);
+		}
+		return $result;
+	}
+
 	public function keyRing(): KeyRing {
 		if ($this->cached === null) {
 			$enc = $this->appConfig->getValueString(Application::APP_ID, self::KEY_MASTER, '', true);

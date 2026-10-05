@@ -49,6 +49,11 @@
       <code><![CDATA[ask]]></code>
     </UndefinedInterfaceMethod>
   </file>
+  <file src="lib/Command/KeyImport.php">
+    <UndefinedInterfaceMethod>
+      <code><![CDATA[ask]]></code>
+    </UndefinedInterfaceMethod>
+  </file>
   <file src="lib/Command/KeyInit.php">
     <UndefinedInterfaceMethod>
       <code><![CDATA[ask]]></code>
@@ -454,6 +459,17 @@
     <MoreSpecificReturnType>
       <code><![CDATA[array{kept: array<string, list<string>>, forgotten: list<string>, purged: list<string>, prune: array}]]></code>
     </MoreSpecificReturnType>
+  </file>
+  <file src="lib/Service/RestoreFullService.php">
+    <EmptyArrayAccess>
+      <code><![CDATA[$backupConfig[$key]]]></code>
+    </EmptyArrayAccess>
+    <UndefinedInterfaceMethod>
+      <code><![CDATA[getInner]]></code>
+    </UndefinedInterfaceMethod>
+    <UnresolvableInclude>
+      <code><![CDATA[include $path]]></code>
+    </UnresolvableInclude>
   </file>
   <file src="lib/Service/RestoreService.php">
     <LessSpecificReturnStatement>

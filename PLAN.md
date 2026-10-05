@@ -338,6 +338,18 @@ een backup-app die niet betrouwbaar is, is erger dan geen backup-app.
 Volgorde: fase 1 grondig testen, reviewen en debuggen; dan nadenken over 0.1.0-alpha.1. Een
 minimale volledige restore (`occ backup:restore:full` op een verse installatie) komt vóór de beta.
 
+**Roadmap-indeling fase 2 (besluit 2026-10-05):** naar v1.2.0 toewerken met in fase 2:
+1. `backup:restore:full` (disaster recovery, verse installatie) — **in uitvoering**
+2. FTP/SMB-ondersteuning
+3. Verificatie/checksum-audit-commando
+4. Retentie/prune voor user-exports
+5. Automatische user-export inpluggen in het reguliere schema (of expliciet besluit dat het on-demand blijft)
+9. SMB/NFS intern testen op de eigen OMV-instantie
+
+Doorgeschoven naar **v1.3.0** (fase 3, niet meer fase 2): in-place volledige restore
+(eigen restore-modus i.p.v. onderhoudsmodus) en zelfbediening voor gebruikers (eigen bestanden
+terugzetten vanuit de Files-app).
+
 **Let op (ontdekt 2026-10-05):** Nextcloud's eigen `info.xsd` staat voor `<version>` alleen
 `[0-9]+(\.[0-9]+){0,2}` toe — geen `-alpha`/`-beta`/`-rc`-achtervoegsel. De stabiliteitsaanduiding
 uit deze tabel gaat dus niet in `info.xml` (dat blijft gewoon oplopend, bijv. `0.1.0`), maar in de

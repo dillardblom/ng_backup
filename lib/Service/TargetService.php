@@ -10,10 +10,13 @@ namespace OCA\NgBackup\Service;
 use OCA\NgBackup\Backend\ExternalStorageFactory;
 use OCA\NgBackup\Backend\IBackend;
 use OCA\NgBackup\Backend\StorageBackend;
+use OCA\NgBackup\Db\Snapshot;
+use OCA\NgBackup\Db\SnapshotMapper;
 use OCA\NgBackup\Db\Target;
 use OCA\NgBackup\Db\TargetMapper;
 use OCA\NgBackup\Repository\Repository;
 use OCP\App\IAppManager;
+use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\Security\ICrypto;
 use OCP\Server;
 
@@ -30,6 +33,7 @@ final class TargetService {
 		private IAppManager $appManager,
 		private \OCA\NgBackup\Db\DbIndexCache $indexCache,
 		private \OCA\NgBackup\Db\AppConfigCatalogAnchor $anchor,
+		private SnapshotMapper $snapshots,
 	) {
 	}
 
@@ -78,7 +82,62 @@ final class TargetService {
 		$target->setBasePath(trim($basePath, '/'));
 		$target->setRepositoryId($repo->id());
 		$target->setCreatedAt(time());
-		return ['target' => $this->mapper->insert($target), 'created' => $created];
+		$target = $this->mapper->insert($target);
+		if (!$created) {
+			// Disaster recovery: occ backup:list reads this local cache, not the repository
+			// directly, so a snapshot made by another installation must be backfilled here too.
+			$this->adoptSnapshots($target, $repo);
+		}
+		return ['target' => $target, 'created' => $created];
+	}
+
+	/**
+	 * A target's options are encrypted with Nextcloud's own instance secret (ICrypto), not
+	 * ng_backup's key, so changing that secret (occ backup:restore:full merging config.php)
+	 * would otherwise leave every target permanently undecryptable. Call $applySecretChange
+	 * (which must be the only thing that changes the secret) through here instead: every
+	 * target's options are decrypted first, then re-encrypted under whatever secret is active
+	 * once $applySecretChange returns.
+	 */
+	public function reencryptOptionsAround(callable $applySecretChange): mixed {
+		$plain = [];
+		foreach ($this->mapper->findAll() as $target) {
+			$plain[$target->getId()] = $this->options($target);
+		}
+		$result = $applySecretChange();
+		foreach ($this->mapper->findAll() as $target) {
+			if (!isset($plain[$target->getId()])) {
+				continue; // added by $applySecretChange itself; nothing to re-encrypt
+			}
+			$target->setOptions($this->crypto->encrypt(json_encode($plain[$target->getId()], JSON_THROW_ON_ERROR)));
+			$this->mapper->update($target);
+		}
+		return $result;
+	}
+
+	private function adoptSnapshots(Target $target, Repository $repo): void {
+		foreach ($repo->listSnapshots() as $snapshotId) {
+			try {
+				$this->snapshots->findOne($target->getId(), $snapshotId);
+				continue; // already known locally
+			} catch (DoesNotExistException) {
+			}
+			// One unreadable/corrupt snapshot must not stop the rest of the location's
+			// snapshots from being backfilled, nor abort adding the target itself.
+			try {
+				$meta = $repo->snapshotMeta($snapshotId);
+				$s = new Snapshot();
+				$s->setTargetId($target->getId());
+				$s->setSnapshotId($snapshotId);
+				$s->setKind((string)($meta['kind'] ?? 'full'));
+				$s->setLabel(($meta['label'] ?? '') !== '' ? $meta['label'] : null);
+				$s->setCreatedAt((int)strtotime((string)($meta['time'] ?? 'now')));
+				$s->setFiles((int)($meta['stats']['files'] ?? 0));
+				$s->setBytes((int)($meta['stats']['bytes'] ?? 0));
+				$this->snapshots->insert($s);
+			} catch (\Throwable) {
+			}
+		}
 	}
 
 	/** @return list<Target> */

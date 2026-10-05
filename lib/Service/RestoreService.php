@@ -149,15 +149,21 @@ final class RestoreService {
 		return ['restored' => $restored, 'trashed' => $trashed, 'target' => $uid . ':' . $userFolder->getRelativePath($dest->getPath())];
 	}
 
-	/** Raw restore of any snapshot path to a local directory (administrators, disaster recovery). */
-	public function restoreToDirectory(Target $target, string $snapshotId, string $prefix, string $directory): int {
+	/**
+	 * Raw restore of any snapshot path to a local directory (administrators, disaster recovery).
+	 *
+	 * @param bool $stripPrefix write into $directory itself instead of $directory/$prefix (see
+	 *             Repository::restore()); used to restore "data/" or "config/" straight into the
+	 *             real data/config directory for occ backup:restore:full.
+	 */
+	public function restoreToDirectory(Target $target, string $snapshotId, string $prefix, string $directory, bool $stripPrefix = false): int {
 		if ($prefix !== '' && !Repository::isSafePath($prefix)) {
 			throw new \InvalidArgumentException('Invalid path: ' . $prefix);
 		}
 		if (!is_dir($directory) && !mkdir($directory, 0750, true) && !is_dir($directory)) {
 			throw new \RuntimeException("Cannot create $directory");
 		}
-		return $this->withSharedLock($target, fn () => $this->targets->repository($target)->restore($snapshotId, $directory, trim($prefix, '/') === '' ? '' : trim($prefix, '/') . '/'), 3600);
+		return $this->withSharedLock($target, fn () => $this->targets->repository($target)->restore($snapshotId, $directory, trim($prefix, '/') === '' ? '' : trim($prefix, '/') . '/', $stripPrefix), 3600);
 	}
 
 	private function writeFile(Repository $repo, Folder $dest, string $relPath, array $entry): void {
