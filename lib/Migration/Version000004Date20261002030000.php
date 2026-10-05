@@ -14,7 +14,7 @@ use OCP\Migration\IOutput;
 use OCP\Migration\SimpleMigrationStep;
 
 /** Optional size limit per location (cost control; S3 has no bucket quota). */
-class Version000004Date20261002030000 extends SimpleMigrationStep {
+final class Version000004Date20261002030000 extends SimpleMigrationStep {
 	public function changeSchema(IOutput $output, Closure $schemaClosure, array $options): ?ISchemaWrapper {
 		/** @var ISchemaWrapper $schema */
 		$schema = $schemaClosure();

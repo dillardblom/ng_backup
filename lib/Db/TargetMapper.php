@@ -11,7 +11,7 @@ use OCP\AppFramework\Db\QBMapper;
 use OCP\IDBConnection;
 
 /** @template-extends QBMapper<Target> */
-class TargetMapper extends QBMapper {
+final class TargetMapper extends QBMapper {
 	public function __construct(IDBConnection $db) {
 		parent::__construct($db, 'ngb_targets', Target::class);
 	}

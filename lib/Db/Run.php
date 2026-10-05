@@ -33,7 +33,7 @@ use OCP\AppFramework\Db\Entity;
  * @method int|null getFinishedAt()
  * @method void setFinishedAt(?int $v)
  */
-class Run extends Entity {
+final class Run extends Entity {
 	public const RUNNING = 'running';
 	public const DONE = 'done';
 	public const FAILED = 'failed';

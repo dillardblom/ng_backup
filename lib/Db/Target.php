@@ -29,7 +29,7 @@ use OCP\AppFramework\Db\Entity;
  * @method int getCreatedAt()
  * @method void setCreatedAt(int $v)
  */
-class Target extends Entity {
+final class Target extends Entity {
 	protected string $name = '';
 	protected string $backend = '';
 	protected string $auth = '';

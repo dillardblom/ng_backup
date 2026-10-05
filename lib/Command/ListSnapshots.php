@@ -15,7 +15,7 @@ use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-class ListSnapshots extends Command {
+final class ListSnapshots extends Command {
 	public function __construct(
 		private TargetService $targets,
 		private SnapshotMapper $snapshots,

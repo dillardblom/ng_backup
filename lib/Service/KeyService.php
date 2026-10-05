@@ -22,7 +22,7 @@ use OCP\Security\ICrypto;
  *   into the recovery kit, so backups can be restored on a fresh server with the passphrase.
  * - The admin must confirm having stored the recovery kit before the first backup runs.
  */
-class KeyService {
+final class KeyService {
 	private const KEY_MASTER = 'master_key';
 	private const KEY_WRAPPED = 'master_key_wrapped';
 	private const KEY_CONFIRMED = 'recovery_kit_confirmed';

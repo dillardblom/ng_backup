@@ -22,7 +22,7 @@ use Psr\Log\LoggerInterface;
  * With system cron a step may take minutes; with webcron/AJAX cron it is kept short so it fits
  * in a normal web request (hosted Nextcloud).
  */
-class BackupJob extends TimedJob {
+final class BackupJob extends TimedJob {
 	public function __construct(
 		ITimeFactory $time,
 		private BackupService $backups,

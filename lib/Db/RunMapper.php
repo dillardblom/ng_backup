@@ -12,7 +12,7 @@ use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
 
 /** @template-extends QBMapper<Run> */
-class RunMapper extends QBMapper {
+final class RunMapper extends QBMapper {
 	public function __construct(IDBConnection $db) {
 		parent::__construct($db, 'ngb_runs', Run::class);
 	}

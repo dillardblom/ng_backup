@@ -14,7 +14,7 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Question\Question;
 
-class KeyConfirm extends Command {
+final class KeyConfirm extends Command {
 	public const STATEMENT = 'I have downloaded the recovery kit and stored it safely, outside this server. '
 		. 'I understand that keeping these keys safe is my own responsibility and that backups cannot be restored without them.';
 	public const CONFIRMATION = 'Yes, I confirm';

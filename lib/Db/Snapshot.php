@@ -25,7 +25,7 @@ use OCP\AppFramework\Db\Entity;
  * @method int|null getBytes()
  * @method void setBytes(?int $v)
  */
-class Snapshot extends Entity {
+final class Snapshot extends Entity {
 	protected int $targetId = 0;
 	protected string $snapshotId = '';
 	protected string $kind = '';

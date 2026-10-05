@@ -11,7 +11,7 @@ use OCP\AppFramework\Http\TemplateResponse;
 use OCP\Settings\ISettings;
 use OCP\Util;
 
-class Admin implements ISettings {
+final class Admin implements ISettings {
 	public function getForm(): TemplateResponse {
 		Util::addScript('ng_backup', 'ng_backup-admin');
 		Util::addStyle('ng_backup', 'ng_backup-admin');

@@ -14,7 +14,7 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Question\Question;
 
-class KeyInit extends Command {
+final class KeyInit extends Command {
 	public function __construct(
 		private KeyService $keys,
 	) {

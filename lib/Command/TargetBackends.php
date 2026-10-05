@@ -12,7 +12,7 @@ use OCA\NgBackup\Service\TargetService;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-class TargetBackends extends Base {
+final class TargetBackends extends Base {
 	public function __construct(
 		private TargetService $targets,
 	) {

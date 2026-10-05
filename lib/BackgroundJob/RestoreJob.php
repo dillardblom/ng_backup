@@ -16,7 +16,7 @@ use OCP\BackgroundJob\QueuedJob;
 use Psr\Log\LoggerInterface;
 
 /** Runs a restore requested from the web interface, outside the web request. */
-class RestoreJob extends QueuedJob {
+final class RestoreJob extends QueuedJob {
 	public function __construct(
 		ITimeFactory $time,
 		private RunMapper $runs,

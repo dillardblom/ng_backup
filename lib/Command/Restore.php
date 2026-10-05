@@ -15,7 +15,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
-class Restore extends Command {
+final class Restore extends Command {
 	public function __construct(
 		private TargetService $targets,
 		private RestoreService $restore,

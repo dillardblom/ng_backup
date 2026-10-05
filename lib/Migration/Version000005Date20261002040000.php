@@ -14,7 +14,7 @@ use OCP\Migration\IOutput;
 use OCP\Migration\SimpleMigrationStep;
 
 /** Leases with an expiry: a killed process cannot block a location for longer than its lease. */
-class Version000005Date20261002040000 extends SimpleMigrationStep {
+final class Version000005Date20261002040000 extends SimpleMigrationStep {
 	public function changeSchema(IOutput $output, Closure $schemaClosure, array $options): ?ISchemaWrapper {
 		/** @var ISchemaWrapper $schema */
 		$schema = $schemaClosure();

@@ -15,7 +15,7 @@ use OCP\IGroupManager;
 use OCP\Notification\IManager;
 
 /** Notifies administrators about failed runs and locations without a recent successful backup. */
-class AlertService {
+final class AlertService {
 	public const STALE_AFTER = 2 * 86400;
 
 	public function __construct(

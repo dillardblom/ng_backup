@@ -10,7 +10,7 @@ namespace OCA\NgBackup\Command;
 use OCA\NgBackup\Service\KeyService;
 use OCA\NgBackup\Service\KeySlotService;
 
-class KeySlotReplace extends KeySlots {
+final class KeySlotReplace extends KeySlots {
 	public function __construct(KeyService $keys, KeySlotService $slots) {
 		parent::__construct($keys, $slots, 'replace');
 	}

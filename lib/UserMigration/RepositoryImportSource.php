@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace OCA\NgBackup\UserMigration;
 
 use OCA\NgBackup\Repository\Repository;
+use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\UserMigration\IImportSource;
 use OCP\UserMigration\UserMigrationException;
@@ -30,10 +31,14 @@ final class RepositoryImportSource implements IImportSource {
 		return $data;
 	}
 
+	/** @return resource */
 	public function getFileAsStream(string $path) {
 		$entry = $this->entry($path, 'f');
 		// Phase 0: buffer in php://temp (memory up to 8 MiB, then a temp file for this one file).
 		$stream = fopen('php://temp/maxmemory:' . (8 * 1048576), 'w+b');
+		if ($stream === false) {
+			throw new UserMigrationException('Cannot buffer ' . $path);
+		}
 		foreach ($this->repo->readBlobs($entry['b']) as $data) {
 			for ($done = 0, $len = strlen($data); $done < $len; $done += $n) {
 				$n = fwrite($stream, $done === 0 ? $data : substr($data, $done));
@@ -51,6 +56,7 @@ final class RepositoryImportSource implements IImportSource {
 		$prefix = trim($path, '/');
 		$prefix = $prefix === '' ? '' : $prefix . '/';
 		$names = [];
+		/** @var string $p */
 		foreach (array_keys($this->manifest['entries']) as $p) {
 			if ($prefix === '' || str_starts_with($p, $prefix)) {
 				$rest = substr($p, strlen($prefix));
@@ -70,6 +76,7 @@ final class RepositoryImportSource implements IImportSource {
 		if (isset($this->manifest['entries'][$p])) {
 			return true;
 		}
+		/** @var string $k */
 		foreach (array_keys($this->manifest['entries']) as $k) {
 			if (str_starts_with($k, $p . '/')) {
 				return true;
@@ -91,12 +98,17 @@ final class RepositoryImportSource implements IImportSource {
 				$this->copyToFolder($sub, $path);
 			} else {
 				$stream = $this->getFileAsStream($path);
-				if ($destination->nodeExists($name)) {
-					$destination->get($name)->putContent($stream);
-				} else {
-					$destination->newFile($name, $stream);
-				}
-				if (is_resource($stream)) {
+				try {
+					if ($destination->nodeExists($name)) {
+						$existing = $destination->get($name);
+						if (!$existing instanceof File) {
+							throw new UserMigrationException("$path exists and is not a file");
+						}
+						$existing->putContent($stream);
+					} else {
+						$destination->newFile($name, $stream);
+					}
+				} finally {
 					fclose($stream);
 				}
 			}

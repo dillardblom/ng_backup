@@ -19,7 +19,7 @@ use OCP\Lock\LockedException;
  * holder keeps refreshing it. Nextcloud's lock is only held for the few milliseconds in which a
  * lease is checked and written.
  */
-class LeaseService {
+final class LeaseService {
 	public const SHARED = 's';
 	public const EXCLUSIVE = 'x';
 

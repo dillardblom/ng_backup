@@ -28,7 +28,7 @@ use Psr\Log\LoggerInterface;
  * Excluded by default: previews, log files, the updater's backups and each user's cache and
  * temporary uploads (all regenerable or temporary).
  */
-class BackupService {
+final class BackupService {
 	public const KIND_FULL = 'full';
 
 	public function __construct(

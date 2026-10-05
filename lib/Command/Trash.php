@@ -15,7 +15,7 @@ use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-class Trash extends Command {
+final class Trash extends Command {
 	public function __construct(
 		private TargetService $targets,
 		private KeyService $keys,

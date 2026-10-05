@@ -19,7 +19,7 @@ use OCP\SetupCheck\ISetupCheck;
 use OCP\SetupCheck\SetupResult;
 
 /** Shows the backup state in the admin overview (Security & setup warnings). */
-class BackupStatusCheck implements ISetupCheck {
+final class BackupStatusCheck implements ISetupCheck {
 	public function __construct(
 		private IL10N $l,
 		private IURLGenerator $url,

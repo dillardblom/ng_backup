@@ -28,7 +28,7 @@ use OCP\Files\NotFoundException;
  *  - merge:   into the original place, existing files are overwritten (old content kept as a version)
  *  - replace: like merge, and files that are not in the snapshot are moved to the trash
  */
-class RestoreService {
+final class RestoreService {
 	public const MODE_NEW_FOLDER = 'new-folder';
 	public const MODE_MERGE = 'merge';
 	public const MODE_REPLACE = 'replace';

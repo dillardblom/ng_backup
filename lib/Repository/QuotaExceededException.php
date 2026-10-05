@@ -7,5 +7,5 @@ declare(strict_types=1);
 
 namespace OCA\NgBackup\Repository;
 
-class QuotaExceededException extends RepositoryException {
+final class QuotaExceededException extends RepositoryException {
 }

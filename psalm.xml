@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<!-- SPDX-FileCopyrightText: 2026 Dillard Blom -->
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<psalm
+    errorLevel="2"
+    resolveFromConfigFile="true"
+    findUnusedBaselineEntry="true"
+    findUnusedCode="false"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns="https://getpsalm.org/schema/config"
+    xsi:schemaLocation="https://getpsalm.org/schema/config vendor/vimeo/psalm/config.xsd"
+    errorBaseline="psalm-baseline.xml"
+>
+    <projectFiles>
+        <directory name="lib" />
+        <ignoreFiles>
+            <directory name="vendor" />
+        </ignoreFiles>
+    </projectFiles>
+
+    <!-- Interface-only stubs for Nextcloud's public API, not autoloaded at runtime: scanned for
+         type resolution only, never reported on. lib/ must only use OCP\, never internal OC\
+         classes, since those differ between the supported Nextcloud versions (PLAN.md section 6). -->
+    <extraFiles>
+        <directory name="vendor/nextcloud/ocp/OCP" />
+        <directory name="vendor/nextcloud/ocp/NCU" />
+    </extraFiles>
+
+    <issueHandlers>
+        <UndefinedClass>
+            <errorLevel type="suppress">
+                <!-- Provided by files_external at runtime; not a composer dependency (PLAN.md 3.5). -->
+                <referencedClass name="OCA\Files_External\**" />
+            </errorLevel>
+        </UndefinedClass>
+        <!-- The #[\Override] attribute convention (PHP 8.3+) adds no behaviour; this app supports
+             PHP 8.1+, and applying it to every interface-implementing method project-wide is pure
+             ceremony with no bug-catching value, so it's suppressed rather than papered over. -->
+        <MissingOverrideAttribute>
+            <errorLevel type="suppress">
+                <directory name="lib" />
+            </errorLevel>
+        </MissingOverrideAttribute>
+    </issueHandlers>
+</psalm>

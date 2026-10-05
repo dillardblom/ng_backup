@@ -20,7 +20,7 @@ use OCP\Lock\LockedException;
  * prunes data no remaining snapshot uses. Never runs on append-only locations, never while a
  * backup to the same location is running (the location lock is shared with BackupService).
  */
-class PruneService {
+final class PruneService {
 	public function __construct(
 		private TargetService $targets,
 		private RunMapper $runs,

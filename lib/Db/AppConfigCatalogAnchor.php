@@ -12,7 +12,7 @@ use OCA\NgBackup\Repository\ICatalogAnchor;
 use OCP\IAppConfig;
 
 /** Keeps the newest catalog generation seen per repository in the app config (outside the location). */
-class AppConfigCatalogAnchor implements ICatalogAnchor {
+final class AppConfigCatalogAnchor implements ICatalogAnchor {
 	public function __construct(
 		private IAppConfig $appConfig,
 	) {

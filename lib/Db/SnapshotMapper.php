@@ -12,7 +12,7 @@ use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
 
 /** @template-extends QBMapper<Snapshot> */
-class SnapshotMapper extends QBMapper {
+final class SnapshotMapper extends QBMapper {
 	public function __construct(IDBConnection $db) {
 		parent::__construct($db, 'ngb_snapshots', Snapshot::class);
 	}

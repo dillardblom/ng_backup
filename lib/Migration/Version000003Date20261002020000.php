@@ -14,7 +14,7 @@ use OCP\Migration\IOutput;
 use OCP\Migration\SimpleMigrationStep;
 
 /** Append-only locations: NG Backup never deletes anything there (cleanup by the location's own lifecycle rules). */
-class Version000003Date20261002020000 extends SimpleMigrationStep {
+final class Version000003Date20261002020000 extends SimpleMigrationStep {
 	public function changeSchema(IOutput $output, Closure $schemaClosure, array $options): ?ISchemaWrapper {
 		/** @var ISchemaWrapper $schema */
 		$schema = $schemaClosure();

@@ -32,7 +32,7 @@ use OCP\IUserSession;
  * JSON API for the admin settings page. Every method requires an admin (the AppFramework
  * default for controllers without NoAdminRequired) and a valid CSRF token.
  */
-class AdminApiController extends Controller {
+final class AdminApiController extends Controller {
 	public function __construct(
 		IRequest $request,
 		private KeyService $keys,

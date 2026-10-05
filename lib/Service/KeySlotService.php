@@ -13,7 +13,7 @@ namespace OCA\NgBackup\Service;
  * is written to all locations and announced to all administrators; a new recovery kit must be
  * downloaded and confirmed afterwards (backups keep running meanwhile).
  */
-class KeySlotService {
+final class KeySlotService {
 	public function __construct(
 		private KeyService $keys,
 		private TargetService $targets,

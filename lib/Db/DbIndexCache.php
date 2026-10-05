@@ -11,7 +11,7 @@ use OCA\NgBackup\Repository\IIndexCache;
 use OCP\DB\Exception;
 use OCP\IDBConnection;
 
-class DbIndexCache implements IIndexCache {
+final class DbIndexCache implements IIndexCache {
 	public function __construct(
 		private IDBConnection $db,
 	) {

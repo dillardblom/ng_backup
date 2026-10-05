@@ -14,7 +14,7 @@ use OCP\Migration\IOutput;
 use OCP\Migration\SimpleMigrationStep;
 
 /** Local cache of the per-pack index files, so opening a repository does not download them all. */
-class Version000002Date20261002010000 extends SimpleMigrationStep {
+final class Version000002Date20261002010000 extends SimpleMigrationStep {
 	public function changeSchema(IOutput $output, Closure $schemaClosure, array $options): ?ISchemaWrapper {
 		/** @var ISchemaWrapper $schema */
 		$schema = $schemaClosure();

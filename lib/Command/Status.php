@@ -15,7 +15,7 @@ use Symfony\Component\Console\Helper\Table;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-class Status extends Command {
+final class Status extends Command {
 	public function __construct(
 		private KeyService $keys,
 		private TargetService $targets,

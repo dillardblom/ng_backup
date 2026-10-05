@@ -14,7 +14,7 @@ use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-class TrashRestore extends Command {
+final class TrashRestore extends Command {
 	public function __construct(
 		private TargetService $targets,
 		private PruneService $prune,

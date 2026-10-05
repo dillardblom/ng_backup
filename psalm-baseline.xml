@@ -1,0 +1,497 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<files psalm-version="6.19.1@e2ca44251c1f1aa2e35452d426895746b47de64e">
+  <file src="lib/Backend/ExternalStorageFactory.php">
+    <MissingClosureParamType>
+      <code><![CDATA[$p]]></code>
+      <code><![CDATA[$p]]></code>
+    </MissingClosureParamType>
+    <MissingClosureReturnType>
+      <code><![CDATA[fn ($p) => $p->jsonSerialize()]]></code>
+      <code><![CDATA[fn ($p) => $p->jsonSerialize()]]></code>
+    </MissingClosureReturnType>
+  </file>
+  <file src="lib/Backend/IBackend.php">
+    <MissingParamType>
+      <code><![CDATA[$stream]]></code>
+    </MissingParamType>
+  </file>
+  <file src="lib/Backend/LocalBackend.php">
+    <MissingParamType>
+      <code><![CDATA[$stream]]></code>
+    </MissingParamType>
+    <TypeDoesNotContainType>
+      <code><![CDATA[$out !== false]]></code>
+    </TypeDoesNotContainType>
+  </file>
+  <file src="lib/Backend/StorageBackend.php">
+    <MissingParamType>
+      <code><![CDATA[$stream]]></code>
+    </MissingParamType>
+  </file>
+  <file src="lib/BackgroundJob/BackupJob.php">
+    <MissingParamType>
+      <code><![CDATA[$argument]]></code>
+    </MissingParamType>
+  </file>
+  <file src="lib/BackgroundJob/RestoreJob.php">
+    <MissingParamType>
+      <code><![CDATA[$argument]]></code>
+    </MissingParamType>
+  </file>
+  <file src="lib/Command/Browse.php">
+    <InvalidOperand>
+      <code><![CDATA[$b /= 1024]]></code>
+    </InvalidOperand>
+  </file>
+  <file src="lib/Command/KeyConfirm.php">
+    <UndefinedInterfaceMethod>
+      <code><![CDATA[ask]]></code>
+      <code><![CDATA[ask]]></code>
+    </UndefinedInterfaceMethod>
+  </file>
+  <file src="lib/Command/KeyInit.php">
+    <UndefinedInterfaceMethod>
+      <code><![CDATA[ask]]></code>
+      <code><![CDATA[ask]]></code>
+    </UndefinedInterfaceMethod>
+  </file>
+  <file src="lib/Command/KeySlots.php">
+    <UndefinedInterfaceMethod>
+      <code><![CDATA[ask]]></code>
+      <code><![CDATA[ask]]></code>
+    </UndefinedInterfaceMethod>
+  </file>
+  <file src="lib/Command/Prune.php">
+    <PossiblyFalseOperand>
+      <code><![CDATA[json_encode($this->prune->policy()->toArray())]]></code>
+    </PossiblyFalseOperand>
+  </file>
+  <file src="lib/Command/RunBackup.php">
+    <PossiblyNullArgument>
+      <code><![CDATA[$run->getSnapshotId()]]></code>
+    </PossiblyNullArgument>
+  </file>
+  <file src="lib/Command/Status.php">
+    <RiskyTruthyFalsyComparison>
+      <code><![CDATA[$c]]></code>
+      <code><![CDATA[$r->getFinishedAt()]]></code>
+    </RiskyTruthyFalsyComparison>
+  </file>
+  <file src="lib/Command/TargetAdd.php">
+    <PossiblyNullArgument>
+      <code><![CDATA[$r['target']->getRepositoryId()]]></code>
+    </PossiblyNullArgument>
+    <PossiblyUndefinedArrayOffset>
+      <code><![CDATA[$v]]></code>
+    </PossiblyUndefinedArrayOffset>
+  </file>
+  <file src="lib/Command/TargetBackends.php">
+    <UndefinedClass>
+      <code><![CDATA[Base]]></code>
+    </UndefinedClass>
+  </file>
+  <file src="lib/Command/TargetLimit.php">
+    <InvalidOperand>
+      <code><![CDATA[(float)$m[1] * $factor]]></code>
+    </InvalidOperand>
+  </file>
+  <file src="lib/Command/TargetList.php">
+    <UndefinedClass>
+      <code><![CDATA[Base]]></code>
+    </UndefinedClass>
+  </file>
+  <file src="lib/Command/TargetTrustCurrent.php">
+    <UndefinedInterfaceMethod>
+      <code><![CDATA[ask]]></code>
+    </UndefinedInterfaceMethod>
+  </file>
+  <file src="lib/Command/Trash.php">
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)($info['time'] ?? '')]]></code>
+    </RedundantCastGivenDocblockType>
+  </file>
+  <file src="lib/Controller/AdminApiController.php">
+    <InvalidOperand>
+      <code><![CDATA[$maxGb * 1073741824]]></code>
+      <code><![CDATA[$maxGb * 1073741824]]></code>
+    </InvalidOperand>
+    <PossiblyNullArgument>
+      <code><![CDATA[$r->getSnapshotId()]]></code>
+    </PossiblyNullArgument>
+  </file>
+  <file src="lib/Crypto/StreamCipher.php">
+    <MissingParamType>
+      <code><![CDATA[$in]]></code>
+      <code><![CDATA[$out]]></code>
+    </MissingParamType>
+    <PossiblyFalseArgument>
+      <code><![CDATA[$in]]></code>
+      <code><![CDATA[$in]]></code>
+      <code><![CDATA[$in]]></code>
+      <code><![CDATA[$in]]></code>
+      <code><![CDATA[$in]]></code>
+      <code><![CDATA[$in]]></code>
+      <code><![CDATA[$out]]></code>
+      <code><![CDATA[$out]]></code>
+      <code><![CDATA[$out]]></code>
+      <code><![CDATA[$out]]></code>
+      <code><![CDATA[$out]]></code>
+      <code><![CDATA[$out]]></code>
+    </PossiblyFalseArgument>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('N', $len)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="lib/Db/AppConfigCatalogAnchor.php">
+    <PossiblyFalseArgument>
+      <code><![CDATA[json_encode(['gen' => $gen, 'hash' => $hash])]]></code>
+    </PossiblyFalseArgument>
+  </file>
+  <file src="lib/Db/DbDumper.php">
+    <InvalidArrayOffset>
+      <code><![CDATA[$info['sha256']]]></code>
+      <code><![CDATA[$manifest['sequences']]]></code>
+    </InvalidArrayOffset>
+    <MissingClosureReturnType>
+      <code><![CDATA[fn ($c) => $end[array_search($c, $columns, true)]]]></code>
+      <code><![CDATA[fn ($c) => $q($c)]]></code>
+      <code><![CDATA[fn (string $c) => $this->db->quoteIdentifier($c)]]></code>
+      <code><![CDATA[fn (string $c) => $this->db->quoteIdentifier($c)]]></code>
+    </MissingClosureReturnType>
+    <PossiblyFalseArgument>
+      <code><![CDATA[$value]]></code>
+    </PossiblyFalseArgument>
+    <PossiblyNullArgument>
+      <code><![CDATA[$columns]]></code>
+    </PossiblyNullArgument>
+    <UndefinedClass>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[TransactionIsolationLevel]]></code>
+      <code><![CDATA[\Doctrine\DBAL\ParameterType]]></code>
+      <code><![CDATA[\Doctrine\DBAL\ParameterType]]></code>
+      <code><![CDATA[\Doctrine\DBAL\ParameterType]]></code>
+      <code><![CDATA[\Doctrine\DBAL\Platforms\PostgreSQLPlatform]]></code>
+      <code><![CDATA[\Doctrine\DBAL\Platforms\PostgreSQLPlatform]]></code>
+      <code><![CDATA[\Doctrine\DBAL\Platforms\PostgreSQLPlatform]]></code>
+      <code><![CDATA[\Doctrine\DBAL\Schema\Table]]></code>
+      <code><![CDATA[\Doctrine\DBAL\Schema\Table]]></code>
+      <code><![CDATA[\Doctrine\DBAL\Schema\Table]]></code>
+      <code><![CDATA[private]]></code>
+    </UndefinedClass>
+  </file>
+  <file src="lib/Db/Run.php">
+    <PropertyNotSetInConstructor>
+      <code><![CDATA[Run]]></code>
+    </PropertyNotSetInConstructor>
+  </file>
+  <file src="lib/Db/Snapshot.php">
+    <PropertyNotSetInConstructor>
+      <code><![CDATA[Snapshot]]></code>
+    </PropertyNotSetInConstructor>
+  </file>
+  <file src="lib/Db/Target.php">
+    <PropertyNotSetInConstructor>
+      <code><![CDATA[Target]]></code>
+    </PropertyNotSetInConstructor>
+  </file>
+  <file src="lib/Job/BackupRun.php">
+    <ArgumentTypeCoercion>
+      <code><![CDATA[$blobs]]></code>
+    </ArgumentTypeCoercion>
+    <MissingParamType>
+      <code><![CDATA[$fh]]></code>
+    </MissingParamType>
+    <PossiblyNullIterator>
+      <code><![CDATA[$segments]]></code>
+    </PossiblyNullIterator>
+    <PossiblyUndefinedArrayOffset>
+      <code><![CDATA[$mtime]]></code>
+      <code><![CDATA[$state['cur']]]></code>
+      <code><![CDATA[$state['phase']]]></code>
+      <code><![CDATA[$state['segments']]]></code>
+      <code><![CDATA[$state['stats']]]></code>
+    </PossiblyUndefinedArrayOffset>
+  </file>
+  <file src="lib/Job/ParentCursor.php">
+    <PossiblyNullReference>
+      <code><![CDATA[next]]></code>
+    </PossiblyNullReference>
+  </file>
+  <file src="lib/Job/TreeWalker.php">
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$name]]></code>
+    </RedundantCastGivenDocblockType>
+  </file>
+  <file src="lib/Migration/Version000001Date20261002000000.php">
+    <UndefinedDocblockClass>
+      <code><![CDATA[$schema->createTable('ngb_targets')]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+    </UndefinedDocblockClass>
+  </file>
+  <file src="lib/Migration/Version000002Date20261002010000.php">
+    <UndefinedDocblockClass>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+    </UndefinedDocblockClass>
+  </file>
+  <file src="lib/Migration/Version000003Date20261002020000.php">
+    <UndefinedDocblockClass>
+      <code><![CDATA[$schema->getTable('ngb_targets')]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+    </UndefinedDocblockClass>
+  </file>
+  <file src="lib/Migration/Version000004Date20261002030000.php">
+    <UndefinedDocblockClass>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+    </UndefinedDocblockClass>
+  </file>
+  <file src="lib/Migration/Version000005Date20261002040000.php">
+    <UndefinedDocblockClass>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+    </UndefinedDocblockClass>
+  </file>
+  <file src="lib/Repository/BlobIndex.php">
+    <PossiblyFalseArgument>
+      <code><![CDATA[$stream]]></code>
+      <code><![CDATA[$stream]]></code>
+    </PossiblyFalseArgument>
+  </file>
+  <file src="lib/Repository/Catalog.php">
+    <PossiblyFalseArgument>
+      <code><![CDATA[$stream]]></code>
+      <code><![CDATA[$stream]]></code>
+    </PossiblyFalseArgument>
+  </file>
+  <file src="lib/Repository/PackWriter.php">
+    <InvalidPropertyAssignmentValue>
+      <code><![CDATA[$this->buffer]]></code>
+    </InvalidPropertyAssignmentValue>
+    <PossiblyFalsePropertyAssignmentValue>
+      <code><![CDATA[fopen('php://temp/maxmemory:' . ($this->targetSize + 8 * 1048576), 'w+b')]]></code>
+    </PossiblyFalsePropertyAssignmentValue>
+    <RedundantPropertyInitializationCheck>
+      <code><![CDATA[isset($this->buffer)]]></code>
+    </RedundantPropertyInitializationCheck>
+  </file>
+  <file src="lib/Repository/Repository.php">
+    <InvalidOperand>
+      <code><![CDATA[strlen($data) * 0.95]]></code>
+    </InvalidOperand>
+    <InvalidReturnStatement>
+      <code><![CDATA[['snapshot' => $snapshotId] + $stats]]></code>
+    </InvalidReturnStatement>
+    <InvalidReturnType>
+      <code><![CDATA[array{snapshot:string, files:int, reused:int, read:int, newBlobs:int, dupBlobs:int, uploaded:int}]]></code>
+    </InvalidReturnType>
+    <MissingParamType>
+      <code><![CDATA[$fh]]></code>
+    </MissingParamType>
+    <PossiblyFalseArgument>
+      <code><![CDATA[$encrypted]]></code>
+      <code><![CDATA[$encrypted]]></code>
+      <code><![CDATA[$encrypted]]></code>
+      <code><![CDATA[$encrypted]]></code>
+      <code><![CDATA[$fh]]></code>
+      <code><![CDATA[$plain]]></code>
+      <code><![CDATA[$plain]]></code>
+      <code><![CDATA[$plain]]></code>
+      <code><![CDATA[$plain]]></code>
+      <code><![CDATA[$plain]]></code>
+      <code><![CDATA[$plain]]></code>
+      <code><![CDATA[$plain]]></code>
+      <code><![CDATA[$plain]]></code>
+      <code><![CDATA[$plain]]></code>
+      <code><![CDATA[$s]]></code>
+      <code><![CDATA[$s]]></code>
+      <code><![CDATA[$tree]]></code>
+      <code><![CDATA[$tree]]></code>
+      <code><![CDATA[$tree]]></code>
+      <code><![CDATA[$tree]]></code>
+      <code><![CDATA[$tree]]></code>
+      <code><![CDATA[$tree]]></code>
+      <code><![CDATA[$tree]]></code>
+      <code><![CDATA[$tree]]></code>
+      <code><![CDATA[$tree]]></code>
+      <code><![CDATA[$tree]]></code>
+    </PossiblyFalseArgument>
+    <PossiblyUndefinedArrayOffset>
+      <code><![CDATA[$stats['files']]]></code>
+      <code><![CDATA[$stats['reused']]]></code>
+    </PossiblyUndefinedArrayOffset>
+    <PropertyNotSetInConstructor>
+      <code><![CDATA[$catalog]]></code>
+    </PropertyNotSetInConstructor>
+  </file>
+  <file src="lib/Service/AlertService.php">
+    <InvalidOperand>
+      <code><![CDATA[$bytes / $limit * 100]]></code>
+      <code><![CDATA[0.8 * $limit]]></code>
+    </InvalidOperand>
+    <PossiblyFalseOperand>
+      <code><![CDATA[json_encode(array_diff_key($params, ['actor' => 1]), JSON_UNESCAPED_SLASHES)]]></code>
+    </PossiblyFalseOperand>
+  </file>
+  <file src="lib/Service/BackupService.php">
+    <InvalidOperand>
+      <code><![CDATA[$deadline - microtime(true) + 120]]></code>
+    </InvalidOperand>
+    <UndefinedClass>
+      <code><![CDATA[\OC]]></code>
+      <code><![CDATA[\OC]]></code>
+    </UndefinedClass>
+    <UndefinedInterfaceMethod>
+      <code><![CDATA[getInner]]></code>
+    </UndefinedInterfaceMethod>
+  </file>
+  <file src="lib/Service/KeyService.php">
+    <ArgumentTypeCoercion>
+      <code><![CDATA[array_diff(range(1, self::MAX_SLOTS), $used)]]></code>
+    </ArgumentTypeCoercion>
+    <InvalidReturnStatement>
+      <code><![CDATA[[
+			'version' => 1,
+			'app' => 'NG Backup',
+			'fingerprint' => $this->fingerprint(),
+			'kit_version' => $this->kitVersion(),
+			'confirmation_code' => $this->kitCode(),
+			'created' => gmdate('c'),
+			'wrapped_key' => $this->wrappedKey(),
+			'slots' => $this->slots(),
+			'instructions' => 'Keep this file safe, outside this server. Any one of the passphrases of the slots listed here opens it. '
+				. 'To restore on a new server: install NG Backup, add the backup location and enter this kit with one passphrase. '
+				. 'Without the kit (or the location) and a passphrase, the backups cannot be decrypted.',
+		]]]></code>
+    </InvalidReturnStatement>
+    <InvalidReturnType>
+      <code><![CDATA[array{version:int, app:string, fingerprint:string, created:string, wrapped_key:array, instructions:string}]]></code>
+    </InvalidReturnType>
+    <LessSpecificReturnStatement>
+      <code><![CDATA[array_map(fn ($s) => ['slot' => $s['slot'], 'label' => $s['label'], 'created' => $s['created']], $this->wrappedKey()['slots'])]]></code>
+    </LessSpecificReturnStatement>
+    <MissingClosureParamType>
+      <code><![CDATA[$s]]></code>
+      <code><![CDATA[$s]]></code>
+    </MissingClosureParamType>
+    <MissingClosureReturnType>
+      <code><![CDATA[static fn (string $c) => strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $c) ?? '')]]></code>
+    </MissingClosureReturnType>
+    <MoreSpecificReturnType>
+      <code><![CDATA[list<array{slot:int, label:string, created:int}>]]></code>
+    </MoreSpecificReturnType>
+    <PossiblyFalseArgument>
+      <code><![CDATA[base64_decode($this->crypto->decrypt($enc), true)]]></code>
+    </PossiblyFalseArgument>
+  </file>
+  <file src="lib/Service/PruneService.php">
+    <LessSpecificReturnStatement>
+      <code><![CDATA[['kept' => $keep, 'forgotten' => $forget, 'purged' => $purged, 'prune' => $prune]]]></code>
+    </LessSpecificReturnStatement>
+    <MissingClosureReturnType>
+      <code><![CDATA[fn () => $fn()]]></code>
+    </MissingClosureReturnType>
+    <MoreSpecificReturnType>
+      <code><![CDATA[array{kept: array<string, list<string>>, forgotten: list<string>, purged: list<string>, prune: array}]]></code>
+    </MoreSpecificReturnType>
+  </file>
+  <file src="lib/Service/RestoreService.php">
+    <LessSpecificReturnStatement>
+      <code><![CDATA[array_values($children)]]></code>
+    </LessSpecificReturnStatement>
+    <MissingDependency>
+      <code><![CDATA[$this->root]]></code>
+      <code><![CDATA[private]]></code>
+    </MissingDependency>
+    <MoreSpecificReturnType>
+      <code><![CDATA[list<array{name:string, type:string, size:int, mtime:int|null, files:int}>]]></code>
+    </MoreSpecificReturnType>
+    <PossiblyFalseArgument>
+      <code><![CDATA[$in]]></code>
+      <code><![CDATA[$out]]></code>
+      <code><![CDATA[$out]]></code>
+    </PossiblyFalseArgument>
+    <PossiblyNullArrayOffset>
+      <code><![CDATA[$children]]></code>
+      <code><![CDATA[$children]]></code>
+    </PossiblyNullArrayOffset>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$relPath]]></code>
+      <code><![CDATA[(string)$relPath]]></code>
+    </RedundantCastGivenDocblockType>
+  </file>
+  <file src="lib/Service/TargetService.php">
+    <InvalidReturnStatement>
+      <code><![CDATA[$this->factory()->describeBackends()]]></code>
+    </InvalidReturnStatement>
+    <InvalidReturnType>
+      <code><![CDATA[list<array{id:string, name:string, auth:list<string>, parameters:array}>]]></code>
+    </InvalidReturnType>
+    <UndefinedDocblockClass>
+      <code><![CDATA[Server::get(\OCA\Files_External\Service\BackendService::class)]]></code>
+    </UndefinedDocblockClass>
+    <UnresolvableInclude>
+      <code><![CDATA[require_once $path . '/composer/autoload.php']]></code>
+    </UnresolvableInclude>
+  </file>
+</files>

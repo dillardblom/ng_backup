@@ -7,5 +7,5 @@ declare(strict_types=1);
 
 namespace OCA\NgBackup\Crypto;
 
-class CryptoException extends \RuntimeException {
+final class CryptoException extends \RuntimeException {
 }

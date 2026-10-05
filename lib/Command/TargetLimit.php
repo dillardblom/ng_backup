@@ -13,7 +13,7 @@ use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-class TargetLimit extends Command {
+final class TargetLimit extends Command {
 	public function __construct(
 		private TargetService $targets,
 	) {

@@ -15,7 +15,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
-class Prune extends Command {
+final class Prune extends Command {
 	public function __construct(
 		private TargetService $targets,
 		private PruneService $prune,

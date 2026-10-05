@@ -13,7 +13,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
-class KeyKit extends Command {
+final class KeyKit extends Command {
 	public function __construct(
 		private KeyService $keys,
 		private \OCA\NgBackup\Service\AlertService $alerts,

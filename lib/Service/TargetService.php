@@ -22,7 +22,7 @@ use OCP\Server;
  * object is built only while it is used; nothing is mounted. files_external is loaded for its
  * classes but its enabled/disabled state is left as the admin set it.
  */
-class TargetService {
+final class TargetService {
 	public function __construct(
 		private TargetMapper $mapper,
 		private KeyService $keys,

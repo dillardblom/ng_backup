@@ -22,7 +22,7 @@ use Symfony\Component\Console\Question\Question;
  * legitimate cases (e.g. the location was restored from the provider's own snapshot), only from
  * occ, audited and announced to all administrators.
  */
-class TargetTrustCurrent extends Command {
+final class TargetTrustCurrent extends Command {
 	public function __construct(
 		private TargetService $targets,
 		private IAppConfig $appConfig,
