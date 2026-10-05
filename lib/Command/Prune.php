@@ -37,6 +37,20 @@ final class Prune extends Command {
 		$output->writeln('Policy: ' . json_encode($this->prune->policy()->toArray()) . ($dry ? ' (dry run)' : ''));
 		$rc = 0;
 		foreach ($targets as $t) {
+			// User exports first: Repository::prune()'s blob garbage collection (run as part of
+			// apply() below) scans the users/ manifests still on the location at that point, so
+			// forgetting one here lets its now-unused blobs be freed in this same pass.
+			try {
+				$ru = $this->prune->applyUserExports($t, $dry);
+			} catch (\Throwable $e) {
+				$output->writeln('<error>' . $t->getName() . ' (user exports): ' . $e->getMessage() . '</error>');
+				$rc = 1;
+				continue;
+			}
+			if ($ru['forgotten'] !== []) {
+				$output->writeln(sprintf('<info>%s</info>: %s %d user export(s) for %d user(s)',
+					$t->getName(), $dry ? 'would forget' : 'forgot', count($ru['forgotten']), count($ru['kept'])));
+			}
 			try {
 				$r = $this->prune->apply($t, $dry);
 			} catch (\Throwable $e) {

@@ -28,7 +28,8 @@ final class Retention extends Command {
 			->addOption('daily', null, InputOption::VALUE_REQUIRED, 'Keep one per day for the last N days with a backup')
 			->addOption('weekly', null, InputOption::VALUE_REQUIRED, 'Keep one per week for N weeks')
 			->addOption('monthly', null, InputOption::VALUE_REQUIRED, 'Keep one per month for N months')
-			->setHelp("Example: occ backup:retention --last=3 --daily=7 --weekly=4 --monthly=12");
+			->addOption('user-last', null, InputOption::VALUE_REQUIRED, 'Keep the newest N of each user\'s own exports (occ backup:backup:user)')
+			->setHelp("Example: occ backup:retention --last=3 --daily=7 --weekly=4 --monthly=12 --user-last=3");
 	}
 
 	protected function execute(InputInterface $input, OutputInterface $output): int {
@@ -48,7 +49,16 @@ final class Retention extends Command {
 				return 1;
 			}
 		}
+		if ($input->getOption('user-last') !== null) {
+			try {
+				$this->prune->setUserExportRetention((int)$input->getOption('user-last'));
+			} catch (\InvalidArgumentException $e) {
+				$output->writeln('<error>' . $e->getMessage() . '</error>');
+				return 1;
+			}
+		}
 		$output->writeln(sprintf('Keep the last %d, plus one per day for %d days, per week for %d weeks, per month for %d months.', $p['last'], $p['daily'], $p['weekly'], $p['monthly']));
+		$output->writeln(sprintf('Keep the newest %d of each user\'s own exports.', $this->prune->userExportRetention()));
 		return 0;
 	}
 }

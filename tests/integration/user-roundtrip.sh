@@ -54,6 +54,18 @@ SUM_AFTER=$($X sh -c "cd $DATA/$U/files && find . -type f -print0 | sort -z | xa
 [ "$SUM_BEFORE" = "$SUM_AFTER" ] || fail "files differ after a replace restore"
 ok "replace restores the original content under the same uid, byte-identical"
 
+# Retention: $U now has the manual export above plus the automatic safety-export the replace
+# restore made of it just before deleting it (4 total after these two more), then --user-last=2
+# must forget exactly the 2 oldest.
+sleep 1.1 # exportId is time-based to the second; force each one to be distinct
+occ backup:backup:user ci "$U" >/dev/null || fail "third backup:backup:user"
+sleep 1.1
+occ backup:backup:user ci "$U" >/dev/null || fail "fourth backup:backup:user"
+occ backup:retention --user-last=2 >/dev/null || fail "retention --user-last"
+PRUNE_OUT=$(occ backup:prune ci)
+echo "$PRUNE_OUT" | grep -q "forgot 2 user export(s) for 1 user(s)" || fail "prune did not forget the expected two user exports"
+ok "user-export retention forgets exactly the exports over the keep count"
+
 occ user:delete "$U" >/dev/null
 $X sh -c "rm -rf /tmp/ngb-urt-target /tmp/ngb-urt-pass"
 echo "USER ROUNDTRIP PASS"

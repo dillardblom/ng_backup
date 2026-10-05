@@ -346,7 +346,10 @@ minimale volledige restore (`occ backup:restore:full` op een verse installatie) 
    SMB vereist de `smbclient` PECL-extensie (niet standaard in de Nextcloud-image, in CI nu
    on-the-fly gebouwd). NFS is geen eigen backend: lokaal mounten + `local`-backend erop richten.
 3. Verificatie/checksum-audit-commando — **klaar** (2026-10-05)
-4. Retentie/prune voor user-exports
+4. Retentie/prune voor user-exports — **klaar** (2026-10-06): `occ backup:retention --user-last=N`
+   (standaard 3, per installatie, net als de bestaande snapshot-policy), toegepast door
+   `occ backup:prune` (geen prullenbak voor user-exports, in tegenstelling tot snapshots — on-demand,
+   niet het primaire vangnet).
 5. Automatische user-export inpluggen in het reguliere schema (of expliciet besluit dat het on-demand blijft)
 9. SMB/NFS intern testen op de eigen OMV-instantie — nog open (intern, niet in CI)
 
