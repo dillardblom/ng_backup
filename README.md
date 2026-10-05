@@ -2,8 +2,10 @@
 
 Encrypted, incremental backups of Nextcloud (database, configuration and data) with restore
 from the web interface. Works without shell access: no external programs, no extra PHP
-extensions beyond sodium. Runs on Nextcloud All-in-One, regular installations and hosted
-Nextcloud.
+extensions beyond sodium for ng_backup itself. Runs on Nextcloud All-in-One, regular
+installations and hosted Nextcloud. (Choosing SMB as a storage backend is the one exception:
+see "Storage backend experiences" below — that requirement comes from files_external, not from
+ng_backup, and applies to any Nextcloud app that writes to an SMB share.)
 
 **Status: in development (phase 1). Not ready for production use.** See `PLAN.md` for the design.
 
@@ -118,6 +120,29 @@ Contributions welcome via PR — add what you ran into with your own provider.
   form that lets you set a path relative to the account's root, not just ng_backup. Not yet
   verified whether this also applies to a Hetzner Storage Box **main** account (only tested with a
   sub-account so far) — if you've tried a main account, please say so in a PR.
+
+- **FTP, server-dependent absolute-path handling:** files_external's FTP backend always builds
+  absolute paths (e.g. `MKD /repo`) for the configured root, never relative ones. `atmoz/sftp`-style
+  `vsftpd` test servers (chrooted) can reject that with a generic "create directory operation
+  failed", even though a plain `ftp_mkdir()` with a *relative* path on the same server succeeds;
+  `pure-ftpd` accepts the absolute form fine. If a working FTP server rejects ng_backup's writes,
+  try a different FTP server implementation before assuming the backend itself is broken.
+
+- **SMB/CIFS *lists* as available with just the `smbclient` CLI binary, but does not actually
+  work for ng_backup without the `smbclient` PECL extension too.** files_external falls back to a
+  shell-wrapped `smbclient` process when the native extension is missing, which registers the
+  backend in `occ backup:target:backends` fine, but that fallback's stream cannot seek. ng_backup
+  reads blobs back by byte range while backing up, so even the very first (small) backup fails
+  with `Seek failed in packs/...`. Install the extension (`libsmbclient-dev` + `pecl install
+  smbclient` + `docker-php-ext-enable smbclient` on Debian-based images), not just the CLI tool —
+  the backend being listed is not proof it will work here. Once the extension is present it works
+  the same as any other backend; no ng_backup-specific config beyond host/share/user/password.
+
+- **NFS is not a files_external backend at all.** Mount the NFS export on the server yourself
+  (e.g. via `/etc/fstab` or a systemd `.mount` unit) and point ng_backup's `local` backend at the
+  mount point; ng_backup never mounts or unmounts anything on its own, so an NFS mount dropping
+  mid-run behaves like any other local-path failure (the run resumes). See PLAN.md 3.5 for why NFS
+  can't be driven from PHP directly.
 
 ## Commands
 

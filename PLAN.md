@@ -339,12 +339,16 @@ Volgorde: fase 1 grondig testen, reviewen en debuggen; dan nadenken over 0.1.0-a
 minimale volledige restore (`occ backup:restore:full` op een verse installatie) komt vóór de beta.
 
 **Roadmap-indeling fase 2 (besluit 2026-10-05):** naar v1.2.0 toewerken met in fase 2:
-1. `backup:restore:full` (disaster recovery, verse installatie) — **in uitvoering**
-2. FTP/SMB-ondersteuning
-3. Verificatie/checksum-audit-commando
+1. `backup:restore:full` (disaster recovery, verse installatie) — **klaar** (2026-10-05)
+2. FTP/SMB-ondersteuning — **klaar** (2026-10-06): beide liepen al via files_external's generieke
+   adapter zonder enige ng_backup-code; alleen testdekking toegevoegd
+   (`tests/integration/targets-matrix.sh`) + bevindingen in README ("Storage backend experiences").
+   SMB vereist de `smbclient` PECL-extensie (niet standaard in de Nextcloud-image, in CI nu
+   on-the-fly gebouwd). NFS is geen eigen backend: lokaal mounten + `local`-backend erop richten.
+3. Verificatie/checksum-audit-commando — **klaar** (2026-10-05)
 4. Retentie/prune voor user-exports
 5. Automatische user-export inpluggen in het reguliere schema (of expliciet besluit dat het on-demand blijft)
-9. SMB/NFS intern testen op de eigen OMV-instantie
+9. SMB/NFS intern testen op de eigen OMV-instantie — nog open (intern, niet in CI)
 
 Doorgeschoven naar **v1.3.0** (fase 3, niet meer fase 2): in-place volledige restore
 (eigen restore-modus i.p.v. onderhoudsmodus) en zelfbediening voor gebruikers (eigen bestanden
