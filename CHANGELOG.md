@@ -42,3 +42,5 @@ and not implemented yet.
 - No FTP/SMB coverage in CI yet, and no verification/checksum-audit command yet (phase 2).
 - See the "Storage backend experiences" section of the README for provider-specific quirks found
   so far (e.g. Hetzner Storage Box sub-accounts).
+
+[0.1.0-alpha.1]: https://github.com/dillardblom/ng_backup/releases/tag/v0.1.0-alpha.1
