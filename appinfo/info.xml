@@ -51,6 +51,7 @@ relying on this for anything.]]></description>
         <command>OCA\NgBackup\Command\RestoreUser</command>
         <command>OCA\NgBackup\Command\KeyImport</command>
         <command>OCA\NgBackup\Command\RestoreFull</command>
+        <command>OCA\NgBackup\Command\Verify</command>
     </commands>
     <settings>
         <admin>OCA\NgBackup\Settings\Admin</admin>

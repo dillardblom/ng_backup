@@ -662,6 +662,83 @@ final class Repository {
 		return $this->streamEntries($snapshotId);
 	}
 
+	/**
+	 * Checksum audit of a snapshot: every blob it references (files and the database dump, when
+	 * the snapshot has one) must be in the index, freshly re-downloaded and re-authenticated from
+	 * the location rather than trusted from the local cache (same reasoning as prune()), and its
+	 * pack must still be present. With $deep, each blob is also downloaded and decrypted, which
+	 * verifies its AEAD authentication tag and its content hash against the blob id (loadBlob()
+	 * already does both on every real read -- this just does it for everything in the snapshot,
+	 * deliberately, rather than relying on it to come up during a later restore). A blob
+	 * referenced by more than one file is only checked once; a missing database manifest is a
+	 * failure, not something to silently skip over.
+	 *
+	 * @param ?callable $heartbeat called after every blob (shallow) or every blob read (deep);
+	 *        callers use it to keep a time-boxed lease alive during a large audit
+	 * @return array{filesChecked:int, blobsChecked:int, bytesChecked:int, missing:list<string>, failed:list<string>}
+	 */
+	public function verify(string $snapshotId, bool $deep = false, ?callable $heartbeat = null): array {
+		$heartbeat ??= static function (): void {
+		};
+		$this->index->load(true);
+		$stats = ['filesChecked' => 0, 'blobsChecked' => 0, 'bytesChecked' => 0, 'missing' => [], 'failed' => []];
+		$seen = [];
+		$packSeen = []; // pack id => exists on the backend; avoids one exists() call per blob
+		foreach ($this->streamEntries($snapshotId) as $entry) {
+			$stats['filesChecked']++;
+			foreach ($entry['b'] as $id) {
+				if (isset($seen[$id])) {
+					continue;
+				}
+				$seen[$id] = true;
+				$this->verifyBlob($id, $deep, $stats, $packSeen);
+				$heartbeat();
+			}
+		}
+		$meta = $this->snapshotMeta($snapshotId);
+		if (isset($meta['db']) && is_string($meta['db'])) {
+			if (!$this->backend->exists($meta['db'])) {
+				$stats['missing'][] = $meta['db'];
+			} else {
+				$dbManifest = json_decode($this->getObject($meta['db']), true, 512, JSON_THROW_ON_ERROR);
+				foreach ($dbManifest['tables'] as $info) {
+					foreach ($info['blobs'] as $id) {
+						if (isset($seen[$id])) {
+							continue;
+						}
+						$seen[$id] = true;
+						$this->verifyBlob($id, $deep, $stats, $packSeen);
+						$heartbeat();
+					}
+				}
+			}
+		}
+		return $stats;
+	}
+
+	/** @param array<string, bool> $packSeen */
+	private function verifyBlob(string $id, bool $deep, array &$stats, array &$packSeen): void {
+		if (!$this->index->has($id)) {
+			$stats['missing'][] = $id;
+			return;
+		}
+		[$pack] = $this->index->get($id);
+		$packExists = $packSeen[$pack] ??= $this->backend->exists('packs/' . substr($pack, 0, 2) . '/' . $pack);
+		if (!$packExists) {
+			$stats['missing'][] = $id;
+			return;
+		}
+		$stats['blobsChecked']++;
+		if (!$deep) {
+			return;
+		}
+		try {
+			$stats['bytesChecked'] += strlen($this->loadBlob($id));
+		} catch (\Throwable) {
+			$stats['failed'][] = $id;
+		}
+	}
+
 	/** The meta record (first line) of a snapshot. */
 	public function snapshotMeta(string $snapshotId): array {
 		$plain = fopen('php://temp/maxmemory:' . (4 * 1048576), 'w+b');

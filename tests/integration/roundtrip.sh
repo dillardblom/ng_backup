@@ -49,6 +49,11 @@ SUM_AFTER=$($X sh -c "cd $DATA/$U/files && find . -type f -print0 | sort -z | xa
 $X sh -c "ls $DATA/$U/files_trashbin/files/ | grep -q '^extra.txt'" || fail "extra file not in trash"
 ok "restore new-folder and replace: files identical, extra file in the trash"
 
+# Checksum audit: shallow (index presence) and deep (download, decrypt, verify every blob).
+occ backup:verify ci "$SNAP" | grep -q "^OK$" || fail "shallow verify"
+occ backup:verify ci "$SNAP" --deep | grep -q "^OK$" || fail "deep verify"
+ok "shallow and deep checksum audit"
+
 # Database dump/restore round trip (all tables, checksums, sequences on PostgreSQL).
 $X php -d memory_limit=512M "$APPS/ng_backup/spikes/03-db-dump.php" /tmp/ngb-rt-db | grep "ALL PASS" >/dev/null || fail "database round trip"
 ok "database dump and restore"
