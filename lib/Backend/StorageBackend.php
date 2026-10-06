@@ -30,7 +30,13 @@ final class StorageBackend implements IBackend {
 		}
 	}
 
+	/** A temporary upload of put(): "<name>.part-<8 hex>". */
+	public static function isTemporary(string $name): bool {
+		return preg_match('/\.part-[0-9a-f]{8}$/', $name) === 1;
+	}
+
 	public function put(string $path, $stream): void {
+		$expected = self::remaining($stream);
 		$target = $this->abs($path);
 		$this->mkdirs(dirname($target));
 		$writeTo = $this->atomicPut ? $target : $target . '.part-' . bin2hex(random_bytes(4));
@@ -53,6 +59,10 @@ final class StorageBackend implements IBackend {
 			}
 			if (is_resource($stream)) {
 				fclose($stream);
+			}
+			// Some adapters report success after a short write or a failed flush: check the size.
+			if ($expected !== null && $this->storage->filesize($writeTo) !== $expected) {
+				throw new BackendException('Incomplete write for ' . $path);
 			}
 			if ($writeTo !== $target && !$this->storage->rename($writeTo, $target)) {
 				throw new BackendException('Cannot finalise ' . $path);
@@ -132,17 +142,37 @@ final class StorageBackend implements IBackend {
 			return;
 		}
 		while (($name = readdir($dh)) !== false) {
-			if ($name === '.' || $name === '..' || str_contains($name, '.part-')) {
+			if ($name === '.' || $name === '..') {
 				continue;
 			}
 			$child = $dir . '/' . $name;
 			if ($this->storage->is_dir($child)) {
 				$this->listInto($child, $result);
-			} else {
+			} elseif (!self::isTemporary($name)) {
 				$result[] = $child;
 			}
 		}
 		closedir($dh);
+	}
+
+	/**
+	 * Bytes left to read in a local $stream (php://temp, php://memory or a plain file), or null:
+	 * stream wrappers of remote storages do not report a reliable size.
+	 */
+	public static function remaining(mixed $stream): ?int {
+		if (!is_resource($stream)) {
+			return null;
+		}
+		$meta = stream_get_meta_data($stream);
+		if (!($meta['seekable'] ?? false) || !in_array($meta['wrapper_type'] ?? '', ['PHP', 'plainfile'], true)) {
+			return null;
+		}
+		$stat = fstat($stream);
+		$pos = ftell($stream);
+		if ($stat === false || $pos === false) {
+			return null;
+		}
+		return max(0, $stat['size'] - $pos);
 	}
 
 	private function mkdirs(string $dir): void {

@@ -168,6 +168,7 @@ final class AdminApiController extends Controller {
 		return new JSONResponse($this->targets->availableBackends());
 	}
 
+	#[PasswordConfirmationRequired]
 	public function addTarget(string $name, string $backend, string $auth, array $options = [], string $path = 'ng_backup', ?float $maxGb = null): JSONResponse {
 		try {
 			$r = $this->targets->add($name, $backend, $auth, $options, $path);

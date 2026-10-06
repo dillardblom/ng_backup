@@ -236,8 +236,13 @@ final class Repository {
 				unlink($tmp);
 				throw new RepositoryException('Size mismatch restoring ' . $entry['p']);
 			}
-			rename($tmp, $dest);
-			touch($dest, $entry['m']);
+			if (!rename($tmp, $dest)) {
+				@unlink($tmp);
+				throw new RepositoryException('Cannot put the restored file in place: ' . $entry['p']);
+			}
+			if (!touch($dest, $entry['m'])) {
+				throw new RepositoryException('Cannot set the modification time of ' . $entry['p']);
+			}
 			$count++;
 		}
 		return $count;
@@ -375,29 +380,59 @@ final class Repository {
 			// must be decrypted and re-encrypted under the new path, not moved as raw bytes.
 			$dbInTrash = 'trash/' . $meta['db'];
 			$this->putObject($dbInTrash, $this->getObject($meta['db']));
-			$this->backend->delete($meta['db']);
 		}
-		// The snapshot object is bound to its id (not its path), so it can be moved as raw bytes.
-		$this->backend->move('snapshots/' . $snapshotId, 'trash/snapshots/' . $snapshotId);
+		// Copy first, switch the catalog, delete the originals last: a crash at any point leaves
+		// either the old state or the new one plus unreferenced leftovers, never a catalog entry
+		// pointing at a missing object. The snapshot object is bound to its id (not its path),
+		// so it can be copied as raw bytes.
+		$this->copyRaw('snapshots/' . $snapshotId, 'trash/snapshots/' . $snapshotId);
 		$this->putObject('trash/info/' . $snapshotId, json_encode(['forgottenAt' => time(), 'by' => $by, 'db' => $meta['db'] ?? null,
 			'dbInTrash' => $dbInTrash, 'time' => $meta['time'] ?? null, 'label' => $meta['label'] ?? ''], JSON_THROW_ON_ERROR));
 		unset($this->catalog->snapshots[$snapshotId]);
 		$this->catalog->trash[$snapshotId] = true;
 		$this->catalog->write();
+		if ($dbInTrash !== null) {
+			$this->backend->delete($meta['db']);
+		}
+		$this->backend->delete('snapshots/' . $snapshotId);
 	}
 
 	/** Undo forget(): move a snapshot back from the trash. */
 	public function untrash(string $snapshotId): void {
 		$info = $this->trashInfo($snapshotId);
-		if ($info['dbInTrash'] !== null && $this->backend->exists($info['dbInTrash'])) {
+		$restoreDb = $info['dbInTrash'] !== null && $this->backend->exists($info['dbInTrash']);
+		if ($restoreDb) {
 			$this->putObject($info['db'], $this->getObject($info['dbInTrash']));
-			$this->backend->delete($info['dbInTrash']);
 		}
-		$this->backend->move('trash/snapshots/' . $snapshotId, 'snapshots/' . $snapshotId);
+		// Same order as forget(): copy, switch the catalog, then delete the trash copies.
+		$this->copyRaw('trash/snapshots/' . $snapshotId, 'snapshots/' . $snapshotId);
 		$this->catalog->snapshots[$snapshotId] = true;
 		unset($this->catalog->trash[$snapshotId]);
 		$this->catalog->write();
+		if ($restoreDb) {
+			$this->backend->delete($info['dbInTrash']);
+		}
+		$this->backend->delete('trash/snapshots/' . $snapshotId);
 		$this->backend->delete('trash/info/' . $snapshotId);
+	}
+
+	/** Copy an object as raw bytes, buffered locally (remote read streams cannot be uploaded directly everywhere). */
+	private function copyRaw(string $from, string $to): void {
+		$in = $this->backend->get($from);
+		$buffer = fopen('php://temp/maxmemory:' . (4 * 1048576), 'w+b');
+		if ($buffer === false) {
+			fclose($in);
+			throw new RepositoryException("Cannot buffer $from");
+		}
+		try {
+			if (stream_copy_to_stream($in, $buffer) === false) {
+				throw new RepositoryException("Cannot read $from");
+			}
+		} finally {
+			fclose($in);
+		}
+		rewind($buffer);
+		$this->backend->put($to, $buffer);
 	}
 
 	/** Record a user_migration export's manifest in the catalog (rollback-protected like a snapshot). */
@@ -530,7 +565,10 @@ final class Repository {
 				}
 			}
 		}
-		foreach ($this->backend->list('users') as $path) {
+		// listUserExports() throws when a recorded export's manifest is missing: then stop, since
+		// freeing its blobs would turn a tampering or storage alarm into irreversible deletion.
+		$exports = array_unique(array_merge($this->listUserExports(), $this->backend->list('users')));
+		foreach ($exports as $path) {
 			foreach (json_decode($this->getObject($path), true, 512, JSON_THROW_ON_ERROR)['entries'] as $e) {
 				foreach ($e['b'] ?? [] as $b) {
 					$used[$b] = true;

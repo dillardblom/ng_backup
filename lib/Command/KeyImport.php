@@ -76,6 +76,9 @@ HELP);
 			return 1;
 		}
 		$output->writeln('Backup key imported, fingerprint <info>' . $this->keys->fingerprint() . '</info>.');
+		// Read from the kit file, which is not authenticated beyond the wrapped key: show it so a
+		// wrong or altered value stands out.
+		$output->writeln('Deletion delay for forgotten snapshots: <info>' . $this->keys->deleteDelayDays() . '</info> days (from the kit).');
 		$output->writeln('Next: connect the backup location with the same details as before (<info>occ backup:target:add</info>), then <info>occ backup:list</info> and <info>occ backup:restore:full</info>.');
 		return 0;
 	}

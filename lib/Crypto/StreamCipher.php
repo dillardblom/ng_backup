@@ -122,6 +122,7 @@ final class StreamCipher {
 	/** fread() may return short reads on network streams; keep reading until $length or EOF. */
 	private static function readFull($in, int $length): string {
 		$buffer = '';
+		$empty = 0;
 		while (strlen($buffer) < $length && !feof($in)) {
 			$chunk = fread($in, $length - strlen($buffer));
 			if ($chunk === false) {
@@ -132,8 +133,15 @@ final class StreamCipher {
 				if (feof($in)) {
 					break;
 				}
+				// A stalled network stream returns '' without EOF forever: back off, then give up
+				// (about a minute) instead of spinning at full CPU until the lease expires.
+				if (++$empty > 600) {
+					throw new CryptoException('Read stalled');
+				}
+				usleep(100000);
 				continue;
 			}
+			$empty = 0;
 			$buffer .= $chunk;
 		}
 		return $buffer;

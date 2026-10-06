@@ -7,8 +7,9 @@ installations and hosted Nextcloud. (Choosing SMB as a storage backend is the on
 see "Storage backend experiences" below — that requirement comes from files_external, not from
 ng_backup, and applies to any Nextcloud app that writes to an SMB share.)
 
-**Status: pre-release. Not yet tested on production.** See `PLAN.md` for the design and `docs/HOWTO.md` for a
-step-by-step guide from setup to a tested restore.
+**Status: beta (0.9.0).** Tested thoroughly, usable alongside your current backup, but not yet a
+drop-in replacement for it. See "Known limitations" below, `PLAN.md` for the design and
+`docs/HOWTO.md` for a step-by-step guide from setup to a tested restore.
 
 License: AGPL-3.0-or-later.
 
@@ -146,6 +147,29 @@ Contributions welcome via PR — add what you ran into with your own provider.
   mount point; ng_backup never mounts or unmounts anything on its own, so an NFS mount dropping
   mid-run behaves like any other local-path failure (the run resumes). See PLAN.md 3.5 for why NFS
   can't be driven from PHP directly.
+
+## Known limitations
+
+On the backlog; none of these block the beta or 1.0.0, but know them before you rely on it:
+
+- **Very large instances** (well over 1 TB, millions of files): the blob index, cleanup, browsing a
+  snapshot in the web interface and per-user export manifests are held in memory. Expect high
+  memory use there; reports from such instances are very welcome.
+- **One location, one server.** Never let two Nextcloud servers write to the same location (for
+  example a disaster recovery test server pointed at the production location): they can break each
+  other's catalog, and the location is then refused as possibly tampered with. Test a disaster
+  recovery against a copy of the location, or only read from it.
+- **Removing a passphrase slot does not revoke access.** The master key stays the same, so someone
+  with an old recovery kit and that slot's passphrase can still decrypt the location if they can
+  read it. Key rotation is not available yet.
+- **Rollback before a disaster recovery is not detected.** A fresh server has no record of the
+  newest catalog generation, so a location rolled back to an older state looks valid there.
+- Location passwords passed with `-o password=...` are visible in the process list and shell
+  history while the command runs.
+- Temporary files of a restore into a user's files end up in that user's trash.
+- Restoring the database does not order tables by foreign keys; apps with cascading foreign keys
+  could lose rows (Nextcloud core does not use them).
+- A pack whose index upload failed stays on the location until removed by hand.
 
 ## Commands
 

@@ -14,7 +14,8 @@ occ backup:key:confirm -u <your-admin-uid> --code=<code shown> --confirm="Yes, I
 
 - The passphrase protects the backup. Keep it somewhere other than this server.
 - Optional: extra passphrases for other people with `occ backup:key:slot:add --label="..."`.
-  Any one passphrase is enough to restore.
+  Any one passphrase is enough to restore. Removing a slot later does not revoke access for someone
+  who kept an old kit and that passphrase (see "Known limitations" in the README).
 - The recovery kit (`/var/tmp/ng_backup-kit.json` above) is also required for disaster recovery. The web
   user writes it there; then move it off the server as root, next to the passphrase, and delete the
   copy in `/var/tmp`. Without the kit and a passphrase, the backup cannot be read.
@@ -102,7 +103,9 @@ occ backup:user:restore offsite users/<uid>/<exportId> --mode=as-backup
   use, add `--install-user-migration` to approve that explicitly. The command stops after the
   installation; run it once more.
 - `replace` first makes a safety export of the current account, then recreates the user under the
-  same id. `as-backup` restores into `<uid>-bak` and leaves the original untouched.
+  same id. When the account exists, the command asks first; in scripts, add `--force`. Shares to
+  others and data of apps without a user_migration migrator are not restored, so prefer
+  `as-backup` when in doubt: it restores into `<uid>-bak` and leaves the original untouched.
 - A restore onto a server where the user does not exist works. Calendars and address books get an
   internal name with the prefix `migrated-` (for example `migrated-personal`). That prefix comes from
   user_migration and cannot be turned off. The user can change the display name of these calendars and
@@ -115,7 +118,8 @@ occ backup:user:restore offsite users/<uid>/<exportId> --mode=as-backup
 ## 7. Disaster recovery: restore the whole server
 
 Use a fresh Nextcloud installation of the same major version, with NG Backup installed and
-the same location available:
+the same location available. For a test, use a **copy** of the location: two servers writing to one
+location break each other's catalog.
 
 ```
 occ backup:key:import /path/ng_backup-kit.json --passphrase-file=/path/passphrase
@@ -123,6 +127,9 @@ occ backup:target:add offsite <backend> ...          # same details as on the or
 occ backup:list offsite                              # the snapshots must be listed
 occ backup:restore:full offsite <snapshot>
 ```
+
+The command refuses on an installation that already has more than one user, and asks before it
+starts; `--force` skips both (also needed to rerun it after it stopped halfway).
 
 Afterwards, check that users, files and the database are complete, and run a backup of the restored
 server. The restored installation keeps its own app configuration and secret.

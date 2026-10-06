@@ -33,11 +33,16 @@ final class LocalBackend implements IBackend {
 			if ($out === false) {
 				throw new BackendException('Cannot write ' . $path);
 			}
+			$expected = StorageBackend::remaining($stream);
 			if (stream_copy_to_stream($stream, $out) === false || !fflush($out)) {
 				throw new BackendException('Write failed for ' . $path);
 			}
 			fclose($out);
 			$out = false;
+			clearstatcache(true, $tmp);
+			if ($expected !== null && filesize($tmp) !== $expected) {
+				throw new BackendException('Incomplete write for ' . $path);
+			}
 			if (!rename($tmp, $target)) {
 				throw new BackendException('Cannot finalise ' . $path);
 			}
@@ -94,7 +99,7 @@ final class LocalBackend implements IBackend {
 		$result = [];
 		$it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($base, \FilesystemIterator::SKIP_DOTS));
 		foreach ($it as $file) {
-			if ($file->isFile() && !str_contains($file->getFilename(), '.part-')) {
+			if ($file->isFile() && !StorageBackend::isTemporary($file->getFilename())) {
 				$result[] = ltrim(substr($file->getPathname(), strlen($this->root)), '/');
 			}
 		}

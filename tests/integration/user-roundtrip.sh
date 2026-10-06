@@ -48,7 +48,8 @@ ok "as-backup restores into <uid>-bak, byte-identical, original account untouche
 # replace: damage the account, then restore it in place under the same uid.
 $X sh -c "rm '$DATA/$U/files/Docs/f1.bin' && echo damaged > '$DATA/$U/files/Docs/f1.bin'"
 occ files:scan "$U" >/dev/null
-occ backup:user:restore ci "$MANIFEST" --mode=replace >/dev/null || fail "restore replace"
+if occ backup:user:restore ci "$MANIFEST" --mode=replace --no-interaction >/dev/null 2>&1; then fail "replace of an existing account ran without --force"; fi
+occ backup:user:restore ci "$MANIFEST" --mode=replace --force >/dev/null || fail "restore replace"
 occ files:scan "$U" >/dev/null
 SUM_AFTER=$($X sh -c "cd $DATA/$U/files && find . -type f -print0 | sort -z | xargs -0 md5sum | md5sum")
 [ "$SUM_BEFORE" = "$SUM_AFTER" ] || fail "files differ after a replace restore"

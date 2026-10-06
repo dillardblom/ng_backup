@@ -38,13 +38,19 @@ final class BackupJob extends TimedJob {
 		$this->setTimeSensitivity(IJob::TIME_SENSITIVE);
 	}
 
+	private const MAX_DAILY_ATTEMPTS = 3;
+
 	protected function run($argument): void {
 		$budget = PHP_SAPI === 'cli' ? 240.0 : 20.0;
 		$deadline = microtime(true) + $budget;
 		$this->startScheduled();
 		foreach ($this->runs->findRunning(null, BackupService::KIND_FULL) as $run) {
 			while (microtime(true) < $deadline && $run->getStatus() === 'running') {
-				$run = $this->backups->step($run, min($deadline, microtime(true) + $budget));
+				$next = $this->backups->step($run, min($deadline, microtime(true) + $budget));
+				if ($next === $run) {
+					break; // step() hands back the same object when another process holds the run's lease
+				}
+				$run = $next;
 			}
 		}
 		$this->failStaleRestores();
@@ -67,10 +73,15 @@ final class BackupJob extends TimedJob {
 		}
 	}
 
-	/** Once a week (after Sunday's backup), apply the retention policy to non-append-only locations. */
+	/**
+	 * Once a week, apply the retention policy to non-append-only locations: from Sunday on, at the
+	 * first moment no backup is running, so a long Sunday backup only delays it instead of skipping
+	 * the week.
+	 */
 	private function weeklyPrune(): void {
 		$lastWeek = $this->appConfig->getValueString(Application::APP_ID, 'last_prune_week', '');
-		if (date('N') !== '7' || $lastWeek === date('o-W') || $this->runs->findRunning(null, BackupService::KIND_FULL) !== []) {
+		$due = date('N') === '7' ? date('o-W') : date('o-W', (int)strtotime('last sunday'));
+		if (strcmp($lastWeek, $due) >= 0 || $this->runs->findRunning(null, BackupService::KIND_FULL) !== []) {
 			return;
 		}
 		foreach ($this->targets->list() as $t) {
@@ -83,7 +94,7 @@ final class BackupJob extends TimedJob {
 				$this->logger->warning('NG Backup: cleanup of ' . $t->getName() . ' failed: ' . $e->getMessage());
 			}
 		}
-		$this->appConfig->setValueString(Application::APP_ID, 'last_prune_week', date('o-W'));
+		$this->appConfig->setValueString(Application::APP_ID, 'last_prune_week', $due);
 	}
 
 	/** Daily schedule: appconfig ng_backup/schedule_time "HH:MM" (server time); empty = no schedule. */
@@ -92,13 +103,19 @@ final class BackupJob extends TimedJob {
 		if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $at)) {
 			return;
 		}
-		$todayAt = strtotime(date('Y-m-d') . ' ' . $at);
+		$todayAt = (int)strtotime(date('Y-m-d') . ' ' . $at);
 		if (time() < $todayAt) {
 			return;
 		}
 		foreach ($this->targets->list() as $t) {
 			$last = $this->runs->lastFinished($t->getId(), BackupService::KIND_FULL);
 			if ($this->runs->findRunning($t->getId(), BackupService::KIND_FULL) !== [] || ($last !== null && $last->getStartedAt() >= $todayAt)) {
+				continue;
+			}
+			// After a failure: retry at most MAX_DAILY_ATTEMPTS times a day, an hour apart, instead
+			// of starting (and notifying about) a new full run every five minutes all day.
+			$today = $this->runs->startedSince($t->getId(), BackupService::KIND_FULL, $todayAt);
+			if (count($today) >= self::MAX_DAILY_ATTEMPTS || ($today !== [] && time() - (int)$today[0]->getFinishedAt() < 3600)) {
 				continue;
 			}
 			try {

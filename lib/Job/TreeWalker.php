@@ -23,6 +23,8 @@ final class TreeWalker {
 	public function __construct(
 		private array $roots,
 		private array $exclude = [],
+		/** Called with the logical path of a directory that cannot be listed. */
+		private ?\Closure $onUnreadable = null,
 	) {
 	}
 
@@ -57,6 +59,9 @@ final class TreeWalker {
 		}
 		$names = @scandir($abs);
 		if ($names === false) {
+			if ($this->onUnreadable !== null) {
+				($this->onUnreadable)($logical === '' ? '/' : $logical);
+			}
 			return;
 		}
 		$names = array_values(array_diff($names, ['.', '..']));

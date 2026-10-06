@@ -359,6 +359,24 @@ minimale volledige restore (`occ backup:restore:full` op een verse installatie) 
     Backlog: (a) de originele weergavenaam herstellen (het label uit de export is niet getest als
     weergavenaam); (b) de interne `migrated-`-naam hernoemen (vereist directe databasewijziging, niet voor de beta).
 
+**Backlog uit de pre-beta review (2026-10-07)** — geen belemmering voor 0.9.0-beta of 1.0.0, staat
+in README "Known limitations":
+1. Geheugen bij grote instanties (>1 TB, miljoenen bestanden): blob-index, prune-set, browse van een
+   snapshot in de web-UI, `trashExtras` bij restore en het manifest van een user-export staan volledig
+   in het geheugen; streaming/paginering nodig.
+2. Twee servers op één locatie: catalogus kan breken (generatie overschreven, of anchor >200 generaties
+   achter). Docs-waarschuwing staat er; mogelijk later een echte put-if-absent per backend.
+3. Sleutelrotatie: een slot verwijderen trekt geen toegang in (master-key blijft gelijk).
+4. Rollback vóór DR niet detecteerbaar: referentie-generatie en -hash in de kit opnemen of tonen.
+5. Kit-velden buiten `wrapped_key` (o.a. `delete_delay_days`) zijn niet geauthenticeerd; nu alleen getoond.
+6. Repository-id in de AD van objecten (formaatwijziging).
+7. Wachtwoorden van locaties via `--option-file` of omgevingsvariabele i.p.v. de commandoregel.
+8. Tijdelijke restore-bestanden niet via de Files-API verwijderen (komen nu in de prullenbak).
+9. DB-restore in foreign-key-volgorde (cascades).
+10. Packs zonder index (index-upload mislukt) opruimen.
+11. `backup:restore:full` in onderhoudsmodus en hervatbaar maken; nu: opnieuw draaien met `--force`.
+12. Config/rename op FTP/SMB-servers die geen rename over een bestaand bestand toestaan.
+
 Doorgeschoven naar **v1.3.0** (fase 3, niet meer fase 2): in-place volledige restore
 (eigen restore-modus i.p.v. onderhoudsmodus) en zelfbediening voor gebruikers (eigen bestanden
 terugzetten vanuit de Files-app).

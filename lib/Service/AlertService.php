@@ -54,6 +54,13 @@ final class AlertService {
 			['kind' => $run->getKind(), 'target' => $targetName, 'error' => mb_strimwidth((string)$run->getError(), 0, 300, '…')]);
 	}
 
+	/** A backup that finished but is missing unreadable files, or holds files that changed while read. */
+	public function runWarnings(Run $run, string $targetName, int $unreadable, int $changing, array $examples): void {
+		$this->notifyAdmins('run_warnings', 'run-' . $run->getId(), ['target' => $targetName,
+			'unreadable' => (string)$unreadable, 'changing' => (string)$changing,
+			'examples' => mb_strimwidth(implode(', ', array_merge($examples['unreadable'], $examples['changing'])), 0, 300, '…')]);
+	}
+
 	/**
 	 * Remember how much is stored on a location (for the settings page) and warn administrators
 	 * once a day when it is at 80% of its limit or more.

@@ -14,6 +14,7 @@ use OCA\NgBackup\Db\Snapshot;
 use OCA\NgBackup\Db\SnapshotMapper;
 use OCA\NgBackup\Db\Target;
 use OCA\NgBackup\Job\BackupRun;
+use OCA\NgBackup\Repository\RepositoryException;
 use OCP\App\IAppManager;
 use OCP\IConfig;
 use OCP\IDBConnection;
@@ -151,16 +152,25 @@ final class BackupService {
 					// Catalog write under the catalog lock, from a repository opened inside it: a per-user
 					// export or restore may have written the catalog since this step opened $repo.
 					try {
-						$this->leases->with(PruneService::catalogLockKey($target), LeaseService::EXCLUSIVE, 30,
+						$this->leases->with(PruneService::catalogLockKey($target), LeaseService::EXCLUSIVE, 300,
 							fn () => $this->targets->repository($target)->recordSnapshot((string)$state['files']['snapshot']));
 						$state['files']['phase'] = 'done';
-					} catch (LockedException) {
-						// Another catalog write is in progress: the next step retries this commit.
+					} catch (LockedException|RepositoryException) {
+						// Another catalog write is in progress (or just raced us to the next
+						// generation): the next step retries this commit on the fresh catalog.
 					}
 				}
 				if ($state['files']['phase'] === 'done') {
 					$this->recordSnapshot($run, $state['files']);
 					$this->alerts->storedBytes($target, $repo->storedBytes());
+					$stats = $state['files']['stats'];
+					if (($stats['unreadable'] ?? 0) > 0 || ($stats['changing'] ?? 0) > 0) {
+						$warnings = BackupRun::warnings($state['files']);
+						$this->logger->warning(sprintf('NG Backup run %d to %s: %d unreadable (missing from the snapshot): %s; %d changed while being read: %s',
+							$run->getId(), $target->getName(), $stats['unreadable'] ?? 0, implode(', ', $warnings['unreadable']),
+							$stats['changing'] ?? 0, implode(', ', $warnings['changing'])));
+						$this->alerts->runWarnings($run, $target->getName(), (int)($stats['unreadable'] ?? 0), (int)($stats['changing'] ?? 0), $warnings);
+					}
 					$run->setStatus(Run::DONE);
 					$run->setPhase('done');
 					$run->setFinishedAt(time());

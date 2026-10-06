@@ -96,6 +96,12 @@ final class KeyRing {
 	/** @param array{v:int, salt:string, ops:int, mem:int, nonce:string, key:string} $wrapped */
 	public static function unwrap(array $wrapped, #[\SensitiveParameter] string $passphrase): self {
 		$b64 = static fn (string $s): string => sodium_base642bin($s, SODIUM_BASE64_VARIANT_ORIGINAL);
+		// ops/mem come from unauthenticated JSON (kit file, repository config): bound them, so a
+		// damaged or crafted file cannot make the KDF use unbounded memory or time.
+		if ($wrapped['ops'] < SODIUM_CRYPTO_PWHASH_OPSLIMIT_INTERACTIVE || $wrapped['ops'] > SODIUM_CRYPTO_PWHASH_OPSLIMIT_SENSITIVE
+			|| $wrapped['mem'] < SODIUM_CRYPTO_PWHASH_MEMLIMIT_INTERACTIVE || $wrapped['mem'] > SODIUM_CRYPTO_PWHASH_MEMLIMIT_SENSITIVE) {
+			throw new CryptoException('Unsupported key derivation parameters (damaged or foreign key file)');
+		}
 		$kek = sodium_crypto_pwhash(SODIUM_CRYPTO_SECRETBOX_KEYBYTES, $passphrase, $b64($wrapped['salt']),
 			$wrapped['ops'], $wrapped['mem'], SODIUM_CRYPTO_PWHASH_ALG_ARGON2ID13);
 		$master = sodium_crypto_secretbox_open($b64($wrapped['key']), $b64($wrapped['nonce']), $kek);
