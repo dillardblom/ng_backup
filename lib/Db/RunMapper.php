@@ -43,6 +43,17 @@ final class RunMapper extends QBMapper {
 		return $this->findEntities($qb);
 	}
 
+	/** @return list<Run> runs of $kind started at or after $since, newest first */
+	public function startedSince(int $targetId, string $kind, int $since): array {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('*')->from($this->getTableName())
+			->where($qb->expr()->eq('target_id', $qb->createNamedParameter($targetId, IQueryBuilder::PARAM_INT)))
+			->andWhere($qb->expr()->eq('kind', $qb->createNamedParameter($kind)))
+			->andWhere($qb->expr()->gte('started_at', $qb->createNamedParameter($since, IQueryBuilder::PARAM_INT)))
+			->orderBy('id', 'DESC');
+		return $this->findEntities($qb);
+	}
+
 	public function lastFinished(int $targetId, string $kind): ?Run {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('*')->from($this->getTableName())

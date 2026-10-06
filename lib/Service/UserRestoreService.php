@@ -129,7 +129,7 @@ final class UserRestoreService {
 
 	private function withCatalogLock(Target $target, callable $fn): mixed {
 		try {
-			return $this->leases->with(PruneService::catalogLockKey($target), LeaseService::EXCLUSIVE, 30, $fn);
+			return $this->leases->with(PruneService::catalogLockKey($target), LeaseService::EXCLUSIVE, 300, $fn);
 		} catch (LockedException) {
 			throw new \RuntimeException('Another catalog write for ' . $target->getName() . ' is in progress; try again');
 		}

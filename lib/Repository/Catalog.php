@@ -88,6 +88,11 @@ final class Catalog {
 	/** Write the next generation after the in-memory state was changed. */
 	public function write(): void {
 		$next = $this->gen + 1;
+		// Two writers starting from the same generation would otherwise overwrite each other
+		// silently and break the chain for whichever server anchored the lost write.
+		if ($this->backend->exists($this->path($next))) {
+			throw new RepositoryException("Catalog generation $next was written by another process at the same time; try again");
+		}
 		$plain = json_encode(['repository' => $this->repositoryId, 'gen' => $next, 'time' => gmdate('c'), 'prev' => $this->hash,
 			'snapshots' => array_keys($this->snapshots), 'trash' => array_keys($this->trash),
 			'userExports' => array_keys($this->userExports)], JSON_THROW_ON_ERROR);

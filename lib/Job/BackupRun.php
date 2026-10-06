@@ -49,9 +49,11 @@ final class BackupRun {
 	public static function step(Repository $repo, array $state, float $deadline): array {
 		$state['steps']++;
 		if ($state['phase'] === 'files') {
-			$walker = new TreeWalker($state['roots'], $state['exclude']);
-			$parent = new ParentCursor($repo, $state['parent'], $state['parentPos']);
 			$stats = $state['stats'];
+			$walker = new TreeWalker($state['roots'], $state['exclude'], function (string $logical) use (&$state, &$stats): void {
+				self::recordUnreadable($state, $stats, $logical);
+			});
+			$parent = new ParentCursor($repo, $state['parent'], $state['parentPos']);
 			$lines = [];
 			$finishedWalk = true;
 
@@ -68,15 +70,20 @@ final class BackupRun {
 					$stats['reused']++;
 				} else {
 					$cur = $state['cur'];
-					if ($cur === null || $cur['path'] !== $logical || $cur['version'] !== $version) {
-						if ($cur !== null && $cur['path'] === $logical) {
-							$stats['retried'] = ($stats['retried'] ?? 0) + 1; // changed since the previous step
+					if ($cur !== null && $cur['path'] === $logical && $cur['version'] !== $version) {
+						// Changed since the previous step: start over, unless it keeps changing.
+						if (self::countRetry($state, $stats, $logical)) {
+							$cur['version'] = $version;
+						} else {
+							$cur = null;
 						}
+					}
+					if ($cur === null || $cur['path'] !== $logical) {
 						$cur = ['path' => $logical, 'offset' => 0, 'blobs' => [], 'version' => $version];
 					}
-					$fh = fopen($path, 'rb');
+					$fh = @fopen($path, 'rb');
 					if ($fh === false) {
-						$stats['unreadable'] = ($stats['unreadable'] ?? 0) + 1;
+						self::recordUnreadable($state, $stats, $logical);
 						$state['cur'] = null;
 						continue;
 					}
@@ -91,12 +98,17 @@ final class BackupRun {
 						}
 					}
 					fclose($fh);
-					if (Repository::fileVersion($path) !== $cur['version']) {
-						// Changed while reading: read it again from the start (now or next step).
-						$stats['retried'] = ($stats['retried'] ?? 0) + 1;
-						$state['cur'] = null;
-						$finishedWalk = false;
-						break;
+					$now = Repository::fileVersion($path);
+					if ($now !== $cur['version']) {
+						if (!self::countRetry($state, $stats, $logical)) {
+							// Changed while reading: read it again from the start (now or next step).
+							$state['cur'] = null;
+							$finishedWalk = false;
+							break;
+						}
+						// Keeps changing (a live database, VM image or log): keep what was read,
+						// like any copy of a file in use, and report it instead of retrying forever.
+						$cur['version'] = $now;
 					}
 					if (!$complete) {
 						$state['cur'] = $cur;
@@ -104,6 +116,7 @@ final class BackupRun {
 						break;
 					}
 					$blobs = $cur['blobs'];
+					$size = $cur['offset'];
 					$state['cur'] = null;
 					$stats['read']++;
 				}
@@ -135,7 +148,8 @@ final class BackupRun {
 			$segments = $state['segments'];
 			$repo->putSnapshot($state['snapshot'],
 				['time' => $state['started'], 'parent' => $state['parent'], 'label' => $state['label'],
-					'roots' => array_keys($state['roots']), 'stats' => $state['stats']] + $state['meta'],
+					'roots' => array_keys($state['roots']), 'stats' => $state['stats'],
+					'warnings' => self::warnings($state)] + $state['meta'],
 				(function () use ($repo, $segments) {
 					foreach ($segments as $blobs) {
 						yield from $repo->readLines($blobs);
@@ -144,6 +158,52 @@ final class BackupRun {
 			$state['phase'] = 'commit';
 		}
 		return $state;
+	}
+
+	/**
+	 * A file or directory that could not be read: it is missing from this snapshot. Remembered (first
+	 * 1000, deduplicated across steps) so the run can report it instead of silently succeeding.
+	 */
+	private static function recordUnreadable(array &$state, array &$stats, string $logical): void {
+		if (isset($state['unreadable'][$logical])) {
+			return;
+		}
+		if (count($state['unreadable'] ?? []) < 1000) {
+			$state['unreadable'][$logical] = true;
+		}
+		$stats['unreadable'] = ($stats['unreadable'] ?? 0) + 1;
+	}
+
+	/** @return array{unreadable: list<string>, changing: list<string>} examples for the report (first 50 each) */
+	public static function warnings(array $state): array {
+		return [
+			'unreadable' => array_slice(array_map('strval', array_keys($state['unreadable'] ?? [])), 0, 50),
+			'changing' => array_slice(array_map('strval', array_values($state['changing'] ?? [])), 0, 50),
+		];
+	}
+
+	/** Retries of one file that changes while it is read, before its last read is kept anyway. */
+	public const MAX_RETRIES = 3;
+
+	/**
+	 * Count a retry of $logical. Returns true once it has changed MAX_RETRIES times: the caller then
+	 * keeps the data it read, and the file is listed in $state['changing'] (first 50) for the report.
+	 */
+	private static function countRetry(array &$state, array &$stats, string $logical): bool {
+		$stats['retried'] = ($stats['retried'] ?? 0) + 1;
+		$n = (($state['retryPath'] ?? null) === $logical ? (int)($state['retryCount'] ?? 0) : 0) + 1;
+		$state['retryPath'] = $logical;
+		$state['retryCount'] = $n;
+		if ($n < self::MAX_RETRIES) {
+			return false;
+		}
+		if ($n === self::MAX_RETRIES) {
+			$stats['changing'] = ($stats['changing'] ?? 0) + 1;
+			if (count($state['changing'] ?? []) < 50) {
+				$state['changing'][] = $logical;
+			}
+		}
+		return true;
 	}
 
 	private static function readFull($fh, int $length): string {

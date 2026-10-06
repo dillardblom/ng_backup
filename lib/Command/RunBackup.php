@@ -75,6 +75,13 @@ HELP);
 			});
 			if ($run->getStatus() === Run::DONE) {
 				$output->writeln(sprintf('  done in %.0fs', microtime(true) - $start));
+				$f = json_decode($run->getStats() ?? '{}', true)['files'] ?? [];
+				if (($f['unreadable'] ?? 0) > 0) {
+					$output->writeln(sprintf('<comment>  warning: %d unreadable files or folders are missing from this backup (see the server log)</comment>', $f['unreadable']));
+				}
+				if (($f['changing'] ?? 0) > 0) {
+					$output->writeln(sprintf('<comment>  warning: %d files kept changing and were saved as read (see the server log)</comment>', $f['changing']));
+				}
 			} else {
 				$output->writeln('<error>  ' . $run->getStatus() . ': ' . $run->getError() . '</error>');
 				$failed++;

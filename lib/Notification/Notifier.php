@@ -42,6 +42,10 @@ final class Notifier implements INotifier {
 					: $l->t('Backup to %s failed', [$p['target']]));
 				$notification->setParsedMessage((string)($p['error'] ?? ''));
 				break;
+			case 'run_warnings':
+				$notification->setParsedSubject($l->t('Backup to %1$s finished with warnings: %2$s unreadable, %3$s changed while being read', [$p['target'], $p['unreadable'], $p['changing']]));
+				$notification->setParsedMessage($l->t('Unreadable files and folders are missing from this backup (check their permissions). Files that kept changing were saved as they were while being read. Examples: %s', [$p['examples'] ?? '']));
+				break;
 			case 'quota_warning':
 				$notification->setParsedSubject($l->t('Backup location %1$s is at %2$s%% of its limit (%3$s of %4$s)', [$p['target'], $p['percent'], $p['used'], $p['limit']]));
 				$notification->setParsedMessage($l->t('Backups stop when the limit is reached. Raise the limit, or let the retention policy remove older backups.'));
@@ -62,6 +66,8 @@ final class Notifier implements INotifier {
 					'catalog_trusted' => $l->t('%1$s accepted an older state of backup location %2$s (catalog generation %3$s)', [$who, $p['target'] ?? '', $p['generation'] ?? '']),
 					'slot_added' => $l->t('%1$s added backup passphrase slot %2$s (%3$s); download and confirm the new recovery kit', [$who, $p['slot'] ?? '', $p['label'] ?? '']),
 					'slot_replaced' => $l->t('%1$s set a new passphrase for backup key slot %2$s (%3$s); download and confirm the new recovery kit', [$who, $p['slot'] ?? '', $p['label'] ?? '']),
+					'user_export_retention_changed' => $l->t('%1$s changed how many exports per user are kept to %2$s', [$who, $p['keep'] ?? '']),
+					'user_exports_forgotten' => $l->t('%1$s removed %2$s per-user exports from %3$s', [$who, $p['count'] ?? '', $p['target'] ?? '']),
 					'slot_removed' => $l->t('%1$s removed backup passphrase slot %2$s; download and confirm the new recovery kit', [$who, $p['slot'] ?? '']),
 					default => $l->t('NG Backup security event'),
 				});
