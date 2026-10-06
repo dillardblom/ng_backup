@@ -39,10 +39,10 @@ final class UserBackupService {
 			$dest = new RepositoryExportDestination($repo, $user->getUID());
 			$service->export($dest, $user);
 			// A short exclusive lock around the catalog write only: the shared lock above
-			// allows another concurrent backup (full or per-user) to be reading the same
-			// catalog generation at the same time, and both writing the next one would let
-			// one silently overwrite the other's addition.
-			$this->withCatalogLock($target, fn () => $repo->recordUserExport($dest->manifestPath()));
+			// allows another concurrent backup (full or per-user) to be writing the catalog at
+			// the same time. The repository is reopened inside the lock, so the write builds on
+			// the latest catalog generation instead of the one loaded before the lock was taken.
+			$this->withCatalogLock($target, fn () => $this->targets->repository($target)->recordUserExport($dest->manifestPath()));
 			return $dest->manifestPath();
 		});
 	}

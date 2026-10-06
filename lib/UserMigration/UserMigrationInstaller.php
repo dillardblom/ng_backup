@@ -7,7 +7,6 @@ declare(strict_types=1);
 
 namespace OCA\NgBackup\UserMigration;
 
-use OCA\NgBackup\AppInfo\Application;
 use OCP\App\AppPathNotFoundException;
 use OCP\App\IAppManager;
 use Symfony\Component\Console\Input\InputInterface;
@@ -43,7 +42,8 @@ final class UserMigrationInstaller {
 	/** Installs (from the app store, if missing) and enables user_migration; throws on failure. */
 	public function install(): void {
 		$args = $this->codeIsPresent() ? ['app:enable', self::APP] : ['app:install', self::APP];
-		$occ = dirname($this->appManager->getAppPath(Application::APP_ID), 2) . '/occ';
+		/** @psalm-suppress UndefinedClass */
+		$occ = \OC::$SERVERROOT . '/occ';
 		$command = implode(' ', array_map('escapeshellarg', [PHP_BINARY, $occ, ...$args])) . ' 2>&1';
 		exec($command, $lines, $code);
 		if ($code !== 0) {
@@ -72,9 +72,6 @@ final class UserMigrationInstaller {
 		}
 		$output->writeln('Installing and enabling user_migration (approved by the administrator)...');
 		$this->install();
-		$this->appManager->clearAppsCache();
-		if (!$this->isEnabled()) {
-			throw new \RuntimeException('user_migration was installed; run this command again (check with "occ app:list" if it stays disabled)');
-		}
+		throw new \RuntimeException('user_migration is installed and enabled; run this command again');
 	}
 }

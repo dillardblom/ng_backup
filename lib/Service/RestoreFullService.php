@@ -110,6 +110,7 @@ final class RestoreFullService {
 			// directory: once applied, 'secret' may differ from what ng_backup's own Target
 			// options were encrypted with (see restoreFull()'s docblock), and every further
 			// repository access through $this->targets would fail to decrypt them.
+			/** @var array<string, mixed> $backupConfig */
 			$backupConfig = $this->fetchBackupConfig($target, $snapshotId);
 
 			$dataDir = rtrim($this->config->getSystemValueString('datadirectory'), '/');

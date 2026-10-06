@@ -422,9 +422,9 @@ final class Repository {
 		if (!isset($this->catalog->userExports[$manifestPath])) {
 			throw new RepositoryException("$manifestPath is not a recorded user export");
 		}
-		$this->backend->delete($manifestPath);
 		unset($this->catalog->userExports[$manifestPath]);
 		$this->catalog->write();
+		$this->backend->delete($manifestPath);
 	}
 
 	/** @return array<string, array{forgottenAt:int, by:string, db:?string, dbInTrash:?string, time:?string, label:string}> */
@@ -442,23 +442,26 @@ final class Repository {
 
 	/** Permanently delete trash entries older than $delaySeconds. @return list<string> purged snapshot ids */
 	public function purgeTrash(int $delaySeconds): array {
-		$purged = [];
+		$doomed = [];
 		foreach ($this->trash() as $id => $info) {
 			if (time() - $info['forgottenAt'] < $delaySeconds) {
 				continue;
 			}
+			$doomed[$id] = $info;
+			unset($this->catalog->trash[$id]);
+		}
+		if ($doomed === []) {
+			return [];
+		}
+		$this->catalog->write();
+		foreach ($doomed as $id => $info) {
 			if ($info['dbInTrash'] !== null) {
 				$this->backend->delete($info['dbInTrash']);
 			}
 			$this->backend->delete('trash/snapshots/' . $id);
 			$this->backend->delete('trash/info/' . $id);
-			unset($this->catalog->trash[$id]);
-			$purged[] = $id;
 		}
-		if ($purged !== []) {
-			$this->catalog->write();
-		}
-		return $purged;
+		return array_keys($doomed);
 	}
 
 	private function trashInfo(string $snapshotId): array {

@@ -51,8 +51,8 @@ HELP);
 			return 1;
 		}
 		try {
-			$this->installer->ensureEnabled($input, $output);
 			$target = $this->targets->get($input->getArgument('target'));
+			$this->installer->ensureEnabled($input, $output);
 			$manifest = $this->userBackup->backupUser($target, $user);
 		} catch (\Throwable $e) {
 			$output->writeln('<error>' . $e->getMessage() . '</error>');

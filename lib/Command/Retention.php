@@ -33,6 +33,10 @@ final class Retention extends Command {
 	}
 
 	protected function execute(InputInterface $input, OutputInterface $output): int {
+		if ($input->getOption('user-last') !== null && !ctype_digit((string)$input->getOption('user-last'))) {
+			$output->writeln('<error>--user-last must be a whole number</error>');
+			return 1;
+		}
 		$p = $this->prune->policy()->toArray();
 		$changed = false;
 		foreach (['last', 'daily', 'weekly', 'monthly'] as $k) {
@@ -50,13 +54,8 @@ final class Retention extends Command {
 			}
 		}
 		if ($input->getOption('user-last') !== null) {
-			$userLast = (string)$input->getOption('user-last');
-			if (!ctype_digit($userLast)) {
-				$output->writeln('<error>--user-last must be a whole number</error>');
-				return 1;
-			}
 			try {
-				$this->prune->setUserExportRetention((int)$userLast);
+				$this->prune->setUserExportRetention((int)$input->getOption('user-last'));
 			} catch (\InvalidArgumentException $e) {
 				$output->writeln('<error>' . $e->getMessage() . '</error>');
 				return 1;

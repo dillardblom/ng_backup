@@ -58,7 +58,12 @@ HELP);
 		}
 		$file = $input->getOption('passphrase-file');
 		if ($file !== null) {
-			$pass = rtrim((string)@file_get_contents($file), "\r\n");
+			$raw = @file_get_contents($file);
+			if ($raw === false) {
+				$output->writeln('<error>Cannot read the passphrase file</error>');
+				return 1;
+			}
+			$pass = rtrim($raw, "\r\n");
 		} else {
 			$helper = $this->getHelper('question');
 			$q = (new Question('Passphrase of one of the kit\'s slots: '))->setHidden(true)->setHiddenFallback(false);

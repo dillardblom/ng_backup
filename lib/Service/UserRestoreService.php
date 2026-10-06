@@ -83,9 +83,9 @@ final class UserRestoreService {
 				$safety = new RepositoryExportDestination($repo, $originalUid);
 				$service->export($safety, $existing);
 				$safetyManifestPath = $safety->manifestPath();
-				// Same race as UserBackupService::backupUser(): serialize the catalog write
-				// itself against any other concurrent backup/restore for this target.
-				$this->withCatalogLock($target, fn () => $repo->recordUserExport($safetyManifestPath));
+				// Same race as UserBackupService::backupUser(): reopen the repository inside the
+				// catalog lock so the write builds on the latest generation.
+				$this->withCatalogLock($target, fn () => $this->targets->repository($target)->recordUserExport($safetyManifestPath));
 				if (!$existing->delete()) {
 					throw new \RuntimeException("Could not delete the existing account $originalUid before restoring; its safety export is at $safetyManifestPath");
 				}

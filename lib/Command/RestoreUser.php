@@ -48,9 +48,9 @@ HELP);
 
 	protected function execute(InputInterface $input, OutputInterface $output): int {
 		try {
-			$this->installer->ensureEnabled($input, $output);
 			$output->writeln('<comment>Note: on restore, user_migration only imports the app settings on its own allowlist (e.g. calendar view and reminder settings); other app settings of this user are skipped. Reason: NG Backup uses user_migration\'s importer; widening the list would mean building a settings importer of our own.</comment>');
 			$target = $this->targets->get($input->getArgument('target'));
+			$this->installer->ensureEnabled($input, $output);
 			$user = $this->userRestore->restoreUser($target, (string)$input->getArgument('manifest'), (string)$input->getOption('mode'));
 		} catch (\Throwable $e) {
 			$output->writeln('<error>' . $e->getMessage() . '</error>');
