@@ -62,7 +62,7 @@ jobs:
         run: tests/integration/targets-matrix.sh
 
   integration-user:
-    # Per-user backup/restore via user_migration (occ backup:backup:user / backup:restore:user),
+    # Per-user backup/restore via user_migration (occ backup:user:backup / backup:user:restore),
     # an optional dependency installed from the app store. It calls user_migration's internal
     # UserMigrationService, whose API can change between Nextcloud versions, so this runs on every
     # supported version (not the database, which the main integration job already covers).

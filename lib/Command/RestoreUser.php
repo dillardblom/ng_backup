@@ -24,10 +24,10 @@ final class RestoreUser extends Command {
 	}
 
 	protected function configure(): void {
-		$this->setName('backup:restore:user')
-			->setDescription('Restore a user from a user_migration export (see backup:backup:user)')
+		$this->setName('backup:user:restore')
+			->setDescription('Restore a user from a user_migration export (see backup:user:backup)')
 			->addArgument('target', InputArgument::REQUIRED, 'Location name or id')
-			->addArgument('manifest', InputArgument::REQUIRED, 'Manifest path printed by backup:backup:user (users/<uid>/<exportId>)')
+			->addArgument('manifest', InputArgument::REQUIRED, 'Manifest path printed by backup:user:backup (users/<uid>/<exportId>)')
 			->addOption('mode', 'm', InputOption::VALUE_REQUIRED, 'replace or as-backup', UserRestoreService::MODE_REPLACE)
 			->setHelp(<<<'HELP'
 Never imports over a live account. Modes:
@@ -38,8 +38,8 @@ Never imports over a live account. Modes:
              the new name, never the existing account
 
 Example:
-  occ backup:restore:user offsite users/alice/20261005T120000Z-ab12cd34
-  occ backup:restore:user offsite users/alice/20261005T120000Z-ab12cd34 --mode=as-backup
+  occ backup:user:restore offsite users/alice/20261005T120000Z-ab12cd34
+  occ backup:user:restore offsite users/alice/20261005T120000Z-ab12cd34 --mode=as-backup
 HELP);
 	}
 

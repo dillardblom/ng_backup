@@ -111,7 +111,7 @@ final class PruneService {
 		return self::lockKey($target) . '/catalog';
 	}
 
-	/** How many of each user's own exports (occ backup:backup:user) to keep, newest first. */
+	/** How many of each user's own exports (occ backup:user:backup) to keep, newest first. */
 	public function userExportRetention(): int {
 		return $this->appConfig->getValueInt(Application::APP_ID, 'user_export_retention', 3);
 	}
@@ -129,7 +129,7 @@ final class PruneService {
 
 	/**
 	 * Forgets a user's older exports once more than userExportRetention() exist for them,
-	 * newest first; no trash, unlike a full snapshot (occ backup:backup:user is on-demand, not
+	 * newest first; no trash, unlike a full snapshot (occ backup:user:backup is on-demand, not
 	 * yet the primary safety net the deletion delay protects).
 	 *
 	 * @return array{kept: array<string, list<string>>, forgotten: list<string>}

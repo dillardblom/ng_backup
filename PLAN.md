@@ -276,7 +276,7 @@ onderdelen wel en niet terugkomen, op basis van de geregistreerde migrators.
 | `backup:list [--target=]` | herstelpunten |
 | `backup:verify <snapshot> [--deep]` | checksums controleren, optioneel alles ontsleutelen |
 | `backup:restore:file <snapshot> <user> <pad> [--to=]` | bestand/map terugzetten |
-| `backup:restore:user <snapshot> <user> [--to-user=]` | gebruiker terugzetten via user_migration (fase 2) |
+| `backup:user:restore <snapshot> <user> [--to-user=]` | gebruiker terugzetten via user_migration (fase 2) |
 | `backup:restore:full <snapshot>` | volledige restore (fase 2, verse installatie) |
 | `backup:target:add/list/remove/test` | opslagdoelen beheren en testen |
 | `backup:key:export / import` | herstelkit |

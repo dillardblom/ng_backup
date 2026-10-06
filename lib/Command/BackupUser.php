@@ -25,17 +25,17 @@ final class BackupUser extends Command {
 	}
 
 	protected function configure(): void {
-		$this->setName('backup:backup:user')
+		$this->setName('backup:user:backup')
 			->setDescription('Back up one user via user_migration (account, settings, files and everything else a migrator covers)')
 			->addArgument('target', InputArgument::REQUIRED, 'Location name or id')
 			->addArgument('user', InputArgument::REQUIRED, 'User id')
 			->setHelp(<<<'HELP'
 Streams a user_migration export straight into the encrypted repository: no zip, no copy in the
 user's own storage. Shares data with the regular backup; this needs the user_migration app
-enabled. The manifest path this prints is what occ backup:restore:user expects.
+enabled. The manifest path this prints is what occ backup:user:restore expects.
 
 Example:
-  occ backup:backup:user offsite alice
+  occ backup:user:backup offsite alice
 HELP);
 	}
 

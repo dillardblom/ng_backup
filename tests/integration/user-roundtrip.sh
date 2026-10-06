@@ -1,6 +1,6 @@
 #!/bin/bash
 # Per-user backup/restore round trip via user_migration (optional dependency, see PLAN.md 3.8):
-# occ backup:backup:user / occ backup:restore:user --mode=as-backup|replace.
+# occ backup:user:backup / occ backup:user:restore --mode=as-backup|replace.
 # Usage: user-roundtrip.sh "<command prefix to run occ/php as the web user>" <datadir> [target-args]
 #   e.g. user-roundtrip.sh "docker exec -u www-data ngb-nc35-pgsql" /var/www/html/data
 set -euo pipefail
@@ -32,12 +32,12 @@ $X sh -c "mkdir -p $DATA/$U/files/Docs && for i in 1 2 3; do head -c 100000 /dev
 occ files:scan "$U" >/dev/null
 SUM_BEFORE=$($X sh -c "cd $DATA/$U/files && find . -type f -print0 | sort -z | xargs -0 md5sum | md5sum")
 
-MANIFEST=$(occ backup:backup:user ci "$U" | sed -n 's/.* to \(.*\)\.$/\1/p')
-[ -n "$MANIFEST" ] || fail "backup:backup:user printed no manifest path"
+MANIFEST=$(occ backup:user:backup ci "$U" | sed -n 's/.* to \(.*\)\.$/\1/p')
+[ -n "$MANIFEST" ] || fail "backup:user:backup printed no manifest path"
 ok "backed up $U to $MANIFEST"
 
 # as-backup: restore into <uid>-bak; the original account must stay untouched.
-occ backup:restore:user ci "$MANIFEST" --mode=as-backup >/dev/null || fail "restore as-backup"
+occ backup:user:restore ci "$MANIFEST" --mode=as-backup >/dev/null || fail "restore as-backup"
 occ files:scan "$U-bak" >/dev/null
 SUM_BAK=$($X sh -c "cd $DATA/$U-bak/files && find . -type f -print0 | sort -z | xargs -0 md5sum | md5sum")
 [ "$SUM_BEFORE" = "$SUM_BAK" ] || fail "the <uid>-bak account's files differ from the original"
@@ -48,7 +48,7 @@ ok "as-backup restores into <uid>-bak, byte-identical, original account untouche
 # replace: damage the account, then restore it in place under the same uid.
 $X sh -c "rm '$DATA/$U/files/Docs/f1.bin' && echo damaged > '$DATA/$U/files/Docs/f1.bin'"
 occ files:scan "$U" >/dev/null
-occ backup:restore:user ci "$MANIFEST" --mode=replace >/dev/null || fail "restore replace"
+occ backup:user:restore ci "$MANIFEST" --mode=replace >/dev/null || fail "restore replace"
 occ files:scan "$U" >/dev/null
 SUM_AFTER=$($X sh -c "cd $DATA/$U/files && find . -type f -print0 | sort -z | xargs -0 md5sum | md5sum")
 [ "$SUM_BEFORE" = "$SUM_AFTER" ] || fail "files differ after a replace restore"
@@ -58,9 +58,9 @@ ok "replace restores the original content under the same uid, byte-identical"
 # restore made of it just before deleting it (4 total after these two more), then --user-last=2
 # must forget exactly the 2 oldest.
 sleep 1.1 # exportId is time-based to the second; force each one to be distinct
-occ backup:backup:user ci "$U" >/dev/null || fail "third backup:backup:user"
+occ backup:user:backup ci "$U" >/dev/null || fail "third backup:user:backup"
 sleep 1.1
-occ backup:backup:user ci "$U" >/dev/null || fail "fourth backup:backup:user"
+occ backup:user:backup ci "$U" >/dev/null || fail "fourth backup:user:backup"
 occ backup:retention --user-last=2 >/dev/null || fail "retention --user-last"
 PRUNE_OUT=$(occ backup:prune ci)
 echo "$PRUNE_OUT" | grep -q "forgot 2 user export(s) for 1 user(s)" || fail "prune did not forget the expected two user exports"
