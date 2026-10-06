@@ -27,13 +27,14 @@ class BackupRunTest extends TestCase {
 
 		$state = BackupRun::start($src);
 		$steps = 0;
-		while ($state['phase'] !== 'done' && $steps < 500) {
+		while ($state['phase'] !== 'commit' && $steps < 500) {
 			// Fresh repository object per step, state through JSON: as separate processes would.
 			$repo = Repository::openWithKey($backend, $keys);
 			$state = json_decode(json_encode(BackupRun::step($repo, $state, microtime(true) + 0.05)), true);
 			$steps++;
 		}
-		$this->assertSame('done', $state['phase']);
+		$this->assertSame('commit', $state['phase']);
+		Repository::openWithKey($backend, $keys)->recordSnapshot($state['snapshot']);
 		$this->assertGreaterThan(2, $steps, 'the run was actually split into steps');
 
 		$target = $this->tempDir();
@@ -50,7 +51,7 @@ class BackupRunTest extends TestCase {
 
 		$state = BackupRun::start($src);
 		$mutated = false;
-		for ($i = 0; $i < 500 && $state['phase'] !== 'done'; $i++) {
+		for ($i = 0; $i < 500 && $state['phase'] !== 'commit'; $i++) {
 			$state = BackupRun::step(Repository::openWithKey($backend, $keys), $state, microtime(true) + 0.01);
 			if (!$mutated && $state['cur'] !== null && $state['cur']['offset'] > 0) {
 				$fh = fopen("$src/big.bin", 'r+b');
@@ -60,6 +61,8 @@ class BackupRunTest extends TestCase {
 				$mutated = true;
 			}
 		}
+		$this->assertSame('commit', $state['phase']);
+		Repository::openWithKey($backend, $keys)->recordSnapshot($state['snapshot']);
 		$this->assertTrue($mutated);
 		$this->assertGreaterThanOrEqual(1, $state['stats']['retried'] ?? 0);
 		$target = $this->tempDir();
@@ -78,14 +81,17 @@ class BackupRunTest extends TestCase {
 		Repository::initWithKey($backend, $keys, $keys->wrap('pw'));
 		$run = function (?string $parent) use ($backend, $src, $keys): array {
 			$state = BackupRun::start(['data' => $src], $parent);
-			for ($i = 0; $i < 2000 && $state['phase'] !== 'done'; $i++) {
+			for ($i = 0; $i < 2000 && $state['phase'] !== 'commit'; $i++) {
 				$state = json_decode(json_encode(BackupRun::step(Repository::openWithKey($backend, $keys), $state, microtime(true))), true);
+			}
+			if ($state['phase'] === 'commit') {
+				Repository::openWithKey($backend, $keys)->recordSnapshot($state['snapshot']);
 			}
 			return $state;
 		};
 		$first = $run(null);
 		$second = $run($first['snapshot']);
-		$this->assertSame('done', $second['phase']);
+		$this->assertSame('commit', $second['phase']);
 		$this->assertGreaterThan(150, $second["steps"], "one file per step");
 		$this->assertSame(0, $second['stats']['read'], 'merge-join with the parent across steps reuses every file');
 		$this->assertSame(200, $second['stats']['reused']);

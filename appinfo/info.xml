@@ -47,6 +47,11 @@ relying on this for anything.]]></description>
         <command>OCA\NgBackup\Command\KeySlotAdd</command>
         <command>OCA\NgBackup\Command\KeySlotReplace</command>
         <command>OCA\NgBackup\Command\KeySlotRemove</command>
+        <command>OCA\NgBackup\Command\BackupUser</command>
+        <command>OCA\NgBackup\Command\RestoreUser</command>
+        <command>OCA\NgBackup\Command\KeyImport</command>
+        <command>OCA\NgBackup\Command\RestoreFull</command>
+        <command>OCA\NgBackup\Command\Verify</command>
     </commands>
     <settings>
         <admin>OCA\NgBackup\Settings\Admin</admin>

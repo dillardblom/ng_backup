@@ -98,6 +98,83 @@ final class PruneService {
 		return 'ng_backup/target/' . $target->getId();
 	}
 
+	/**
+	 * A separate, short-lived exclusive lock serializing writes to the catalog itself. The
+	 * per-target lock above only keeps readers/writers out while a cleanup runs; it does not
+	 * stop two SHARED holders (e.g. two concurrent per-user backups, or one alongside a full
+	 * backup) from both reading the same catalog generation and racing to write the next one,
+	 * silently dropping whichever's change loses. The full-backup path avoids this today only
+	 * because a Run row makes concurrent runs for the same target mutually exclusive; per-user
+	 * backup/restore has no such row, so it takes this lock around the catalog write itself.
+	 */
+	public static function catalogLockKey(Target $target): string {
+		return self::lockKey($target) . '/catalog';
+	}
+
+	/** How many of each user's own exports (occ backup:user:backup) to keep, newest first. */
+	public function userExportRetention(): int {
+		return $this->appConfig->getValueInt(Application::APP_ID, 'user_export_retention', 3);
+	}
+
+	public function setUserExportRetention(int $keep): void {
+		if ($keep < 1) {
+			throw new \InvalidArgumentException('Keep at least the last export');
+		}
+		$old = $this->userExportRetention();
+		$this->appConfig->setValueInt(Application::APP_ID, 'user_export_retention', $keep);
+		if ($old !== $keep) {
+			$this->alerts->securityEvent('user_export_retention_changed', ['keep' => (string)$keep]);
+		}
+	}
+
+	/**
+	 * Forgets a user's older exports once more than userExportRetention() exist for them,
+	 * newest first; no trash, unlike a full snapshot (occ backup:user:backup is on-demand, not
+	 * yet the primary safety net the deletion delay protects).
+	 *
+	 * @return array{kept: array<string, list<string>>, forgotten: list<string>}
+	 */
+	public function applyUserExports(Target $target, bool $dryRun = false): array {
+		if ($target->getAppendOnly()) {
+			throw new \RuntimeException('Location ' . $target->getName() . ' is append-only: NG Backup does not delete anything there');
+		}
+		$lease = $this->lockExclusive($target, 1800);
+		try {
+			$repo = $this->targets->repository($target);
+			$keep = $this->userExportRetention();
+			$byUser = [];
+			foreach ($repo->listUserExports() as $path) {
+				$uid = explode('/', $path)[1] ?? '';
+				$manifest = json_decode($repo->getObject($path), true, 512, JSON_THROW_ON_ERROR);
+				$byUser[$uid][$path] = (int)strtotime((string)($manifest['time'] ?? '@0'));
+			}
+			$kept = [];
+			$forget = [];
+			foreach ($byUser as $uid => $times) {
+				arsort($times);
+				$i = 0;
+				foreach (array_keys($times) as $path) {
+					if ($i++ < $keep) {
+						$kept[$uid][] = $path;
+					} else {
+						$forget[] = $path;
+					}
+				}
+			}
+			if (!$dryRun) {
+				foreach ($forget as $path) {
+					$repo->forgetUserExport($path);
+				}
+				if ($forget !== []) {
+					$this->alerts->securityEvent('user_exports_forgotten', ['target' => $target->getName(), 'count' => (string)count($forget)], false);
+				}
+			}
+			return ['kept' => $kept, 'forgotten' => $forget];
+		} finally {
+			$this->leases->release($lease);
+		}
+	}
+
 	public function policy(): RetentionPolicy {
 		return RetentionPolicy::fromArray(json_decode($this->appConfig->getValueString(Application::APP_ID, 'retention', '{}'), true) ?: []);
 	}

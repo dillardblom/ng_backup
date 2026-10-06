@@ -49,6 +49,11 @@
       <code><![CDATA[ask]]></code>
     </UndefinedInterfaceMethod>
   </file>
+  <file src="lib/Command/KeyImport.php">
+    <UndefinedInterfaceMethod>
+      <code><![CDATA[ask]]></code>
+    </UndefinedInterfaceMethod>
+  </file>
   <file src="lib/Command/KeyInit.php">
     <UndefinedInterfaceMethod>
       <code><![CDATA[ask]]></code>
@@ -409,24 +414,6 @@
     <ArgumentTypeCoercion>
       <code><![CDATA[array_diff(range(1, self::MAX_SLOTS), $used)]]></code>
     </ArgumentTypeCoercion>
-    <InvalidReturnStatement>
-      <code><![CDATA[[
-			'version' => 1,
-			'app' => 'NG Backup',
-			'fingerprint' => $this->fingerprint(),
-			'kit_version' => $this->kitVersion(),
-			'confirmation_code' => $this->kitCode(),
-			'created' => gmdate('c'),
-			'wrapped_key' => $this->wrappedKey(),
-			'slots' => $this->slots(),
-			'instructions' => 'Keep this file safe, outside this server. Any one of the passphrases of the slots listed here opens it. '
-				. 'To restore on a new server: install NG Backup, add the backup location and enter this kit with one passphrase. '
-				. 'Without the kit (or the location) and a passphrase, the backups cannot be decrypted.',
-		]]]></code>
-    </InvalidReturnStatement>
-    <InvalidReturnType>
-      <code><![CDATA[array{version:int, app:string, fingerprint:string, created:string, wrapped_key:array, instructions:string}]]></code>
-    </InvalidReturnType>
     <LessSpecificReturnStatement>
       <code><![CDATA[array_map(fn ($s) => ['slot' => $s['slot'], 'label' => $s['label'], 'created' => $s['created']], $this->wrappedKey()['slots'])]]></code>
     </LessSpecificReturnStatement>
@@ -454,6 +441,17 @@
     <MoreSpecificReturnType>
       <code><![CDATA[array{kept: array<string, list<string>>, forgotten: list<string>, purged: list<string>, prune: array}]]></code>
     </MoreSpecificReturnType>
+  </file>
+  <file src="lib/Service/RestoreFullService.php">
+    <EmptyArrayAccess>
+      <code><![CDATA[$backupConfig[$key]]]></code>
+    </EmptyArrayAccess>
+    <UndefinedInterfaceMethod>
+      <code><![CDATA[getInner]]></code>
+    </UndefinedInterfaceMethod>
+    <UnresolvableInclude>
+      <code><![CDATA[include $path]]></code>
+    </UnresolvableInclude>
   </file>
   <file src="lib/Service/RestoreService.php">
     <LessSpecificReturnStatement>

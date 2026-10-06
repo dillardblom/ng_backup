@@ -133,7 +133,7 @@ final class BackupRun {
 
 		if ($state['phase'] === 'finish') {
 			$segments = $state['segments'];
-			$repo->writeSnapshot($state['snapshot'],
+			$repo->putSnapshot($state['snapshot'],
 				['time' => $state['started'], 'parent' => $state['parent'], 'label' => $state['label'],
 					'roots' => array_keys($state['roots']), 'stats' => $state['stats']] + $state['meta'],
 				(function () use ($repo, $segments) {
@@ -141,7 +141,7 @@ final class BackupRun {
 						yield from $repo->readLines($blobs);
 					}
 				})());
-			$state['phase'] = 'done';
+			$state['phase'] = 'commit';
 		}
 		return $state;
 	}

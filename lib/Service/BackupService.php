@@ -147,6 +147,17 @@ final class BackupService {
 				}
 			} else {
 				$state['files'] = BackupRun::step($repo, $state['files'], $deadline);
+				if ($state['files']['phase'] === 'commit') {
+					// Catalog write under the catalog lock, from a repository opened inside it: a per-user
+					// export or restore may have written the catalog since this step opened $repo.
+					try {
+						$this->leases->with(PruneService::catalogLockKey($target), LeaseService::EXCLUSIVE, 30,
+							fn () => $this->targets->repository($target)->recordSnapshot((string)$state['files']['snapshot']));
+						$state['files']['phase'] = 'done';
+					} catch (LockedException) {
+						// Another catalog write is in progress: the next step retries this commit.
+					}
+				}
 				if ($state['files']['phase'] === 'done') {
 					$this->recordSnapshot($run, $state['files']);
 					$this->alerts->storedBytes($target, $repo->storedBytes());

@@ -91,7 +91,8 @@ final class Repository {
 		$this->catalog = new Catalog($this->backend, $this->cipher, $this->repositoryId, $anchor);
 		$this->catalog->load(
 			fn () => array_map('basename', $this->backend->list('snapshots')),
-			fn () => array_map('basename', $this->backend->list('trash/info')));
+			fn () => array_map('basename', $this->backend->list('trash/info')),
+			fn () => $this->backend->list('users'));
 	}
 
 	/** Refuse uploads that would make the stored data larger than this (null = no limit). */
@@ -189,8 +190,15 @@ final class Repository {
 		return ['snapshot' => $snapshotId] + $stats;
 	}
 
-	/** Restore a snapshot (or only paths starting with $prefix) into a local directory. */
-	public function restore(string $snapshotId, string $target, string $prefix = ''): int {
+	/**
+	 * Restore a snapshot (or only paths starting with $prefix) into a local directory.
+	 *
+	 * @param bool $stripPrefix write "$target/<path without $prefix>" instead of
+	 *             "$target/<full logical path>" (disaster recovery: restoring e.g. "data/" or
+	 *             "config/" directly into the real data/config directory, not a subdirectory
+	 *             named after the prefix). Ignored when $prefix is '' (nothing to strip).
+	 */
+	public function restore(string $snapshotId, string $target, string $prefix = '', bool $stripPrefix = false, ?callable $heartbeat = null): int {
 		if ($prefix !== '' && !self::isSafePath(rtrim($prefix, '/'))) {
 			throw new RepositoryException('Invalid path prefix');
 		}
@@ -199,7 +207,8 @@ final class Repository {
 			if ($prefix !== '' && !str_starts_with($entry['p'], $prefix)) {
 				continue;
 			}
-			$dest = rtrim($target, '/') . '/' . $entry['p'];
+			$relPath = ($stripPrefix && $prefix !== '') ? substr($entry['p'], strlen(rtrim($prefix, '/')) + 1) : $entry['p'];
+			$dest = rtrim($target, '/') . '/' . $relPath;
 			if (!is_dir(dirname($dest))) {
 				mkdir(dirname($dest), 0700, true);
 			}
@@ -218,6 +227,9 @@ final class Repository {
 			}
 			foreach ($entry['b'] as $id) {
 				fwrite($out, $this->loadBlob($id));
+				if ($heartbeat !== null) {
+					$heartbeat();
+				}
 			}
 			fclose($out);
 			if (filesize($tmp) !== $entry['s']) {
@@ -279,6 +291,17 @@ final class Repository {
 	 * @param iterable<string> $lines
 	 */
 	public function writeSnapshot(string $snapshotId, array $meta, iterable $lines): void {
+		$this->putSnapshot($snapshotId, $meta, $lines);
+		$this->recordSnapshot($snapshotId);
+	}
+
+	/**
+	 * Store a snapshot object without touching the catalog. Use recordSnapshot() afterwards, from a
+	 * repository opened inside the catalog lock, so the catalog write builds on the latest generation.
+	 *
+	 * @param iterable<string> $lines
+	 */
+	public function putSnapshot(string $snapshotId, array $meta, iterable $lines): void {
 		$tree = fopen('php://temp/maxmemory:' . (4 * 1048576), 'w+b');
 		fwrite($tree, json_encode(['snapshot' => $snapshotId] + $meta, JSON_THROW_ON_ERROR) . "\n");
 		foreach ($lines as $line) {
@@ -292,6 +315,9 @@ final class Repository {
 		fclose($tree);
 		rewind($encrypted);
 		$this->backend->put('snapshots/' . $snapshotId, $encrypted);
+	}
+
+	public function recordSnapshot(string $snapshotId): void {
 		$this->catalog->snapshots[$snapshotId] = true;
 		$this->catalog->write();
 	}
@@ -374,6 +400,50 @@ final class Repository {
 		$this->backend->delete('trash/info/' . $snapshotId);
 	}
 
+	/** Record a user_migration export's manifest in the catalog (rollback-protected like a snapshot). */
+	public function recordUserExport(string $manifestPath): void {
+		$this->catalog->userExports[$manifestPath] = true;
+		$this->catalog->write();
+	}
+
+	/**
+	 * User export manifests according to the verified catalog, newest first. A manifest the
+	 * catalog lists but the location no longer has means it was deleted or hidden behind NG
+	 * Backup's back, same as a missing snapshot (see listSnapshots()).
+	 *
+	 * @return list<string>
+	 */
+	public function listUserExports(?string $uid = null): array {
+		$prefix = $uid !== null ? 'users/' . $uid . '/' : 'users/';
+		$out = [];
+		foreach (array_keys($this->catalog->userExports) as $path) {
+			if (!str_starts_with($path, $prefix)) {
+				continue;
+			}
+			if (!$this->backend->exists($path)) {
+				throw new RepositoryException("User export $path is missing on the location (deleted or hidden outside NG Backup)");
+			}
+			$out[] = $path;
+		}
+		sort($out, SORT_STRING);
+		return array_reverse($out);
+	}
+
+	/** Whether $manifestPath is a user export the verified catalog actually recorded. */
+	public function isRecordedUserExport(string $manifestPath): bool {
+		return isset($this->catalog->userExports[$manifestPath]);
+	}
+
+	/** Permanently delete a user export. Its blobs are freed by the next prune() like any other. */
+	public function forgetUserExport(string $manifestPath): void {
+		if (!isset($this->catalog->userExports[$manifestPath])) {
+			throw new RepositoryException("$manifestPath is not a recorded user export");
+		}
+		unset($this->catalog->userExports[$manifestPath]);
+		$this->catalog->write();
+		$this->backend->delete($manifestPath);
+	}
+
 	/** @return array<string, array{forgottenAt:int, by:string, db:?string, dbInTrash:?string, time:?string, label:string}> */
 	public function trash(): array {
 		$out = [];
@@ -389,23 +459,26 @@ final class Repository {
 
 	/** Permanently delete trash entries older than $delaySeconds. @return list<string> purged snapshot ids */
 	public function purgeTrash(int $delaySeconds): array {
-		$purged = [];
+		$doomed = [];
 		foreach ($this->trash() as $id => $info) {
 			if (time() - $info['forgottenAt'] < $delaySeconds) {
 				continue;
 			}
+			$doomed[$id] = $info;
+			unset($this->catalog->trash[$id]);
+		}
+		if ($doomed === []) {
+			return [];
+		}
+		$this->catalog->write();
+		foreach ($doomed as $id => $info) {
 			if ($info['dbInTrash'] !== null) {
 				$this->backend->delete($info['dbInTrash']);
 			}
 			$this->backend->delete('trash/snapshots/' . $id);
 			$this->backend->delete('trash/info/' . $id);
-			unset($this->catalog->trash[$id]);
-			$purged[] = $id;
 		}
-		if ($purged !== []) {
-			$this->catalog->write();
-		}
-		return $purged;
+		return array_keys($doomed);
 	}
 
 	private function trashInfo(string $snapshotId): array {
@@ -607,6 +680,117 @@ final class Repository {
 	/** @return \Generator<array{p:string, s:int, m:int, b:list<string>}> entries of a snapshot, in stored order */
 	public function entries(string $snapshotId): \Generator {
 		return $this->streamEntries($snapshotId);
+	}
+
+	/**
+	 * Checksum audit of a snapshot: every blob it references (files and the database dump, when
+	 * the snapshot has one) must be in the index, freshly re-downloaded and re-authenticated from
+	 * the location rather than trusted from the local cache (same reasoning as prune()), and its
+	 * pack must still be present. With $deep, each blob is also downloaded and decrypted, which
+	 * verifies its AEAD authentication tag and its content hash against the blob id (loadBlob()
+	 * already does both on every real read -- this just does it for everything in the snapshot,
+	 * deliberately, rather than relying on it to come up during a later restore). A blob
+	 * referenced by more than one file is only checked once; a missing database manifest is a
+	 * failure, not something to silently skip over.
+	 *
+	 * @param ?callable $heartbeat called after every blob (shallow) or every blob read (deep);
+	 *        callers use it to keep a time-boxed lease alive during a large audit
+	 * @return array{filesChecked:int, blobsChecked:int, bytesChecked:int, missing:list<string>, failed:list<string>}
+	 */
+	public function verify(string $snapshotId, bool $deep = false, ?callable $heartbeat = null): array {
+		$heartbeat ??= static function (): void {
+		};
+		$this->index->load(true);
+		$stats = ['filesChecked' => 0, 'blobsChecked' => 0, 'bytesChecked' => 0, 'missing' => [], 'failed' => []];
+		$seen = [];
+		$packSeen = []; // pack id => exists on the backend; avoids one exists() call per blob
+		foreach ($this->streamEntries($snapshotId) as $entry) {
+			$stats['filesChecked']++;
+			foreach ($entry['b'] as $id) {
+				if (isset($seen[$id])) {
+					continue;
+				}
+				$seen[$id] = true;
+				$this->verifyBlob($id, $deep, $stats, $packSeen);
+				$heartbeat();
+			}
+		}
+		$meta = $this->snapshotMeta($snapshotId);
+		if (isset($meta['db']) && is_string($meta['db'])) {
+			if (!$this->backend->exists($meta['db'])) {
+				$stats['missing'][] = $meta['db'];
+			} else {
+				$dbManifest = json_decode($this->getObject($meta['db']), true, 512, JSON_THROW_ON_ERROR);
+				foreach ($dbManifest['tables'] as $info) {
+					foreach ($info['blobs'] as $id) {
+						if (isset($seen[$id])) {
+							continue;
+						}
+						$seen[$id] = true;
+						$this->verifyBlob($id, $deep, $stats, $packSeen);
+						$heartbeat();
+					}
+				}
+			}
+		}
+		return $stats;
+	}
+
+	/**
+	 * Same checks as verify(), for a user export: every blob its manifest references must be in
+	 * the freshly re-authenticated index with its pack present; $deep also decrypts each.
+	 *
+	 * @return array{filesChecked:int, blobsChecked:int, bytesChecked:int, missing:list<string>, failed:list<string>}
+	 */
+	public function verifyUserExport(string $manifestPath, bool $deep = false, ?callable $heartbeat = null): array {
+		if (!$this->isRecordedUserExport($manifestPath)) {
+			throw new RepositoryException("$manifestPath is not a recorded user export for this location");
+		}
+		$heartbeat ??= static function (): void {
+		};
+		$this->index->load(true);
+		$stats = ['filesChecked' => 0, 'blobsChecked' => 0, 'bytesChecked' => 0, 'missing' => [], 'failed' => []];
+		$seen = [];
+		$packSeen = [];
+		$manifest = json_decode($this->getObject($manifestPath), true, 512, JSON_THROW_ON_ERROR);
+		foreach ($manifest['entries'] as $entry) {
+			if (($entry['t'] ?? '') !== 'f') {
+				continue;
+			}
+			$stats['filesChecked']++;
+			foreach ($entry['b'] ?? [] as $id) {
+				if (isset($seen[$id])) {
+					continue;
+				}
+				$seen[$id] = true;
+				$this->verifyBlob($id, $deep, $stats, $packSeen);
+				$heartbeat();
+			}
+		}
+		return $stats;
+	}
+
+	/** @param array<string, bool> $packSeen */
+	private function verifyBlob(string $id, bool $deep, array &$stats, array &$packSeen): void {
+		if (!$this->index->has($id)) {
+			$stats['missing'][] = $id;
+			return;
+		}
+		[$pack] = $this->index->get($id);
+		$packExists = $packSeen[$pack] ??= $this->backend->exists('packs/' . substr($pack, 0, 2) . '/' . $pack);
+		if (!$packExists) {
+			$stats['missing'][] = $id;
+			return;
+		}
+		$stats['blobsChecked']++;
+		if (!$deep) {
+			return;
+		}
+		try {
+			$stats['bytesChecked'] += strlen($this->loadBlob($id));
+		} catch (\Throwable) {
+			$stats['failed'][] = $id;
+		}
 	}
 
 	/** The meta record (first line) of a snapshot. */

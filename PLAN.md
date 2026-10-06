@@ -276,7 +276,7 @@ onderdelen wel en niet terugkomen, op basis van de geregistreerde migrators.
 | `backup:list [--target=]` | herstelpunten |
 | `backup:verify <snapshot> [--deep]` | checksums controleren, optioneel alles ontsleutelen |
 | `backup:restore:file <snapshot> <user> <pad> [--to=]` | bestand/map terugzetten |
-| `backup:restore:user <snapshot> <user> [--to-user=]` | gebruiker terugzetten via user_migration (fase 2) |
+| `backup:user:restore <snapshot> <user> [--to-user=]` | gebruiker terugzetten via user_migration (fase 2) |
 | `backup:restore:full <snapshot>` | volledige restore (fase 2, verse installatie) |
 | `backup:target:add/list/remove/test` | opslagdoelen beheren en testen |
 | `backup:key:export / import` | herstelkit |
@@ -337,6 +337,31 @@ een backup-app die niet betrouwbaar is, is erger dan geen backup-app.
 
 Volgorde: fase 1 grondig testen, reviewen en debuggen; dan nadenken over 0.1.0-alpha.1. Een
 minimale volledige restore (`occ backup:restore:full` op een verse installatie) komt vóór de beta.
+
+**Roadmap-indeling fase 2 (besluit 2026-10-05):** naar v1.2.0 toewerken met in fase 2:
+1. `backup:restore:full` (disaster recovery, verse installatie) — **klaar** (2026-10-05)
+2. FTP/SMB-ondersteuning — **klaar** (2026-10-06): beide liepen al via files_external's generieke
+   adapter zonder enige ng_backup-code; alleen testdekking toegevoegd
+   (`tests/integration/targets-matrix.sh`) + bevindingen in README ("Storage backend experiences").
+   SMB vereist de `smbclient` PECL-extensie (niet standaard in de Nextcloud-image, in CI nu
+   on-the-fly gebouwd). NFS is geen eigen backend: lokaal mounten + `local`-backend erop richten.
+3. Verificatie/checksum-audit-commando — **klaar** (2026-10-05)
+4. Retentie/prune voor user-exports — **klaar** (2026-10-06): `occ backup:retention --user-last=N`
+   (standaard 3, per installatie, net als de bestaande snapshot-policy), toegepast door
+   `occ backup:prune` (geen prullenbak voor user-exports, in tegenstelling tot snapshots — on-demand,
+   niet het primaire vangnet).
+5. Automatische user-export in het reguliere schema — **naar backlog** (niet voor deze release; on-demand blijft)
+9. SMB-roundtrip (protocol, niet een specifieke server) — **klaar** (2026-10-06): CI-matrix, 2 GB-roundtrip en
+   user-export via SMB; NFS via de OMV-share getest (`local`-backend op een gemounte share, 2026-10-06)
+10. `backup:user:restore` zonder user_migration: vraagt om toestemming om de app te installeren en te activeren (of
+   `--install-user-migration`) — **klaar** (2026-10-06); waarschuwing over de settings-allowlist — **klaar**;
+   agenda/contacten bij migratie naar een server zonder die gebruiker — **getest** (2026-10-06, naar `migrated-personal`/`migrated-contacts`)
+    Backlog: (a) de originele weergavenaam herstellen (het label uit de export is niet getest als
+    weergavenaam); (b) de interne `migrated-`-naam hernoemen (vereist directe databasewijziging, niet voor de beta).
+
+Doorgeschoven naar **v1.3.0** (fase 3, niet meer fase 2): in-place volledige restore
+(eigen restore-modus i.p.v. onderhoudsmodus) en zelfbediening voor gebruikers (eigen bestanden
+terugzetten vanuit de Files-app).
 
 **Let op (ontdekt 2026-10-05):** Nextcloud's eigen `info.xsd` staat voor `<version>` alleen
 `[0-9]+(\.[0-9]+){0,2}` toe — geen `-alpha`/`-beta`/`-rc`-achtervoegsel. De stabiliteitsaanduiding

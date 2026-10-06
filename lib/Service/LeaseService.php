@@ -76,6 +76,17 @@ final class LeaseService {
 		$qb->executeStatement();
 	}
 
+	/** Wraps $refresh so calling it often (per file, per row batch) only touches the database every $seconds. */
+	public static function throttled(callable $refresh, int $seconds = 60): \Closure {
+		$last = time();
+		return static function () use ($refresh, $seconds, &$last): void {
+			if (time() - $last >= $seconds) {
+				$refresh();
+				$last = time();
+			}
+		};
+	}
+
 	/** Run $fn under a lease; $refresh() can be called during long work. */
 	public function with(string $name, string $mode, int $ttl, callable $fn): mixed {
 		$id = $this->acquire($name, $mode, $ttl);

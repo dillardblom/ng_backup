@@ -10,10 +10,13 @@ namespace OCA\NgBackup\Service;
 use OCA\NgBackup\Backend\ExternalStorageFactory;
 use OCA\NgBackup\Backend\IBackend;
 use OCA\NgBackup\Backend\StorageBackend;
+use OCA\NgBackup\Db\Snapshot;
+use OCA\NgBackup\Db\SnapshotMapper;
 use OCA\NgBackup\Db\Target;
 use OCA\NgBackup\Db\TargetMapper;
 use OCA\NgBackup\Repository\Repository;
 use OCP\App\IAppManager;
+use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\Security\ICrypto;
 use OCP\Server;
 
@@ -30,6 +33,7 @@ final class TargetService {
 		private IAppManager $appManager,
 		private \OCA\NgBackup\Db\DbIndexCache $indexCache,
 		private \OCA\NgBackup\Db\AppConfigCatalogAnchor $anchor,
+		private SnapshotMapper $snapshots,
 	) {
 	}
 
@@ -48,6 +52,12 @@ final class TargetService {
 	public function add(string $name, string $backend, string $auth, array $options, string $basePath): array {
 		if (!preg_match('/^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$/', $name)) {
 			throw new \InvalidArgumentException('Name: letters, digits, space, _ . - (max 64)');
+		}
+		// Without the native extension files_external falls back to the smbclient binary, which
+		// registers fine but cannot seek: the first backup then fails with "Seek failed". Refuse
+		// up front instead of letting the admin find out from a failed run.
+		if ($backend === 'smb' && !extension_loaded('smbclient')) {
+			throw new \InvalidArgumentException('The SMB backend needs the PHP smbclient extension (pecl install smbclient); the smbclient binary alone cannot seek and every backup would fail');
 		}
 		try {
 			$this->mapper->findByName($name);
@@ -78,7 +88,62 @@ final class TargetService {
 		$target->setBasePath(trim($basePath, '/'));
 		$target->setRepositoryId($repo->id());
 		$target->setCreatedAt(time());
-		return ['target' => $this->mapper->insert($target), 'created' => $created];
+		$target = $this->mapper->insert($target);
+		if (!$created) {
+			// Disaster recovery: occ backup:list reads this local cache, not the repository
+			// directly, so a snapshot made by another installation must be backfilled here too.
+			$this->adoptSnapshots($target, $repo);
+		}
+		return ['target' => $target, 'created' => $created];
+	}
+
+	/**
+	 * A target's options are encrypted with Nextcloud's own instance secret (ICrypto), not
+	 * ng_backup's key, so changing that secret (occ backup:restore:full merging config.php)
+	 * would otherwise leave every target permanently undecryptable. Call $applySecretChange
+	 * (which must be the only thing that changes the secret) through here instead: every
+	 * target's options are decrypted first, then re-encrypted under whatever secret is active
+	 * once $applySecretChange returns.
+	 */
+	public function reencryptOptionsAround(callable $applySecretChange): mixed {
+		$plain = [];
+		foreach ($this->mapper->findAll() as $target) {
+			$plain[$target->getId()] = $this->options($target);
+		}
+		$result = $applySecretChange();
+		foreach ($this->mapper->findAll() as $target) {
+			if (!isset($plain[$target->getId()])) {
+				continue; // added by $applySecretChange itself; nothing to re-encrypt
+			}
+			$target->setOptions($this->crypto->encrypt(json_encode($plain[$target->getId()], JSON_THROW_ON_ERROR)));
+			$this->mapper->update($target);
+		}
+		return $result;
+	}
+
+	private function adoptSnapshots(Target $target, Repository $repo): void {
+		foreach ($repo->listSnapshots() as $snapshotId) {
+			try {
+				$this->snapshots->findOne($target->getId(), $snapshotId);
+				continue; // already known locally
+			} catch (DoesNotExistException) {
+			}
+			// One unreadable/corrupt snapshot must not stop the rest of the location's
+			// snapshots from being backfilled, nor abort adding the target itself.
+			try {
+				$meta = $repo->snapshotMeta($snapshotId);
+				$s = new Snapshot();
+				$s->setTargetId($target->getId());
+				$s->setSnapshotId($snapshotId);
+				$s->setKind((string)($meta['kind'] ?? 'full'));
+				$s->setLabel(($meta['label'] ?? '') !== '' ? $meta['label'] : null);
+				$s->setCreatedAt((int)strtotime((string)($meta['time'] ?? 'now')));
+				$s->setFiles((int)($meta['stats']['files'] ?? 0));
+				$s->setBytes((int)($meta['stats']['bytes'] ?? 0));
+				$this->snapshots->insert($s);
+			} catch (\Throwable) {
+			}
+		}
 	}
 
 	/** @return list<Target> */
@@ -87,7 +152,11 @@ final class TargetService {
 	}
 
 	public function get(string $nameOrId): Target {
-		return ctype_digit($nameOrId) ? $this->mapper->find((int)$nameOrId) : $this->mapper->findByName($nameOrId);
+		try {
+			return ctype_digit($nameOrId) ? $this->mapper->find((int)$nameOrId) : $this->mapper->findByName($nameOrId);
+		} catch (DoesNotExistException) {
+			throw new \InvalidArgumentException("No such location: $nameOrId");
+		}
 	}
 
 	/** Size limit for the data stored on this location (null = none). */
