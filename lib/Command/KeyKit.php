@@ -47,8 +47,14 @@ final class KeyKit extends Command {
 		} finally {
 			umask($old);
 		}
-		if ($fh === false || fwrite($fh, $json) !== strlen($json) || !fclose($fh)) {
-			$output->writeln("<error>Cannot write $file (it must not exist yet)</error>");
+		if ($fh === false) {
+			$output->writeln("<error>Cannot create $file (it must not exist yet)</error>");
+			return 1;
+		}
+		$ok = fwrite($fh, $json) === strlen($json);
+		if (!fclose($fh) || !$ok) {
+			@unlink($file);
+			$output->writeln("<error>Cannot write $file</error>");
 			return 1;
 		}
 		$output->writeln("Recovery kit written to <info>$file</info>. Copy it off this server, then run <info>occ backup:key:confirm</info>.");

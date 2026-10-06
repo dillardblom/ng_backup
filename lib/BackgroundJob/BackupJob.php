@@ -46,11 +46,11 @@ final class BackupJob extends TimedJob {
 		$this->startScheduled();
 		foreach ($this->runs->findRunning(null, BackupService::KIND_FULL) as $run) {
 			while (microtime(true) < $deadline && $run->getStatus() === 'running') {
-				$before = $run->getUpdatedAt();
-				$run = $this->backups->step($run, min($deadline, microtime(true) + $budget));
-				if ($run->getUpdatedAt() === $before && $run->getStatus() === 'running') {
-					break; // another process holds this run's lease: leave it to that process
+				$next = $this->backups->step($run, min($deadline, microtime(true) + $budget));
+				if ($next === $run) {
+					break; // step() hands back the same object when another process holds the run's lease
 				}
+				$run = $next;
 			}
 		}
 		$this->failStaleRestores();
