@@ -256,7 +256,11 @@ final class DbDumper {
 					} elseif (is_string($row[$i]) && !mb_check_encoding($row[$i], 'UTF-8')) {
 						// Keep invalid UTF-8 byte-exact instead of substituting characters.
 						$row[$i] = ['$b' => base64_encode($row[$i])];
-					} elseif (is_int($row[$i]) || is_float($row[$i]) || is_bool($row[$i])) {
+					} elseif (is_float($row[$i])) {
+						// var_export uses serialize_precision (shortest exact form), not the lossy
+						// 14-digit 'precision' of a (string) cast.
+						$row[$i] = var_export($row[$i], true);
+					} elseif (is_int($row[$i]) || is_bool($row[$i])) {
 						// Normalise: drivers differ in returning numbers as int or string.
 						$row[$i] = (string)(is_bool($row[$i]) ? (int)$row[$i] : $row[$i]);
 					}

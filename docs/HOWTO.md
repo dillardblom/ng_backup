@@ -102,7 +102,9 @@ occ backup:user:restore offsite users/<uid>/<exportId> --mode=as-backup
   use, add `--install-user-migration` to approve that explicitly. The command stops after the
   installation; run it once more.
 - `replace` first makes a safety export of the current account, then recreates the user under the
-  same id. `as-backup` restores into `<uid>-bak` and leaves the original untouched.
+  same id. When the account exists, the command asks first; in scripts, add `--force`. Shares to
+  others and data of apps without a user_migration migrator are not restored, so prefer
+  `as-backup` when in doubt: it restores into `<uid>-bak` and leaves the original untouched.
 - A restore onto a server where the user does not exist works. Calendars and address books get an
   internal name with the prefix `migrated-` (for example `migrated-personal`). That prefix comes from
   user_migration and cannot be turned off. The user can change the display name of these calendars and
@@ -123,6 +125,9 @@ occ backup:target:add offsite <backend> ...          # same details as on the or
 occ backup:list offsite                              # the snapshots must be listed
 occ backup:restore:full offsite <snapshot>
 ```
+
+The command refuses on an installation that already has more than one user, and asks before it
+starts; `--force` skips both (also needed to rerun it after it stopped halfway).
 
 Afterwards, check that users, files and the database are complete, and run a backup of the restored
 server. The restored installation keeps its own app configuration and secret.

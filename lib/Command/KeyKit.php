@@ -39,11 +39,18 @@ final class KeyKit extends Command {
 			$output->write($json, false, OutputInterface::OUTPUT_RAW);
 			return 0;
 		}
-		if (file_put_contents($file, $json) === false) {
-			$output->writeln("<error>Cannot write $file</error>");
+		// Created owner-only from the start (no window where it is world-readable), never over an
+		// existing file or symlink someone else may have placed at a predictable path.
+		$old = umask(0077);
+		try {
+			$fh = @fopen($file, 'xb');
+		} finally {
+			umask($old);
+		}
+		if ($fh === false || fwrite($fh, $json) !== strlen($json) || !fclose($fh)) {
+			$output->writeln("<error>Cannot write $file (it must not exist yet)</error>");
 			return 1;
 		}
-		@chmod($file, 0600);
 		$output->writeln("Recovery kit written to <info>$file</info>. Copy it off this server, then run <info>occ backup:key:confirm</info>.");
 		return 0;
 	}

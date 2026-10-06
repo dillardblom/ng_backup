@@ -64,7 +64,7 @@ final class RestoreFullService {
 		];
 	}
 
-	/** @return array{dbReport:array, dataFiles:int, configKeys:int} */
+	/** @return array{dbReport:array, dataFiles:int, configKeys:int, dbConsistent:bool} */
 	public function restoreFull(Target $target, string $snapshotId): array {
 		$check = $this->checkCompatibility($target, $snapshotId);
 		if (!$check['ok']) {
@@ -76,6 +76,7 @@ final class RestoreFullService {
 			$meta = $repo->snapshotMeta($snapshotId);
 
 			$dbReport = null;
+			$manifest = [];
 			if (isset($meta['db'])) {
 				$manifest = json_decode($repo->getObject($meta['db']), true, 512, JSON_THROW_ON_ERROR);
 				$prefix = $this->config->getSystemValueString('dbtableprefix', 'oc_');
@@ -124,7 +125,8 @@ final class RestoreFullService {
 				);
 			}
 
-			return ['dbReport' => $dbReport ?? ['skipped' => [], 'restored' => []], 'dataFiles' => $dataFiles, 'configKeys' => count($backupConfig)];
+			return ['dbReport' => $dbReport ?? ['skipped' => [], 'restored' => []], 'dataFiles' => $dataFiles, 'configKeys' => count($backupConfig),
+				'dbConsistent' => (bool)($manifest['consistent'] ?? true)];
 		});
 	}
 
