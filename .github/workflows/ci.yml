@@ -17,6 +17,8 @@ jobs:
         php: ['8.2', '8.3', '8.4']
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
@@ -29,6 +31,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
@@ -48,6 +52,8 @@ jobs:
         database: ['sqlite', 'mariadb', 'pgsql']
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Round trip on Nextcloud ${{ matrix.nextcloud }} / ${{ matrix.database }}
         run: tests/integration/matrix.sh "${{ matrix.nextcloud }}" "${{ matrix.database }}"
 
@@ -58,6 +64,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Round trip against S3 and SFTP
         run: tests/integration/targets-matrix.sh
 
@@ -73,6 +81,8 @@ jobs:
         nextcloud: ['32', '33', '34', '35']
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Set up a fresh Nextcloud instance
         run: |
           docker run -d --name ngbu -e SQLITE_DATABASE=nextcloud -e NEXTCLOUD_ADMIN_USER=admin \
@@ -90,5 +100,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Full restore round trip
         run: tests/integration/full-restore-roundtrip.sh 35-apache

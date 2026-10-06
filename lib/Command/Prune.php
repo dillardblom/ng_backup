@@ -43,9 +43,10 @@ final class Prune extends Command {
 			try {
 				$ru = $this->prune->applyUserExports($t, $dry);
 			} catch (\Throwable $e) {
+				// Snapshot retention is independent of this: report and carry on with it.
 				$output->writeln('<error>' . $t->getName() . ' (user exports): ' . $e->getMessage() . '</error>');
 				$rc = 1;
-				continue;
+				$ru = ['forgotten' => []];
 			}
 			if ($ru['forgotten'] !== []) {
 				$affected = count(array_unique(array_map(static fn (string $path): string => explode('/', $path)[1] ?? '', $ru['forgotten'])));

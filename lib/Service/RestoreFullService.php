@@ -70,7 +70,8 @@ final class RestoreFullService {
 		if (!$check['ok']) {
 			throw new \RuntimeException($this->describeBlockers($check));
 		}
-		return $this->withSharedLock($target, function () use ($target, $snapshotId) {
+		return $this->withSharedLock($target, function (callable $refresh) use ($target, $snapshotId) {
+			$beat = LeaseService::throttled($refresh);
 			$repo = $this->targets->repository($target);
 			$meta = $repo->snapshotMeta($snapshotId);
 
@@ -100,7 +101,7 @@ final class RestoreFullService {
 				$ownAppConfig = $this->preserveOwnAppConfig();
 				$dumper = new DbDumper($this->db->getInner(), $prefix);
 				try {
-					$dumper->restore($repo, $manifest, $dbReport);
+					$dumper->restore($repo, $manifest, $dbReport, $beat);
 				} finally {
 					$this->restoreOwnAppConfig($ownAppConfig);
 				}
@@ -114,7 +115,7 @@ final class RestoreFullService {
 			$backupConfig = $this->fetchBackupConfig($target, $snapshotId);
 
 			$dataDir = rtrim($this->config->getSystemValueString('datadirectory'), '/');
-			$dataFiles = $this->restore->restoreToDirectory($target, $snapshotId, 'data', $dataDir, stripPrefix: true);
+			$dataFiles = $this->restore->restoreToDirectory($target, $snapshotId, 'data', $dataDir, stripPrefix: true, heartbeat: $beat);
 
 			// Last step: nothing after this may need $this->targets->repository($target) again.
 			if ($backupConfig !== []) {
@@ -215,9 +216,8 @@ final class RestoreFullService {
 
 	private function withSharedLock(Target $target, callable $fn): mixed {
 		try {
-			// No progress from DbDumper::restore()/Repository::restore() to refresh this lease
-			// against; a very large instance could in theory outrun this TTL (same limitation as
-			// RestoreService::restoreToDirectory(), see also UserBackupService).
+			// Refreshed during the database and data restore (per row batch, per blob), so a
+			// cleanup cannot take over the location while a long restore is still reading it.
 			return $this->leases->with(PruneService::lockKey($target), LeaseService::SHARED, 7200, $fn);
 		} catch (LockedException) {
 			throw new \RuntimeException('A cleanup of ' . $target->getName() . ' is in progress; try again later');

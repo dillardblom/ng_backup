@@ -414,24 +414,6 @@
     <ArgumentTypeCoercion>
       <code><![CDATA[array_diff(range(1, self::MAX_SLOTS), $used)]]></code>
     </ArgumentTypeCoercion>
-    <InvalidReturnStatement>
-      <code><![CDATA[[
-			'version' => 1,
-			'app' => 'NG Backup',
-			'fingerprint' => $this->fingerprint(),
-			'kit_version' => $this->kitVersion(),
-			'confirmation_code' => $this->kitCode(),
-			'created' => gmdate('c'),
-			'wrapped_key' => $this->wrappedKey(),
-			'slots' => $this->slots(),
-			'instructions' => 'Keep this file safe, outside this server. Any one of the passphrases of the slots listed here opens it. '
-				. 'To restore on a new server: install NG Backup, add the backup location and enter this kit with one passphrase. '
-				. 'Without the kit (or the location) and a passphrase, the backups cannot be decrypted.',
-		]]]></code>
-    </InvalidReturnStatement>
-    <InvalidReturnType>
-      <code><![CDATA[array{version:int, app:string, fingerprint:string, created:string, wrapped_key:array, instructions:string}]]></code>
-    </InvalidReturnType>
     <LessSpecificReturnStatement>
       <code><![CDATA[array_map(fn ($s) => ['slot' => $s['slot'], 'label' => $s['label'], 'created' => $s['created']], $this->wrappedKey()['slots'])]]></code>
     </LessSpecificReturnStatement>

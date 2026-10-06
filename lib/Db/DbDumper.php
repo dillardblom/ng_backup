@@ -132,7 +132,7 @@ final class DbDumper {
 	 *
 	 * @param array{tables: array<string, array{blobs: list<string>, rows: int}>} $manifest
 	 */
-	public function restore(Repository $repo, array $manifest, ?array &$report = null): int {
+	public function restore(Repository $repo, array $manifest, ?array &$report = null, ?callable $heartbeat = null): int {
 		$sm = $this->db->createSchemaManager();
 		$existing = array_flip($sm->listTableNames());
 		$total = 0;
@@ -175,6 +175,9 @@ final class DbDumper {
 					if (count($batch) >= self::INSERT_ROWS) {
 						$total += $this->insertBatch($table, $columns, $batch, $binary);
 						$batch = [];
+						if ($heartbeat !== null) {
+							$heartbeat();
+						}
 					}
 				}
 				if ($batch !== []) {

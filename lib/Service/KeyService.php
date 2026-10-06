@@ -93,7 +93,9 @@ final class KeyService {
 		$this->cached = $keys;
 		$this->appConfig->setValueString(Application::APP_ID, self::KEY_WRAPPED, json_encode($kit['wrapped_key'], JSON_THROW_ON_ERROR), true, true);
 		$this->appConfig->setValueString(Application::APP_ID, self::KEY_FINGERPRINT, $this->fingerprintOf($keys), true);
-		$this->appConfig->setValueInt(Application::APP_ID, self::KEY_DELETE_DELAY, self::DEFAULT_DELETE_DELAY, true);
+		// Kits from before this field existed fall back to the default.
+		$delay = (int)($kit['delete_delay_days'] ?? self::DEFAULT_DELETE_DELAY);
+		$this->appConfig->setValueInt(Application::APP_ID, self::KEY_DELETE_DELAY, ($delay >= 1 && $delay <= 365) ? $delay : self::DEFAULT_DELETE_DELAY, true);
 		$this->appConfig->setValueInt(Application::APP_ID, self::KEY_KIT_VERSION, (int)($kit['kit_version'] ?? 1), true);
 		// Having and successfully using a real kit file is stronger proof than the normal
 		// download-and-confirm flow it replaces.
@@ -260,13 +262,14 @@ final class KeyService {
 		return $this->appConfig->getValueString(Application::APP_ID, self::KEY_FINGERPRINT, '', true);
 	}
 
-	/** @return array{version:int, app:string, fingerprint:string, created:string, wrapped_key:array, instructions:string} */
+	/** @return array{version:int, app:string, fingerprint:string, kit_version:int, delete_delay_days:int, confirmation_code:string, created:string, wrapped_key:array, slots:list<array{slot:int, label:string, created:int}>, instructions:string} */
 	public function recoveryKit(): array {
 		return [
 			'version' => 1,
 			'app' => 'NG Backup',
 			'fingerprint' => $this->fingerprint(),
 			'kit_version' => $this->kitVersion(),
+			'delete_delay_days' => $this->deleteDelayDays(),
 			'confirmation_code' => $this->kitCode(),
 			'created' => gmdate('c'),
 			'wrapped_key' => $this->wrappedKey(),

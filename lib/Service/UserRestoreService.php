@@ -45,7 +45,7 @@ final class UserRestoreService {
 	/** @throws UserMigrationException when user_migration is not enabled, or the restore itself fails */
 	public function restoreUser(Target $target, string $manifestPath, string $mode = self::MODE_REPLACE): IUser {
 		$service = $this->locator->get();
-		return $this->withSharedLock($target, function () use ($target, $manifestPath, $mode, $service): IUser {
+		return $this->withSharedLock($target, function (callable $refresh) use ($target, $manifestPath, $mode, $service): IUser {
 			$repo = $this->targets->repository($target);
 			// Only ever read a manifest the verified catalog actually recorded: a path alone
 			// (even one this app generated before) proves nothing about it still being current
@@ -80,7 +80,7 @@ final class UserRestoreService {
 			if ($existing !== null) {
 				// Never import over a live account: export its current state first, so nothing
 				// is lost if the restore turns out to be the wrong choice.
-				$safety = new RepositoryExportDestination($repo, $originalUid);
+				$safety = new RepositoryExportDestination($repo, $originalUid, LeaseService::throttled($refresh));
 				$service->export($safety, $existing);
 				$safetyManifestPath = $safety->manifestPath();
 				// Same race as UserBackupService::backupUser(): reopen the repository inside the
@@ -119,8 +119,7 @@ final class UserRestoreService {
 
 	private function withSharedLock(Target $target, callable $fn): mixed {
 		try {
-			// See UserBackupService::withSharedLock(): UserMigrationService exposes no progress,
-			// so this lease cannot be refreshed mid-call.
+			// Refreshed while the safety export writes data (see UserBackupService::withSharedLock()).
 			return $this->leases->with(PruneService::lockKey($target), LeaseService::SHARED, 3600, $fn);
 		} catch (LockedException) {
 			throw new \RuntimeException('A cleanup of ' . $target->getName() . ' is in progress; try again later');

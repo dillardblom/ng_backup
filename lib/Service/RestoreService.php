@@ -156,14 +156,23 @@ final class RestoreService {
 	 *             Repository::restore()); used to restore "data/" or "config/" straight into the
 	 *             real data/config directory for occ backup:restore:full.
 	 */
-	public function restoreToDirectory(Target $target, string $snapshotId, string $prefix, string $directory, bool $stripPrefix = false): int {
+	public function restoreToDirectory(Target $target, string $snapshotId, string $prefix, string $directory, bool $stripPrefix = false, ?callable $heartbeat = null): int {
 		if ($prefix !== '' && !Repository::isSafePath($prefix)) {
 			throw new \InvalidArgumentException('Invalid path: ' . $prefix);
 		}
 		if (!is_dir($directory) && !mkdir($directory, 0750, true) && !is_dir($directory)) {
 			throw new \RuntimeException("Cannot create $directory");
 		}
-		return $this->withSharedLock($target, fn () => $this->targets->repository($target)->restore($snapshotId, $directory, trim($prefix, '/') === '' ? '' : trim($prefix, '/') . '/', $stripPrefix), 3600);
+		return $this->withSharedLock($target, function (callable $refresh) use ($target, $snapshotId, $prefix, $directory, $stripPrefix, $heartbeat): int {
+			$own = LeaseService::throttled($refresh);
+			$beat = static function () use ($own, $heartbeat): void {
+				$own();
+				if ($heartbeat !== null) {
+					$heartbeat();
+				}
+			};
+			return $this->targets->repository($target)->restore($snapshotId, $directory, trim($prefix, '/') === '' ? '' : trim($prefix, '/') . '/', $stripPrefix, $beat);
+		}, 3600);
 	}
 
 	private function writeFile(Repository $repo, Folder $dest, string $relPath, array $entry): void {

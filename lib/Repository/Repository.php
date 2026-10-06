@@ -198,7 +198,7 @@ final class Repository {
 	 *             "config/" directly into the real data/config directory, not a subdirectory
 	 *             named after the prefix). Ignored when $prefix is '' (nothing to strip).
 	 */
-	public function restore(string $snapshotId, string $target, string $prefix = '', bool $stripPrefix = false): int {
+	public function restore(string $snapshotId, string $target, string $prefix = '', bool $stripPrefix = false, ?callable $heartbeat = null): int {
 		if ($prefix !== '' && !self::isSafePath(rtrim($prefix, '/'))) {
 			throw new RepositoryException('Invalid path prefix');
 		}
@@ -227,6 +227,9 @@ final class Repository {
 			}
 			foreach ($entry['b'] as $id) {
 				fwrite($out, $this->loadBlob($id));
+				if ($heartbeat !== null) {
+					$heartbeat();
+				}
 			}
 			fclose($out);
 			if (filesize($tmp) !== $entry['s']) {

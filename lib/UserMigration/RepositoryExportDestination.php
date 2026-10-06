@@ -28,6 +28,8 @@ final class RepositoryExportDestination implements IExportDestination {
 	public function __construct(
 		private Repository $repo,
 		private string $uid,
+		/** Called while data is written (per chunk), to keep the location lease alive. */
+		private ?\Closure $heartbeat = null,
 	) {
 		$this->exportId = gmdate('Ymd\THis\Z') . '-' . bin2hex(random_bytes(4));
 	}
@@ -36,6 +38,7 @@ final class RepositoryExportDestination implements IExportDestination {
 		$writer = $this->repo->blobWriter($this->stats);
 		$writer->write($content);
 		$this->entries[self::norm($path)] = ['t' => 'f', 'b' => $writer->finish(), 's' => strlen($content)];
+		$this->beat();
 	}
 
 	public function addFileAsStream(string $path, $stream): void {
@@ -46,6 +49,7 @@ final class RepositoryExportDestination implements IExportDestination {
 				throw new UserMigrationException('Read error while exporting ' . $path);
 			}
 			$writer->write($chunk);
+			$this->beat();
 		}
 		$this->entries[self::norm($path)] = ['t' => 'f', 'b' => $writer->finish(), 's' => $writer->bytes()];
 	}
@@ -90,6 +94,12 @@ final class RepositoryExportDestination implements IExportDestination {
 
 	public function stats(): array {
 		return $this->stats;
+	}
+
+	private function beat(): void {
+		if ($this->heartbeat !== null) {
+			($this->heartbeat)();
+		}
 	}
 
 	private static function norm(string $path): string {

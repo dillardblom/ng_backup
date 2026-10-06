@@ -34,9 +34,9 @@ final class UserBackupService {
 	/** @throws UserMigrationException when user_migration is not enabled, or the export itself fails */
 	public function backupUser(Target $target, IUser $user): string {
 		$service = $this->locator->get();
-		return $this->withSharedLock($target, function () use ($target, $user, $service) {
+		return $this->withSharedLock($target, function (callable $refresh) use ($target, $user, $service) {
 			$repo = $this->targets->repository($target);
-			$dest = new RepositoryExportDestination($repo, $user->getUID());
+			$dest = new RepositoryExportDestination($repo, $user->getUID(), LeaseService::throttled($refresh));
 			$service->export($dest, $user);
 			// A short exclusive lock around the catalog write only: the shared lock above
 			// allows another concurrent backup (full or per-user) to be writing the catalog at
@@ -49,10 +49,7 @@ final class UserBackupService {
 
 	private function withSharedLock(Target $target, callable $fn): mixed {
 		try {
-			// UserMigrationService::export() exposes no progress, so unlike
-			// RestoreService::restoreUserFiles() this lease cannot be refreshed mid-call; a very
-			// large account could in theory outrun this TTL. Resumable, step-based per-user
-			// backup (like the main BackupService run) is a possible future improvement.
+			// Refreshed by RepositoryExportDestination as it writes data, so a long export keeps it.
 			return $this->leases->with(PruneService::lockKey($target), LeaseService::SHARED, 3600, $fn);
 		} catch (LockedException) {
 			throw new \RuntimeException('A cleanup of ' . $target->getName() . ' is in progress; try again later');
