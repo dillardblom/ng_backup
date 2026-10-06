@@ -155,12 +155,16 @@ final class StorageBackend implements IBackend {
 		closedir($dh);
 	}
 
-	/** Bytes left to read in a seekable $stream, or null when it cannot tell. @param resource $stream */
+	/**
+	 * Bytes left to read in a local $stream (php://temp, php://memory or a plain file), or null:
+	 * stream wrappers of remote storages do not report a reliable size.
+	 */
 	public static function remaining(mixed $stream): ?int {
 		if (!is_resource($stream)) {
 			return null;
 		}
-		if (!(stream_get_meta_data($stream)['seekable'] ?? false)) {
+		$meta = stream_get_meta_data($stream);
+		if (!($meta['seekable'] ?? false) || !in_array($meta['wrapper_type'] ?? '', ['PHP', 'plainfile'], true)) {
 			return null;
 		}
 		$stat = fstat($stream);

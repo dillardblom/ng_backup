@@ -68,7 +68,7 @@ run_on ngb-frt-restore backup:target:add offsite local -a null::null -o datadir=
 run_on ngb-frt-restore backup:list offsite | grep -q "$SNAP" || fail "the origin's snapshot is not listed after connecting the location"
 ok "recovery kit imported, existing repository adopted, snapshot visible"
 
-run_on ngb-frt-restore backup:restore:full offsite "$SNAP" >/dev/null || fail "restore:full"
+run_on ngb-frt-restore backup:restore:full offsite "$SNAP" --no-interaction >/dev/null || fail "restore:full"
 ok "backup:restore:full completed"
 
 # Everything below must work in a FRESH occ process (a new PHP process per docker exec), since

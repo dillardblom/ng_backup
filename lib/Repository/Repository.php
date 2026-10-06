@@ -385,7 +385,7 @@ final class Repository {
 		// either the old state or the new one plus unreferenced leftovers, never a catalog entry
 		// pointing at a missing object. The snapshot object is bound to its id (not its path),
 		// so it can be copied as raw bytes.
-		$this->backend->put('trash/snapshots/' . $snapshotId, $this->backend->get('snapshots/' . $snapshotId));
+		$this->copyRaw('snapshots/' . $snapshotId, 'trash/snapshots/' . $snapshotId);
 		$this->putObject('trash/info/' . $snapshotId, json_encode(['forgottenAt' => time(), 'by' => $by, 'db' => $meta['db'] ?? null,
 			'dbInTrash' => $dbInTrash, 'time' => $meta['time'] ?? null, 'label' => $meta['label'] ?? ''], JSON_THROW_ON_ERROR));
 		unset($this->catalog->snapshots[$snapshotId]);
@@ -405,7 +405,7 @@ final class Repository {
 			$this->putObject($info['db'], $this->getObject($info['dbInTrash']));
 		}
 		// Same order as forget(): copy, switch the catalog, then delete the trash copies.
-		$this->backend->put('snapshots/' . $snapshotId, $this->backend->get('trash/snapshots/' . $snapshotId));
+		$this->copyRaw('trash/snapshots/' . $snapshotId, 'snapshots/' . $snapshotId);
 		$this->catalog->snapshots[$snapshotId] = true;
 		unset($this->catalog->trash[$snapshotId]);
 		$this->catalog->write();
@@ -414,6 +414,25 @@ final class Repository {
 		}
 		$this->backend->delete('trash/snapshots/' . $snapshotId);
 		$this->backend->delete('trash/info/' . $snapshotId);
+	}
+
+	/** Copy an object as raw bytes, buffered locally (remote read streams cannot be uploaded directly everywhere). */
+	private function copyRaw(string $from, string $to): void {
+		$in = $this->backend->get($from);
+		$buffer = fopen('php://temp/maxmemory:' . (4 * 1048576), 'w+b');
+		if ($buffer === false) {
+			fclose($in);
+			throw new RepositoryException("Cannot buffer $from");
+		}
+		try {
+			if (stream_copy_to_stream($in, $buffer) === false) {
+				throw new RepositoryException("Cannot read $from");
+			}
+		} finally {
+			fclose($in);
+		}
+		rewind($buffer);
+		$this->backend->put($to, $buffer);
 	}
 
 	/** Record a user_migration export's manifest in the catalog (rollback-protected like a snapshot). */
