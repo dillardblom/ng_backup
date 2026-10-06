@@ -14,7 +14,8 @@ occ backup:key:confirm -u <your-admin-uid> --code=<code shown> --confirm="Yes, I
 
 - The passphrase protects the backup. Keep it somewhere other than this server.
 - Optional: extra passphrases for other people with `occ backup:key:slot:add --label="..."`.
-  Any one passphrase is enough to restore.
+  Any one passphrase is enough to restore. Removing a slot later does not revoke access for someone
+  who kept an old kit and that passphrase (see "Known limitations" in the README).
 - The recovery kit (`/var/tmp/ng_backup-kit.json` above) is also required for disaster recovery. The web
   user writes it there; then move it off the server as root, next to the passphrase, and delete the
   copy in `/var/tmp`. Without the kit and a passphrase, the backup cannot be read.
@@ -117,7 +118,8 @@ occ backup:user:restore offsite users/<uid>/<exportId> --mode=as-backup
 ## 7. Disaster recovery: restore the whole server
 
 Use a fresh Nextcloud installation of the same major version, with NG Backup installed and
-the same location available:
+the same location available. For a test, use a **copy** of the location: two servers writing to one
+location break each other's catalog.
 
 ```
 occ backup:key:import /path/ng_backup-kit.json --passphrase-file=/path/passphrase
