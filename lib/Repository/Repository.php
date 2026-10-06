@@ -716,6 +716,40 @@ final class Repository {
 		return $stats;
 	}
 
+	/**
+	 * Same checks as verify(), for a user export: every blob its manifest references must be in
+	 * the freshly re-authenticated index with its pack present; $deep also decrypts each.
+	 *
+	 * @return array{filesChecked:int, blobsChecked:int, bytesChecked:int, missing:list<string>, failed:list<string>}
+	 */
+	public function verifyUserExport(string $manifestPath, bool $deep = false, ?callable $heartbeat = null): array {
+		if (!$this->isRecordedUserExport($manifestPath)) {
+			throw new RepositoryException("$manifestPath is not a recorded user export for this location");
+		}
+		$heartbeat ??= static function (): void {
+		};
+		$this->index->load(true);
+		$stats = ['filesChecked' => 0, 'blobsChecked' => 0, 'bytesChecked' => 0, 'missing' => [], 'failed' => []];
+		$seen = [];
+		$packSeen = [];
+		$manifest = json_decode($this->getObject($manifestPath), true, 512, JSON_THROW_ON_ERROR);
+		foreach ($manifest['entries'] as $entry) {
+			if (($entry['t'] ?? '') !== 'f') {
+				continue;
+			}
+			$stats['filesChecked']++;
+			foreach ($entry['b'] ?? [] as $id) {
+				if (isset($seen[$id])) {
+					continue;
+				}
+				$seen[$id] = true;
+				$this->verifyBlob($id, $deep, $stats, $packSeen);
+				$heartbeat();
+			}
+		}
+		return $stats;
+	}
+
 	/** @param array<string, bool> $packSeen */
 	private function verifyBlob(string $id, bool $deep, array &$stats, array &$packSeen): void {
 		if (!$this->index->has($id)) {

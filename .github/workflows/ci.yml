@@ -63,19 +63,24 @@ jobs:
 
   integration-user:
     # Per-user backup/restore via user_migration (occ backup:backup:user / backup:restore:user),
-    # an optional dependency installed from the app store. Does not depend on the Nextcloud
-    # version or database beyond what the main integration job already covers, so this runs once.
+    # an optional dependency installed from the app store. It calls user_migration's internal
+    # UserMigrationService, whose API can change between Nextcloud versions, so this runs on every
+    # supported version (not the database, which the main integration job already covers).
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        nextcloud: ['32', '33', '34', '35']
     steps:
       - uses: actions/checkout@v4
       - name: Set up a fresh Nextcloud instance
         run: |
           docker run -d --name ngbu -e SQLITE_DATABASE=nextcloud -e NEXTCLOUD_ADMIN_USER=admin \
             -e NEXTCLOUD_ADMIN_PASSWORD=admin-user-roundtrip -e NEXTCLOUD_TRUSTED_DOMAINS=localhost \
-            -v "$PWD:/var/www/html/custom_apps/ng_backup:ro" nextcloud:35-apache
+            -v "$PWD:/var/www/html/custom_apps/ng_backup:ro" nextcloud:${{ matrix.nextcloud }}-apache
           for i in $(seq 1 90); do docker exec -u www-data ngbu php occ status 2>/dev/null | grep -q "installed: true" && break; sleep 4; done
           docker exec ngbu chown www-data:www-data /var/www/html/custom_apps
-      - name: Per-user backup/restore round trip
+      - name: Per-user backup/restore round trip on Nextcloud ${{ matrix.nextcloud }}
         run: tests/integration/user-roundtrip.sh "docker exec -u www-data ngbu" /var/www/html/data
 
   integration-full-restore:

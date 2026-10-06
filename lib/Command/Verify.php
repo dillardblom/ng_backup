@@ -49,13 +49,17 @@ HELP);
 	protected function execute(InputInterface $input, OutputInterface $output): int {
 		try {
 			$target = $this->targets->get($input->getArgument('target'));
-			$result = $this->verify->verify($target, (string)$input->getArgument('snapshot'), (bool)$input->getOption('deep'));
+			$ref = (string)$input->getArgument('snapshot');
+			$deep = (bool)$input->getOption('deep');
+			$result = str_starts_with($ref, 'users/')
+				? $this->verify->verifyUserExport($target, $ref, $deep)
+				: $this->verify->verify($target, $ref, $deep);
 		} catch (\Throwable $e) {
 			$output->writeln('<error>' . $e->getMessage() . '</error>');
 			return 1;
 		}
 		$output->writeln(sprintf('%d files, %d blobs checked%s.', $result['filesChecked'], $result['blobsChecked'],
-			$input->getOption('deep') ? sprintf(' (%.1f MiB decrypted)', $result['bytesChecked'] / 1048576) : ''));
+			$deep ? sprintf(' (%.1f MiB decrypted)', $result['bytesChecked'] / 1048576) : ''));
 		if ($result['missing'] !== []) {
 			$output->writeln('<error>' . count($result['missing']) . ' blob(s) missing from the index:</error> ' . implode(', ', $result['missing']));
 		}

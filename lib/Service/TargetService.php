@@ -53,6 +53,12 @@ final class TargetService {
 		if (!preg_match('/^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$/', $name)) {
 			throw new \InvalidArgumentException('Name: letters, digits, space, _ . - (max 64)');
 		}
+		// Without the native extension files_external falls back to the smbclient binary, which
+		// registers fine but cannot seek: the first backup then fails with "Seek failed". Refuse
+		// up front instead of letting the admin find out from a failed run.
+		if ($backend === 'smb' && !extension_loaded('smbclient')) {
+			throw new \InvalidArgumentException('The SMB backend needs the PHP smbclient extension (pecl install smbclient); the smbclient binary alone cannot seek and every backup would fail');
+		}
 		try {
 			$this->mapper->findByName($name);
 			throw new \InvalidArgumentException("A target named '$name' already exists");
