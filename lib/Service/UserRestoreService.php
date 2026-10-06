@@ -53,7 +53,8 @@ final class UserRestoreService {
 			if (!$repo->isRecordedUserExport($manifestPath)) {
 				throw new \InvalidArgumentException("$manifestPath is not a recorded user export for this location");
 			}
-			$source = new RepositoryImportSource($repo, $manifestPath);
+			$beat = LeaseService::throttled($refresh);
+			$source = new RepositoryImportSource($repo, $manifestPath, $beat);
 			$originalUid = $source->getOriginalUid();
 
 			if ($mode === self::MODE_AS_BACKUP) {
@@ -80,7 +81,7 @@ final class UserRestoreService {
 			if ($existing !== null) {
 				// Never import over a live account: export its current state first, so nothing
 				// is lost if the restore turns out to be the wrong choice.
-				$safety = new RepositoryExportDestination($repo, $originalUid, LeaseService::throttled($refresh));
+				$safety = new RepositoryExportDestination($repo, $originalUid, $beat);
 				$service->export($safety, $existing);
 				$safetyManifestPath = $safety->manifestPath();
 				// Same race as UserBackupService::backupUser(): reopen the repository inside the
@@ -119,7 +120,7 @@ final class UserRestoreService {
 
 	private function withSharedLock(Target $target, callable $fn): mixed {
 		try {
-			// Refreshed while the safety export writes data (see UserBackupService::withSharedLock()).
+			// Refreshed while the safety export writes and the import reads (see UserBackupService::withSharedLock()).
 			return $this->leases->with(PruneService::lockKey($target), LeaseService::SHARED, 3600, $fn);
 		} catch (LockedException) {
 			throw new \RuntimeException('A cleanup of ' . $target->getName() . ' is in progress; try again later');

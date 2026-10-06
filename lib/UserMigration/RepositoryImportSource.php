@@ -20,6 +20,8 @@ final class RepositoryImportSource implements IImportSource {
 	public function __construct(
 		private Repository $repo,
 		string $manifestPath,
+		/** Called while blobs are read, to keep the location lease alive. */
+		private ?\Closure $heartbeat = null,
 	) {
 		$this->manifest = json_decode($repo->getObject($manifestPath), true, 512, JSON_THROW_ON_ERROR);
 	}
@@ -40,6 +42,9 @@ final class RepositoryImportSource implements IImportSource {
 			throw new UserMigrationException('Cannot buffer ' . $path);
 		}
 		foreach ($this->repo->readBlobs($entry['b']) as $data) {
+			if ($this->heartbeat !== null) {
+				($this->heartbeat)();
+			}
 			for ($done = 0, $len = strlen($data); $done < $len; $done += $n) {
 				$n = fwrite($stream, $done === 0 ? $data : substr($data, $done));
 				if ($n === false || $n === 0) {
