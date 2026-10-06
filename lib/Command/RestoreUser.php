@@ -9,6 +9,7 @@ namespace OCA\NgBackup\Command;
 
 use OCA\NgBackup\Service\TargetService;
 use OCA\NgBackup\Service\UserRestoreService;
+use OCA\NgBackup\UserMigration\UserMigrationInstaller;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
@@ -19,6 +20,7 @@ final class RestoreUser extends Command {
 	public function __construct(
 		private TargetService $targets,
 		private UserRestoreService $userRestore,
+		private UserMigrationInstaller $installer,
 	) {
 		parent::__construct();
 	}
@@ -29,6 +31,7 @@ final class RestoreUser extends Command {
 			->addArgument('target', InputArgument::REQUIRED, 'Location name or id')
 			->addArgument('manifest', InputArgument::REQUIRED, 'Manifest path printed by backup:user:backup (users/<uid>/<exportId>)')
 			->addOption('mode', 'm', InputOption::VALUE_REQUIRED, 'replace or as-backup', UserRestoreService::MODE_REPLACE)
+			->addOption('install-user-migration', null, InputOption::VALUE_NONE, 'Install and enable user_migration if it is missing (non-interactive consent)')
 			->setHelp(<<<'HELP'
 Never imports over a live account. Modes:
   replace    (default) safety-exports the current account first, then deletes and recreates it
@@ -45,6 +48,8 @@ HELP);
 
 	protected function execute(InputInterface $input, OutputInterface $output): int {
 		try {
+			$this->installer->ensureEnabled($input, $output);
+			$output->writeln('<comment>Note: on restore, user_migration only imports the app settings on its own allowlist (e.g. calendar view and reminder settings); other app settings of this user are skipped. Reason: NG Backup uses user_migration\'s importer; widening the list would mean building a settings importer of our own.</comment>');
 			$target = $this->targets->get($input->getArgument('target'));
 			$user = $this->userRestore->restoreUser($target, (string)$input->getArgument('manifest'), (string)$input->getOption('mode'));
 		} catch (\Throwable $e) {

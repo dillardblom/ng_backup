@@ -48,8 +48,9 @@ final class Prune extends Command {
 				continue;
 			}
 			if ($ru['forgotten'] !== []) {
+				$affected = count(array_unique(array_map(static fn (string $path): string => explode('/', $path)[1] ?? '', $ru['forgotten'])));
 				$output->writeln(sprintf('<info>%s</info>: %s %d user export(s) for %d user(s)',
-					$t->getName(), $dry ? 'would forget' : 'forgot', count($ru['forgotten']), count($ru['kept'])));
+					$t->getName(), $dry ? 'would forget' : 'forgot', count($ru['forgotten']), $affected));
 			}
 			try {
 				$r = $this->prune->apply($t, $dry);

@@ -50,8 +50,13 @@ final class Retention extends Command {
 			}
 		}
 		if ($input->getOption('user-last') !== null) {
+			$userLast = (string)$input->getOption('user-last');
+			if (!ctype_digit($userLast)) {
+				$output->writeln('<error>--user-last must be a whole number</error>');
+				return 1;
+			}
 			try {
-				$this->prune->setUserExportRetention((int)$input->getOption('user-last'));
+				$this->prune->setUserExportRetention((int)$userLast);
 			} catch (\InvalidArgumentException $e) {
 				$output->writeln('<error>' . $e->getMessage() . '</error>');
 				return 1;

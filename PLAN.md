@@ -350,8 +350,12 @@ minimale volledige restore (`occ backup:restore:full` op een verse installatie) 
    (standaard 3, per installatie, net als de bestaande snapshot-policy), toegepast door
    `occ backup:prune` (geen prullenbak voor user-exports, in tegenstelling tot snapshots — on-demand,
    niet het primaire vangnet).
-5. Automatische user-export inpluggen in het reguliere schema (of expliciet besluit dat het on-demand blijft)
-9. SMB/NFS intern testen op de eigen OMV-instantie — nog open (intern, niet in CI)
+5. Automatische user-export in het reguliere schema — **naar backlog** (niet voor deze release; on-demand blijft)
+9. SMB-roundtrip (protocol, niet een specifieke server) — **klaar** (2026-10-06): CI-matrix, 2 GB-roundtrip en
+   user-export via SMB; NFS via de OMV-share getest (`local`-backend op een gemounte share, 2026-10-06)
+10. `backup:user:restore` zonder user_migration: vraagt om toestemming om de app te installeren en te activeren (of
+   `--install-user-migration`) — **klaar** (2026-10-06); waarschuwing over de settings-allowlist — **klaar**;
+   agenda/contacten bij migratie naar een server zonder die gebruiker — **getest** (2026-10-06, naar `migrated-personal`/`migrated-contacts`)
 
 Doorgeschoven naar **v1.3.0** (fase 3, niet meer fase 2): in-place volledige restore
 (eigen restore-modus i.p.v. onderhoudsmodus) en zelfbediening voor gebruikers (eigen bestanden

@@ -152,7 +152,11 @@ final class TargetService {
 	}
 
 	public function get(string $nameOrId): Target {
-		return ctype_digit($nameOrId) ? $this->mapper->find((int)$nameOrId) : $this->mapper->findByName($nameOrId);
+		try {
+			return ctype_digit($nameOrId) ? $this->mapper->find((int)$nameOrId) : $this->mapper->findByName($nameOrId);
+		} catch (DoesNotExistException) {
+			throw new \InvalidArgumentException("No such location: $nameOrId");
+		}
 	}
 
 	/** Size limit for the data stored on this location (null = none). */

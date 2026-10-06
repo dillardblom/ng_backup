@@ -9,10 +9,12 @@ namespace OCA\NgBackup\Command;
 
 use OCA\NgBackup\Service\TargetService;
 use OCA\NgBackup\Service\UserBackupService;
+use OCA\NgBackup\UserMigration\UserMigrationInstaller;
 use OCP\IUserManager;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 final class BackupUser extends Command {
@@ -20,6 +22,7 @@ final class BackupUser extends Command {
 		private TargetService $targets,
 		private UserBackupService $userBackup,
 		private IUserManager $userManager,
+		private UserMigrationInstaller $installer,
 	) {
 		parent::__construct();
 	}
@@ -29,6 +32,7 @@ final class BackupUser extends Command {
 			->setDescription('Back up one user via user_migration (account, settings, files and everything else a migrator covers)')
 			->addArgument('target', InputArgument::REQUIRED, 'Location name or id')
 			->addArgument('user', InputArgument::REQUIRED, 'User id')
+			->addOption('install-user-migration', null, InputOption::VALUE_NONE, 'Install and enable user_migration if it is missing (non-interactive consent)')
 			->setHelp(<<<'HELP'
 Streams a user_migration export straight into the encrypted repository: no zip, no copy in the
 user's own storage. Shares data with the regular backup; this needs the user_migration app
@@ -47,6 +51,7 @@ HELP);
 			return 1;
 		}
 		try {
+			$this->installer->ensureEnabled($input, $output);
 			$target = $this->targets->get($input->getArgument('target'));
 			$manifest = $this->userBackup->backupUser($target, $user);
 		} catch (\Throwable $e) {
