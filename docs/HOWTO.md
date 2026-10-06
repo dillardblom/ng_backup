@@ -103,8 +103,10 @@ occ backup:user:restore offsite users/<uid>/<exportId> --mode=as-backup
   installation; run it once more.
 - `replace` first makes a safety export of the current account, then recreates the user under the
   same id. `as-backup` restores into `<uid>-bak` and leaves the original untouched.
-- A restore onto a server where the user does not exist works. Calendars and address books are
-  placed in `migrated-personal` and `migrated-contacts`, not in the original names.
+- A restore onto a server where the user does not exist works. Calendars and address books get an
+  internal name with the prefix `migrated-` (for example `migrated-personal`). That prefix comes from
+  user_migration and cannot be turned off. The user can change the display name of these calendars and
+  address books in the app as usual; the internal name stays as it is.
 - **Settings:** on restore, `user_migration` imports only the app settings on its own allowlist
   (for example calendar view and reminder settings). Other app settings of the user are skipped.
   NG Backup reuses `user_migration`'s importer, so this list is not extended.

@@ -356,6 +356,8 @@ minimale volledige restore (`occ backup:restore:full` op een verse installatie) 
 10. `backup:user:restore` zonder user_migration: vraagt om toestemming om de app te installeren en te activeren (of
    `--install-user-migration`) — **klaar** (2026-10-06); waarschuwing over de settings-allowlist — **klaar**;
    agenda/contacten bij migratie naar een server zonder die gebruiker — **getest** (2026-10-06, naar `migrated-personal`/`migrated-contacts`)
+    Backlog: (a) de originele weergavenaam herstellen (het label uit de export is niet getest als
+    weergavenaam); (b) de interne `migrated-`-naam hernoemen (vereist directe databasewijziging, niet voor de beta).
 
 Doorgeschoven naar **v1.3.0** (fase 3, niet meer fase 2): in-place volledige restore
 (eigen restore-modus i.p.v. onderhoudsmodus) en zelfbediening voor gebruikers (eigen bestanden
