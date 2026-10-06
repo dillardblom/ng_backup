@@ -288,6 +288,17 @@ final class Repository {
 	 * @param iterable<string> $lines
 	 */
 	public function writeSnapshot(string $snapshotId, array $meta, iterable $lines): void {
+		$this->putSnapshot($snapshotId, $meta, $lines);
+		$this->recordSnapshot($snapshotId);
+	}
+
+	/**
+	 * Store a snapshot object without touching the catalog. Use recordSnapshot() afterwards, from a
+	 * repository opened inside the catalog lock, so the catalog write builds on the latest generation.
+	 *
+	 * @param iterable<string> $lines
+	 */
+	public function putSnapshot(string $snapshotId, array $meta, iterable $lines): void {
 		$tree = fopen('php://temp/maxmemory:' . (4 * 1048576), 'w+b');
 		fwrite($tree, json_encode(['snapshot' => $snapshotId] + $meta, JSON_THROW_ON_ERROR) . "\n");
 		foreach ($lines as $line) {
@@ -301,6 +312,9 @@ final class Repository {
 		fclose($tree);
 		rewind($encrypted);
 		$this->backend->put('snapshots/' . $snapshotId, $encrypted);
+	}
+
+	public function recordSnapshot(string $snapshotId): void {
 		$this->catalog->snapshots[$snapshotId] = true;
 		$this->catalog->write();
 	}
