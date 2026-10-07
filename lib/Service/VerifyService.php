@@ -18,12 +18,12 @@ final class VerifyService {
 	) {
 	}
 
-	/** @return array{filesChecked:int, blobsChecked:int, bytesChecked:int, missing:list<string>, failed:list<string>} */
+	/** @return array{filesChecked:int, blobsChecked:int, bytesChecked:int, missing:list<string>, failed:list<string>, unreadable:list<string>, readError:string} */
 	public function verify(Target $target, string $snapshotId, bool $deep = false): array {
 		return $this->run($target, $deep, fn (\OCA\NgBackup\Repository\Repository $repo, callable $heartbeat): array => $repo->verify($snapshotId, $deep, $heartbeat));
 	}
 
-	/** @return array{filesChecked:int, blobsChecked:int, bytesChecked:int, missing:list<string>, failed:list<string>} */
+	/** @return array{filesChecked:int, blobsChecked:int, bytesChecked:int, missing:list<string>, failed:list<string>, unreadable:list<string>, readError:string} */
 	public function verifyUserExport(Target $target, string $manifestPath, bool $deep = false): array {
 		return $this->run($target, $deep, fn (\OCA\NgBackup\Repository\Repository $repo, callable $heartbeat): array => $repo->verifyUserExport($manifestPath, $deep, $heartbeat));
 	}

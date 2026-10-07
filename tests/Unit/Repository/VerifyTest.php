@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace OCA\NgBackup\Tests\Unit\Repository;
 
+use OCA\NgBackup\Backend\BackendException;
+use OCA\NgBackup\Backend\IBackend;
 use OCA\NgBackup\Backend\LocalBackend;
 use OCA\NgBackup\Crypto\KeyRing;
 use OCA\NgBackup\Repository\Repository;
@@ -91,5 +93,70 @@ class VerifyTest extends TestCase {
 		$result = $this->open()->verify($s['snapshot'], deep: true);
 
 		$this->assertNotSame([], $result['failed']);
+	}
+
+	public function testDeepVerifyRetriesAReadThatFailsOnce(): void {
+		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'));
+		$s = $repo->backupDirectory($this->src);
+		$flaky = new FlakyRangeBackend($this->backend, failures: 1);
+
+		$result = Repository::openWithKey($flaky, $this->keys, null, null)->verify($s['snapshot'], deep: true);
+
+		$this->assertSame(200000, $result['bytesChecked']);
+		$this->assertSame([], $result['failed']);
+		$this->assertSame([], $result['unreadable']);
+	}
+
+	public function testDeepVerifyReportsAPersistentReadErrorAsUnreadableNotCorrupted(): void {
+		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'));
+		$s = $repo->backupDirectory($this->src);
+		$broken = new FlakyRangeBackend($this->backend, failures: PHP_INT_MAX);
+
+		$result = Repository::openWithKey($broken, $this->keys, null, null)->verify($s['snapshot'], deep: true);
+
+		$this->assertSame([], $result['failed']);
+		$this->assertNotSame([], $result['unreadable']);
+		$this->assertSame('connection reset', $result['readError']);
+	}
+}
+
+/** Delegates to a real backend, but getRange() throws for the first $failures calls. */
+final class FlakyRangeBackend implements IBackend {
+	public function __construct(
+		private IBackend $inner,
+		private int $failures,
+	) {
+	}
+
+	public function put(string $path, $stream): void {
+		$this->inner->put($path, $stream);
+	}
+
+	public function get(string $path) {
+		return $this->inner->get($path);
+	}
+
+	public function getRange(string $path, int $offset, int $length): string {
+		if ($this->failures > 0) {
+			$this->failures--;
+			throw new BackendException('connection reset');
+		}
+		return $this->inner->getRange($path, $offset, $length);
+	}
+
+	public function exists(string $path): bool {
+		return $this->inner->exists($path);
+	}
+
+	public function move(string $from, string $to): void {
+		$this->inner->move($from, $to);
+	}
+
+	public function list(string $prefix): array {
+		return $this->inner->list($prefix);
+	}
+
+	public function delete(string $path): void {
+		$this->inner->delete($path);
 	}
 }
