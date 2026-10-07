@@ -12,6 +12,8 @@ instead carried by the app description, the git tag, the release, and this file.
 ### Fixed
 - Adding a backup location in the web interface failed with "Request failed with status code 403"
   when the login was more than 30 minutes old: the form did not ask for password confirmation.
+- Settings page: the "Backup and restore" / "Settings" tabs line up with the sections below them.
+- Backups: the runs table scrolls horizontally on narrow screens instead of running off the page.
 
 ## [0.9.1-beta.2] - 2026-10-07
 

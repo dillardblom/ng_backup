@@ -82,6 +82,7 @@ onBeforeUnmount(() => clearTimeout(timer))
 .ngb-tabs {
 	display: flex;
 	gap: 8px;
-	margin: 0 0 12px;
+	/* Same inline margin as NcSettingsSection, so the tabs line up with the section content */
+	margin: 0 calc(var(--default-grid-baseline) * 7) 12px;
 }
 </style>
