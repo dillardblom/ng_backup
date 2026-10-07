@@ -118,6 +118,15 @@ class VerifyTest extends TestCase {
 		$this->assertNotSame([], $result['unreadable']);
 		$this->assertSame('connection reset', $result['readError']);
 	}
+
+	public function testDeepVerifyDoesNotHideAProgrammingError(): void {
+		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'));
+		$s = $repo->backupDirectory($this->src);
+		$buggy = new FlakyRangeBackend($this->backend, failures: PHP_INT_MAX, error: new \TypeError('bug'));
+
+		$this->expectException(\TypeError::class);
+		Repository::openWithKey($buggy, $this->keys, null, null)->verify($s['snapshot'], deep: true);
+	}
 }
 
 /** Delegates to a real backend, but getRange() throws for the first $failures calls. */
@@ -125,6 +134,7 @@ final class FlakyRangeBackend implements IBackend {
 	public function __construct(
 		private IBackend $inner,
 		private int $failures,
+		private ?\Throwable $error = null,
 	) {
 	}
 
@@ -139,7 +149,7 @@ final class FlakyRangeBackend implements IBackend {
 	public function getRange(string $path, int $offset, int $length): string {
 		if ($this->failures > 0) {
 			$this->failures--;
-			throw new BackendException('connection reset');
+			throw $this->error ?? new BackendException('connection reset');
 		}
 		return $this->inner->getRange($path, $offset, $length);
 	}

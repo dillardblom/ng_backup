@@ -840,7 +840,7 @@ final class Repository {
 		for ($attempt = 1; $attempt <= self::VERIFY_READ_ATTEMPTS && $encrypted === null; $attempt++) {
 			try {
 				$encrypted = $this->backend->getRange('packs/' . substr($pack, 0, 2) . '/' . $pack, $offset, $length);
-			} catch (\Throwable $e) {
+			} catch (\Exception $e) { // storage adapters throw their own exceptions; \Error (a bug) is not retried
 				$stats['readError'] = $e->getMessage();
 			}
 		}
