@@ -6,7 +6,9 @@ All notable changes to NG Backup are documented here. The format follows
 own `info.xsd` doesn't allow a `-alpha`/`-beta`/`-rc` suffix there); the stability stage is instead
 carried by the git tag, the release, and this file.
 
-## [Unreleased]
+## [0.9.1-beta.2] - 2026-10-07
+
+Second beta, the first release in the Nextcloud app store (signed).
 
 ### Added
 - App store listing: screenshots, website, repository and documentation link in `appinfo/info.xml`.
@@ -100,5 +102,6 @@ and not implemented yet.
 - See the "Storage backend experiences" section of the README for provider-specific quirks found
   so far (e.g. Hetzner Storage Box sub-accounts).
 
+[0.9.1-beta.2]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.1-beta.2
 [0.9.0-beta.1]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.0-beta.1
 [0.1.0-alpha.1]: https://github.com/dillardblom/ng_backup/releases/tag/v0.1.0-alpha.1
