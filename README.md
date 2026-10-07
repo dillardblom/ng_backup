@@ -126,6 +126,18 @@ Contributions welcome via PR — add what you ran into with your own provider.
   verified whether this also applies to a Hetzner Storage Box **main** account (only tested with a
   sub-account so far) — if you've tried a main account, please say so in a PR.
 
+- **Hetzner Storage Box over WebDAV and SMB (sub-accounts, 2026-10-07):** both work end to end
+  (backup, incremental run, restore of a folder, verify), tested from outside the Hetzner network
+  with about 66 MiB of data. WebDAV: host `https://uXXXXX-subN.your-storagebox.de`, and the `root`
+  must be a folder that already exists (or empty): WebDAV does not create missing parent folders,
+  so a root that doesn't exist yet fails `backup:target:add` with `Sabre\HTTP\ClientHttpException:
+  Conflict`. SMB: share = the sub-account name, port 445 must be reachable from your server (it was
+  from a home connection here, but some providers block it), and the `smbclient` PECL extension is
+  required (see the SMB entry below). Both have a noticeable fixed cost per run: an incremental run
+  that uploads nothing took about 20 s over WebDAV and 50 s over SMB. A deep verify is slow over
+  remote storage, since each blob is fetched with its own request (19 minutes for 66 MiB over
+  WebDAV); run it occasionally, not after every backup.
+
 - **FTP, server-dependent absolute-path handling:** files_external's FTP backend always builds
   absolute paths (e.g. `MKD /repo`) for the configured root, never relative ones. `atmoz/sftp`-style
   `vsftpd` test servers (chrooted) can reject that with a generic "create directory operation
