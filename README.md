@@ -63,7 +63,8 @@ All backups of an installation are encrypted with one master key.
   a single slot is possible, but then that one passphrase is a single point of failure.
 - When a holder leaves, give their slot a new passphrase (`occ backup:key:slot:replace`), download
   the new kit and confirm it. Note: an old kit together with the old passphrase still opens the
-  same master key; to revoke it completely, start new locations with a new key.
+  same master key; to revoke it completely, start new locations with a new key. This is noted on
+  the backlog and will be addressed in a future version (key rotation).
 - Downloading the kit, and every change to the slots, requires the administrator's password, is
   written to the audit log and is announced to all administrators.
 
