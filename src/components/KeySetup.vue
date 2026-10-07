@@ -36,7 +36,7 @@
 						<td>{{ t('ng_backup', 'Slot {n}', { n: slot.slot }) }}</td>
 						<td><strong>{{ slot.label }}</strong></td>
 						<td class="ngb-muted">{{ slot.created ? new Date(slot.created * 1000).toLocaleDateString() : '' }}</td>
-						<td>
+						<td class="ngb-actions">
 							<NcButton variant="tertiary" @click="openSlotForm(slot)">{{ t('ng_backup', 'New passphrase') }}</NcButton>
 							<NcButton v-if="status.key.slots.length > 1" variant="tertiary" @click="removeSlot(slot)">{{ t('ng_backup', 'Remove') }}</NcButton>
 						</td>
@@ -162,5 +162,6 @@ const confirm = () => guarded(async () => {
 .ngb-form, .ngb-confirm { display: flex; flex-direction: column; gap: 12px; max-width: 600px; margin: 8px 0; }
 .ngb-row { display: flex; gap: 8px; }
 .ngb-table td { padding: 2px 12px 2px 0; }
+.ngb-actions { display: flex; gap: 4px; }
 h3 { margin-top: 16px; font-weight: bold; }
 </style>

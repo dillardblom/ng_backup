@@ -7,7 +7,7 @@
 		:description="t('ng_backup', 'Pick a restore point and a user folder or file. Restores run in the background and go through Nextcloud, so overwritten files keep their old content as a version and removed files go to the trash.')">
 		<div class="ngb-row">
 			<NcSelect v-model="target" :options="status.targets" label="name" :input-label="t('ng_backup', 'Location')" :clearable="false" />
-			<NcSelect v-if="target" v-model="snapshot" :options="snapshots" label="displayLabel" :input-label="t('ng_backup', 'Restore point')" :clearable="false" />
+			<NcSelect v-if="target" v-model="snapshot" :options="snapshots" label="displayLabel" class="ngb-snapshot" :input-label="t('ng_backup', 'Restore point')" :clearable="false" />
 		</div>
 
 		<template v-if="snapshot">
@@ -69,7 +69,7 @@ const busy = ref(false)
 const error = ref('')
 const message = ref('')
 const modes = [
-	{ id: 'new-folder', label: t('ng_backup', 'Into a new folder "Restored <date>" (nothing existing is changed)') },
+	{ id: 'new-folder', label: t('ng_backup', 'Into a new folder "Restored {date}" (nothing existing is changed)', { date: 'YYYY-MM-DD HH.MM' }) },
 	{ id: 'merge', label: t('ng_backup', 'Into the original place, overwrite (old content kept as a version)') },
 	{ id: 'replace', label: t('ng_backup', 'Into the original place, overwrite and move files that are not in the backup to the trash') },
 ]
@@ -124,6 +124,7 @@ async function restore() {
 
 <style scoped>
 .ngb-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.ngb-row :deep(.ngb-snapshot) { min-width: min(360px, 100%); }
 .ngb-crumbs { display: flex; align-items: center; flex-wrap: wrap; }
 .ngb-entries li { display: flex; align-items: center; gap: 12px; min-height: 36px; }
 .ngb-entries li.selected { background: var(--color-primary-element-light); border-radius: var(--border-radius); }

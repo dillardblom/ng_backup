@@ -13,8 +13,16 @@ See the README for known limitations and the recovery kit before relying on it.]
     <licence>agpl</licence>
     <author>Dillard Blom</author>
     <namespace>NgBackup</namespace>
+    <documentation>
+        <admin>https://github.com/dillardblom/ng_backup/blob/main/docs/HOWTO.md</admin>
+    </documentation>
     <category>tools</category>
+    <website>https://apps.nextcloud.com/apps/ng_backup</website>
     <bugs>https://github.com/dillardblom/ng_backup/issues</bugs>
+    <repository type="git">https://github.com/dillardblom/ng_backup</repository>
+    <screenshot>https://raw.githubusercontent.com/dillardblom/ng_backup/main/screenshots/1-backups.png</screenshot>
+    <screenshot>https://raw.githubusercontent.com/dillardblom/ng_backup/main/screenshots/2-restore.png</screenshot>
+    <screenshot>https://raw.githubusercontent.com/dillardblom/ng_backup/main/screenshots/3-settings.png</screenshot>
     <dependencies>
         <php min-version="8.1"/>
         <lib>sodium</lib>

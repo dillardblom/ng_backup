@@ -6,6 +6,18 @@ All notable changes to NG Backup are documented here. The format follows
 own `info.xsd` doesn't allow a `-alpha`/`-beta`/`-rc` suffix there); the stability stage is instead
 carried by the git tag, the release, and this file.
 
+## [Unreleased]
+
+### Added
+- App store listing: screenshots, website, repository and documentation link in `appinfo/info.xml`.
+
+### Fixed
+- Restore: the "new folder" option showed `"Restored "` without the date pattern.
+- Restore: the restore-point dropdown cut off the time.
+- Settings: the passphrase actions are on one line instead of stacked.
+- `docs/HOWTO.md`: the SFTP example used a non-existent auth mechanism (`sftp::password`
+  instead of `password::password`).
+
 ## [0.9.0-beta.1] - 2026-10-07
 
 First beta. Tested thoroughly and usable **alongside** your current backup, but **not yet a
