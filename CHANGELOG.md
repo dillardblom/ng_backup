@@ -2,9 +2,10 @@
 
 All notable changes to NG Backup are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows the stages in
-`PLAN.md` section 9. The `<version>` in `appinfo/info.xml` is plain SemVer-numeric (Nextcloud's
-own `info.xsd` doesn't allow a `-alpha`/`-beta`/`-rc` suffix there); the stability stage is instead
-carried by the git tag, the release, and this file.
+`PLAN.md` section 9. The `<version>` in `appinfo/info.xml` is plain SemVer-numeric on purpose:
+the app store accepts a `-beta` suffix, but Nextcloud servers then only offer the release on the
+beta/daily update channel, which would hide the app from most admins. The stability stage is
+instead carried by the app description, the git tag, the release, and this file.
 
 ## [0.9.1-beta.2] - 2026-10-07
 
