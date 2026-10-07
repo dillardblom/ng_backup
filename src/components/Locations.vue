@@ -104,6 +104,7 @@ async function add() {
 	busy.value = true
 	error.value = ''
 	try {
+		await confirmPassword()
 		await api.addTarget({ name: form.name, backend: backend.value.id, auth: auth.value.id, options: form.options, path: form.path,
 			maxGb: form.maxGb === '' ? null : Number(form.maxGb) })
 		adding.value = false

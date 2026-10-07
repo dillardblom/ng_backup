@@ -7,6 +7,12 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
+## [Unreleased]
+
+### Fixed
+- Adding a backup location in the web interface failed with "Request failed with status code 403"
+  when the login was more than 30 minutes old: the form did not ask for password confirmation.
+
 ## [0.9.1-beta.2] - 2026-10-07
 
 Second beta, the first release in the Nextcloud app store (signed).
