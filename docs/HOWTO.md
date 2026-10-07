@@ -32,7 +32,7 @@ Examples:
 
 ```
 occ backup:target:add offsite amazons3 -a amazons3::accesskey -o bucket=<bucket> -o key=<key> -o secret=<secret>
-occ backup:target:add nas sftp -a sftp::password -o host=<host> -o user=<user> -o password=<pw> -o root=home
+occ backup:target:add nas sftp -a password::password -o host=<host> -o user=<user> -o password=<pw> -o root=home
 occ backup:target:add local local -a null::null -o datadir=/mnt/backup
 ```
 

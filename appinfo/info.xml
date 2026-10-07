@@ -9,12 +9,20 @@ directory to S3, SFTP, WebDAV, FTP, SMB or a local path, with restore of files a
 single users (via user_migration) and of the whole server onto a fresh installation. Tested
 thoroughly and usable alongside your current backup, but not yet a drop-in replacement for it.
 See the README for known limitations and the recovery kit before relying on it.]]></description>
-    <version>0.9.0</version>
+    <version>0.9.1</version>
     <licence>agpl</licence>
     <author>Dillard Blom</author>
     <namespace>NgBackup</namespace>
+    <documentation>
+        <admin>https://github.com/dillardblom/ng_backup/blob/main/docs/HOWTO.md</admin>
+    </documentation>
     <category>tools</category>
+    <website>https://apps.nextcloud.com/apps/ng_backup</website>
     <bugs>https://github.com/dillardblom/ng_backup/issues</bugs>
+    <repository type="git">https://github.com/dillardblom/ng_backup</repository>
+    <screenshot>https://raw.githubusercontent.com/dillardblom/ng_backup/main/screenshots/1-backups.png</screenshot>
+    <screenshot>https://raw.githubusercontent.com/dillardblom/ng_backup/main/screenshots/2-restore.png</screenshot>
+    <screenshot>https://raw.githubusercontent.com/dillardblom/ng_backup/main/screenshots/3-settings.png</screenshot>
     <dependencies>
         <php min-version="8.1"/>
         <lib>sodium</lib>

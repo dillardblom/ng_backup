@@ -2,9 +2,24 @@
 
 All notable changes to NG Backup are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows the stages in
-`PLAN.md` section 9. The `<version>` in `appinfo/info.xml` is plain SemVer-numeric (Nextcloud's
-own `info.xsd` doesn't allow a `-alpha`/`-beta`/`-rc` suffix there); the stability stage is instead
-carried by the git tag, the release, and this file.
+`PLAN.md` section 9. The `<version>` in `appinfo/info.xml` is plain SemVer-numeric on purpose:
+the app store accepts a `-beta` suffix, but Nextcloud servers then only offer the release on the
+beta/daily update channel, which would hide the app from most admins. The stability stage is
+instead carried by the app description, the git tag, the release, and this file.
+
+## [0.9.1-beta.2] - 2026-10-07
+
+Second beta, the first release in the Nextcloud app store (signed).
+
+### Added
+- App store listing: screenshots, website, repository and documentation link in `appinfo/info.xml`.
+
+### Fixed
+- Restore: the "new folder" option showed `"Restored "` without the date pattern.
+- Restore: the restore-point dropdown cut off the time.
+- Settings: the passphrase actions are on one line instead of stacked.
+- `docs/HOWTO.md`: the SFTP example used a non-existent auth mechanism (`sftp::password`
+  instead of `password::password`).
 
 ## [0.9.0-beta.1] - 2026-10-07
 
@@ -88,5 +103,6 @@ and not implemented yet.
 - See the "Storage backend experiences" section of the README for provider-specific quirks found
   so far (e.g. Hetzner Storage Box sub-accounts).
 
+[0.9.1-beta.2]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.1-beta.2
 [0.9.0-beta.1]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.0-beta.1
 [0.1.0-alpha.1]: https://github.com/dillardblom/ng_backup/releases/tag/v0.1.0-alpha.1
