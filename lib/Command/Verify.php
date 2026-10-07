@@ -66,7 +66,13 @@ HELP);
 		if ($result['failed'] !== []) {
 			$output->writeln('<error>' . count($result['failed']) . ' blob(s) failed verification (corrupted or tampered):</error> ' . implode(', ', $result['failed']));
 		}
-		if ($result['missing'] === [] && $result['failed'] === []) {
+		if ($result['unreadable'] !== []) {
+			$output->writeln('<error>' . count($result['unreadable']) . ' blob(s) could not be read from the location</error> (often a temporary storage '
+				. 'or network error: run the check again; if the same blobs stay unreadable, their pack may be damaged or truncated): '
+				. implode(', ', $result['unreadable']));
+			$output->writeln('Last read error: ' . $result['readError']);
+		}
+		if ($result['missing'] === [] && $result['failed'] === [] && $result['unreadable'] === []) {
 			$output->writeln('<info>OK</info>');
 			return 0;
 		}

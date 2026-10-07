@@ -7,7 +7,7 @@ installations and hosted Nextcloud. (Choosing SMB as a storage backend is the on
 see "Storage backend experiences" below — that requirement comes from files_external, not from
 ng_backup, and applies to any Nextcloud app that writes to an SMB share.)
 
-**Status: beta (0.9.1).** Tested thoroughly, usable alongside your current backup, but not yet a
+**Status: beta (0.9.2).** Tested thoroughly, usable alongside your current backup, but not yet a
 drop-in replacement for it. See "Known limitations" below, `PLAN.md` for the design and
 `docs/HOWTO.md` for a step-by-step guide from setup to a tested restore.
 
@@ -125,6 +125,20 @@ Contributions welcome via PR — add what you ran into with your own provider.
   form that lets you set a path relative to the account's root, not just ng_backup. Not yet
   verified whether this also applies to a Hetzner Storage Box **main** account (only tested with a
   sub-account so far) — if you've tried a main account, please say so in a PR.
+
+- **Hetzner Storage Box over WebDAV and SMB (sub-accounts, 2026-10-07):** both work end to end
+  (backup, incremental run, restore of a folder, verify), tested from outside the Hetzner network
+  with about 66 MiB of data. In the Hetzner Console, enable WebDAV or SMB support for the
+  sub-account, and "External reachability" when your server is not in the Hetzner network.
+  WebDAV: host `https://uXXXXX-subN.your-storagebox.de`, and the `root`
+  must be a folder that already exists (or empty): WebDAV does not create missing parent folders,
+  so a root that doesn't exist yet fails `backup:target:add` with `Sabre\HTTP\ClientHttpException:
+  Conflict`. SMB: share = the sub-account name, port 445 must be reachable from your server (it was
+  from a home connection here, but some providers block it), and the `smbclient` PECL extension is
+  required (see the SMB entry below). Both have a noticeable fixed cost per run: an incremental run
+  that uploads nothing took about 20 s over WebDAV and 50 s over SMB. A deep verify is slow over
+  remote storage, since each blob is fetched with its own request (19 minutes for 66 MiB over
+  WebDAV); run it occasionally, not after every backup.
 
 - **FTP, server-dependent absolute-path handling:** files_external's FTP backend always builds
   absolute paths (e.g. `MKD /repo`) for the configured root, never relative ones. `atmoz/sftp`-style

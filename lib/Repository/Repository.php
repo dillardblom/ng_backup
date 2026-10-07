@@ -28,6 +28,8 @@ final class Repository {
 	public const FORMAT = 1;
 	public const BLOB_SIZE = 4 * 1048576;
 	private const FLAG_DEFLATE = 1;
+	/** Reads per blob in a deep verify before it is reported as unreadable (not corrupted). */
+	private const VERIFY_READ_ATTEMPTS = 3;
 
 	private StreamCipher $cipher;
 	private BlobIndex $index;
@@ -696,8 +698,13 @@ final class Repository {
 	}
 
 	private function loadBlob(string $id): string {
-		[$pack, $offset, $length, $raw, $flags] = $this->index->get($id);
-		$encrypted = $this->backend->getRange('packs/' . substr($pack, 0, 2) . '/' . $pack, $offset, $length);
+		[$pack, $offset, $length] = $this->index->get($id);
+		return $this->decodeBlob($id, $this->backend->getRange('packs/' . substr($pack, 0, 2) . '/' . $pack, $offset, $length));
+	}
+
+	/** Decrypts and checks a blob read from its pack; throws when it is corrupted or tampered with. */
+	private function decodeBlob(string $id, string $encrypted): string {
+		[, , , $raw, $flags] = $this->index->get($id);
 		$payload = $this->cipher->decryptString($encrypted, 'blob:' . $id);
 		$data = ($flags & self::FLAG_DEFLATE) ? gzinflate($payload) : $payload;
 		if ($data === false || strlen($data) !== $raw || $this->keys->blobId($data) !== $id) {
@@ -733,13 +740,13 @@ final class Repository {
 	 *
 	 * @param ?callable $heartbeat called after every blob (shallow) or every blob read (deep);
 	 *        callers use it to keep a time-boxed lease alive during a large audit
-	 * @return array{filesChecked:int, blobsChecked:int, bytesChecked:int, missing:list<string>, failed:list<string>}
+	 * @return array{filesChecked:int, blobsChecked:int, bytesChecked:int, missing:list<string>, failed:list<string>, unreadable:list<string>, readError:string}
 	 */
 	public function verify(string $snapshotId, bool $deep = false, ?callable $heartbeat = null): array {
 		$heartbeat ??= static function (): void {
 		};
 		$this->index->load(true);
-		$stats = ['filesChecked' => 0, 'blobsChecked' => 0, 'bytesChecked' => 0, 'missing' => [], 'failed' => []];
+		$stats = ['filesChecked' => 0, 'blobsChecked' => 0, 'bytesChecked' => 0, 'missing' => [], 'failed' => [], 'unreadable' => [], 'readError' => ''];
 		$seen = [];
 		$packSeen = []; // pack id => exists on the backend; avoids one exists() call per blob
 		foreach ($this->streamEntries($snapshotId) as $entry) {
@@ -778,7 +785,7 @@ final class Repository {
 	 * Same checks as verify(), for a user export: every blob its manifest references must be in
 	 * the freshly re-authenticated index with its pack present; $deep also decrypts each.
 	 *
-	 * @return array{filesChecked:int, blobsChecked:int, bytesChecked:int, missing:list<string>, failed:list<string>}
+	 * @return array{filesChecked:int, blobsChecked:int, bytesChecked:int, missing:list<string>, failed:list<string>, unreadable:list<string>, readError:string}
 	 */
 	public function verifyUserExport(string $manifestPath, bool $deep = false, ?callable $heartbeat = null): array {
 		if (!$this->isRecordedUserExport($manifestPath)) {
@@ -787,7 +794,7 @@ final class Repository {
 		$heartbeat ??= static function (): void {
 		};
 		$this->index->load(true);
-		$stats = ['filesChecked' => 0, 'blobsChecked' => 0, 'bytesChecked' => 0, 'missing' => [], 'failed' => []];
+		$stats = ['filesChecked' => 0, 'blobsChecked' => 0, 'bytesChecked' => 0, 'missing' => [], 'failed' => [], 'unreadable' => [], 'readError' => ''];
 		$seen = [];
 		$packSeen = [];
 		$manifest = json_decode($this->getObject($manifestPath), true, 512, JSON_THROW_ON_ERROR);
@@ -824,8 +831,25 @@ final class Repository {
 		if (!$deep) {
 			return;
 		}
+		// Reading and checking are kept apart: a read that fails is usually a network or
+		// storage error, so it is retried and reported as unreadable (a pack that stays
+		// unreadable may still be truncated). Only a blob that was read but does not
+		// decrypt or match its id counts as failed: that is proof of damage.
+		[, $offset, $length] = $this->index->get($id);
+		$encrypted = null;
+		for ($attempt = 1; $attempt <= self::VERIFY_READ_ATTEMPTS && $encrypted === null; $attempt++) {
+			try {
+				$encrypted = $this->backend->getRange('packs/' . substr($pack, 0, 2) . '/' . $pack, $offset, $length);
+			} catch (\Exception $e) { // storage adapters throw their own exceptions; \Error (a bug) is not retried
+				$stats['readError'] = $e->getMessage();
+			}
+		}
+		if ($encrypted === null) {
+			$stats['unreadable'][] = $id;
+			return;
+		}
 		try {
-			$stats['bytesChecked'] += strlen($this->loadBlob($id));
+			$stats['bytesChecked'] += strlen($this->decodeBlob($id, $encrypted));
 		} catch (\Throwable) {
 			$stats['failed'][] = $id;
 		}

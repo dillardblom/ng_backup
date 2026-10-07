@@ -7,6 +7,25 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
+## [0.9.2-beta.3] - 2026-10-08
+
+Bugfix release.
+
+### Added
+- README: notes on using a Hetzner Storage Box over WebDAV and SMB.
+
+### Fixed
+- Adding a backup location in the web interface failed with "Request failed with status code 403"
+  when the login was more than 30 minutes old: the form did not ask for password confirmation.
+- Settings page: the "Backup and restore" / "Settings" tabs line up with the sections below them.
+- Backups: the runs table scrolls horizontally on narrow screens instead of running off the page.
+- `occ backup:verify --deep`: a blob that could not be read (network or storage error) was reported
+  as "corrupted or tampered". Reads are now retried, and a read that keeps failing is reported
+  separately as unreadable, with the error (run the check again; if the same blobs stay unreadable,
+  their pack may be damaged or truncated). Only a blob that was read but fails decryption or its
+  hash check counts as corrupted. Found on a Hetzner Storage Box over WebDAV, where the blob
+  turned out to be intact.
+
 ## [0.9.1-beta.2] - 2026-10-07
 
 Second beta, the first release in the Nextcloud app store (signed).
@@ -103,6 +122,7 @@ and not implemented yet.
 - See the "Storage backend experiences" section of the README for provider-specific quirks found
   so far (e.g. Hetzner Storage Box sub-accounts).
 
+[0.9.2-beta.3]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.2-beta.3
 [0.9.1-beta.2]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.1-beta.2
 [0.9.0-beta.1]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.0-beta.1
 [0.1.0-alpha.1]: https://github.com/dillardblom/ng_backup/releases/tag/v0.1.0-alpha.1
