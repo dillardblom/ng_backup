@@ -30,30 +30,32 @@
 			</div>
 		</template>
 
-		<table v-if="status.runs.length" class="ngb-table">
-			<thead>
-				<tr>
-					<th>{{ t('ng_backup', 'Started') }}</th>
-					<th>{{ t('ng_backup', 'Location') }}</th>
-					<th>{{ t('ng_backup', 'Kind') }}</th>
-					<th>{{ t('ng_backup', 'Restore point') }}</th>
-					<th>{{ t('ng_backup', 'Status') }}</th>
-					<th>{{ t('ng_backup', 'Files') }}</th>
-					<th>{{ t('ng_backup', 'Uploaded') }}</th>
-				</tr>
-			</thead>
-			<tbody>
-				<tr v-for="run in status.runs" :key="run.id" :title="run.error || ''">
-					<td>{{ new Date(run.startedAt * 1000).toLocaleString() }}</td>
-					<td>{{ targetName(run.targetId) }}</td>
-					<td>{{ run.kind }}</td>
-					<td>{{ run.snapshot ? new Date(run.snapshot.createdAt * 1000).toLocaleString() + (run.snapshot.label ? ' – ' + run.snapshot.label : '') : '' }}</td>
-					<td :class="'ngb-' + run.status">{{ run.status }}{{ run.status === 'running' ? ' (' + run.phase + ')' : '' }}{{ run.error ? ': ' + run.error : '' }}</td>
-					<td>{{ run.stats?.files?.files ?? run.stats?.restored ?? '' }}</td>
-					<td>{{ run.stats?.files ? formatSize(run.stats.files.uploaded) : '' }}</td>
-				</tr>
-			</tbody>
-		</table>
+		<div v-if="status.runs.length" class="ngb-table-wrap">
+			<table class="ngb-table">
+				<thead>
+					<tr>
+						<th>{{ t('ng_backup', 'Started') }}</th>
+						<th>{{ t('ng_backup', 'Location') }}</th>
+						<th>{{ t('ng_backup', 'Kind') }}</th>
+						<th>{{ t('ng_backup', 'Restore point') }}</th>
+						<th>{{ t('ng_backup', 'Status') }}</th>
+						<th>{{ t('ng_backup', 'Files') }}</th>
+						<th>{{ t('ng_backup', 'Uploaded') }}</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr v-for="run in status.runs" :key="run.id" :title="run.error || ''">
+						<td>{{ new Date(run.startedAt * 1000).toLocaleString() }}</td>
+						<td>{{ targetName(run.targetId) }}</td>
+						<td>{{ run.kind }}</td>
+						<td>{{ run.snapshot ? new Date(run.snapshot.createdAt * 1000).toLocaleString() + (run.snapshot.label ? ' – ' + run.snapshot.label : '') : '' }}</td>
+						<td :class="'ngb-' + run.status">{{ run.status }}{{ run.status === 'running' ? ' (' + run.phase + ')' : '' }}{{ run.error ? ': ' + run.error : '' }}</td>
+						<td>{{ run.stats?.files?.files ?? run.stats?.restored ?? '' }}</td>
+						<td>{{ run.stats?.files ? formatSize(run.stats.files.uploaded) : '' }}</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
 	</NcSettingsSection>
 </template>
 
@@ -126,6 +128,7 @@ async function saveSchedule() {
 <style scoped>
 .ngb-row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
 .ngb-time { max-width: 260px; }
+.ngb-table-wrap { overflow-x: auto; }
 .ngb-table { width: 100%; border-collapse: collapse; }
 .ngb-table th, .ngb-table td { text-align: start; padding: 4px 8px; border-bottom: 1px solid var(--color-border); }
 .ngb-failed { color: var(--color-error-text); }
