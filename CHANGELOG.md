@@ -21,7 +21,8 @@ Bugfix release.
 - Backups: the runs table scrolls horizontally on narrow screens instead of running off the page.
 - `occ backup:verify --deep`: a blob that could not be read (network or storage error) was reported
   as "corrupted or tampered". Reads are now retried, and a read that keeps failing is reported
-  separately as unreadable, with the error; only a blob that was read but fails decryption or its
+  separately as unreadable, with the error (run the check again; if the same blobs stay unreadable,
+  their pack may be damaged or truncated). Only a blob that was read but fails decryption or its
   hash check counts as corrupted. Found on a Hetzner Storage Box over WebDAV, where the blob
   turned out to be intact.
 

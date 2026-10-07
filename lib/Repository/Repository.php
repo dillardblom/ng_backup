@@ -831,10 +831,10 @@ final class Repository {
 		if (!$deep) {
 			return;
 		}
-		// Reading and checking are kept apart: a read that fails (network, storage) says
-		// nothing about the stored data, so it is retried and reported as unreadable,
-		// never as corrupted. Only a blob that was read but does not decrypt or match
-		// its id counts as failed.
+		// Reading and checking are kept apart: a read that fails is usually a network or
+		// storage error, so it is retried and reported as unreadable (a pack that stays
+		// unreadable may still be truncated). Only a blob that was read but does not
+		// decrypt or match its id counts as failed: that is proof of damage.
 		[, $offset, $length] = $this->index->get($id);
 		$encrypted = null;
 		for ($attempt = 1; $attempt <= self::VERIFY_READ_ATTEMPTS && $encrypted === null; $attempt++) {

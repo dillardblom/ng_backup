@@ -128,7 +128,9 @@ Contributions welcome via PR — add what you ran into with your own provider.
 
 - **Hetzner Storage Box over WebDAV and SMB (sub-accounts, 2026-10-07):** both work end to end
   (backup, incremental run, restore of a folder, verify), tested from outside the Hetzner network
-  with about 66 MiB of data. WebDAV: host `https://uXXXXX-subN.your-storagebox.de`, and the `root`
+  with about 66 MiB of data. In the Hetzner Console, enable WebDAV or SMB support for the
+  sub-account, and "External reachability" when your server is not in the Hetzner network.
+  WebDAV: host `https://uXXXXX-subN.your-storagebox.de`, and the `root`
   must be a folder that already exists (or empty): WebDAV does not create missing parent folders,
   so a root that doesn't exist yet fails `backup:target:add` with `Sabre\HTTP\ClientHttpException:
   Conflict`. SMB: share = the sub-account name, port 445 must be reachable from your server (it was
