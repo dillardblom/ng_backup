@@ -21,11 +21,12 @@ final class StorageBackend implements IBackend {
 	public function __construct(
 		private IStorage $storage,
 		private string $base = '',
+		bool $createBase = true,
 	) {
 		$this->base = trim($base, '/');
 		self::validate($this->base, true);
 		$this->atomicPut = $storage->instanceOfStorage(\OCA\Files_External\Lib\Storage\AmazonS3::class);
-		if ($this->base !== '') {
+		if ($createBase && $this->base !== '') {
 			$this->mkdirs($this->base);
 		}
 	}
@@ -106,6 +107,15 @@ final class StorageBackend implements IBackend {
 			return $data;
 		} finally {
 			fclose($fh);
+		}
+	}
+
+	/** Whether the storage accepts the connection settings (files_external's own check). */
+	public function canConnect(): bool {
+		try {
+			return !method_exists($this->storage, 'test') || (bool)$this->storage->test();
+		} catch (\Throwable) {
+			return false;
 		}
 	}
 

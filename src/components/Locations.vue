@@ -14,12 +14,16 @@
 					{{ tests[target.id].ok ? t('ng_backup', 'OK, {n} snapshots', { n: tests[target.id].snapshots }) : tests[target.id].error }}
 				</span>
 				<NcButton variant="tertiary" @click="test(target)">{{ t('ng_backup', 'Test') }}</NcButton>
+				<NcButton variant="tertiary" @click="startEdit(target)">{{ t('ng_backup', 'Edit') }}</NcButton>
 				<NcButton variant="tertiary" @click="remove(target)">{{ t('ng_backup', 'Remove') }}</NcButton>
 			</li>
 		</ul>
 
-		<NcButton v-if="!adding" @click="startAdd">{{ t('ng_backup', 'Add location') }}</NcButton>
-		<form v-else class="ngb-form" @submit.prevent="add">
+		<NcButton v-if="!adding" @click="startAdd()">{{ t('ng_backup', 'Add location') }}</NcButton>
+		<form v-else class="ngb-form" @submit.prevent="save">
+			<NcNoteCard v-if="editing" type="info">
+				{{ t('ng_backup', 'Editing "{name}". The new settings must lead to the same repository, so its backups and history are kept. Leave a password field empty to keep the stored password.', { name: editing.name }) }}
+			</NcNoteCard>
 			<NcTextField v-model="form.name" :label="t('ng_backup', 'Name')" />
 			<NcSelect v-model="backend" :options="backends" label="name" :input-label="t('ng_backup', 'Type')" :clearable="false" />
 			<NcSelect v-if="backend" v-model="auth" :options="backend.auth" label="name" :input-label="t('ng_backup', 'Authentication')" :clearable="false" />
@@ -32,8 +36,8 @@
 			<NcTextField v-model="form.maxGb" type="number" min="0" :label="t('ng_backup', 'Maximum size in GiB')"
 				:helper-text="form.maxGb ? t('ng_backup', 'Backups stop at this size; administrators are warned at 80%.') : t('ng_backup', 'Empty = unlimited: everything stored is billed by your provider, and nothing stops a backup that keeps growing.')" />
 			<div class="ngb-row">
-				<NcButton type="submit" variant="primary" :disabled="busy || !form.name || !backend || !auth">{{ t('ng_backup', 'Connect and add') }}</NcButton>
-				<NcButton @click="adding = false">{{ t('ng_backup', 'Cancel') }}</NcButton>
+				<NcButton type="submit" variant="primary" :disabled="busy || !form.name || !backend || !auth">{{ editing ? t('ng_backup', 'Connect and save') : t('ng_backup', 'Connect and add') }}</NcButton>
+				<NcButton @click="adding = false; editing = null">{{ t('ng_backup', 'Cancel') }}</NcButton>
 			</div>
 		</form>
 		<NcNoteCard v-if="error" type="error">{{ error }}</NcNoteCard>
@@ -41,7 +45,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { t } from '@nextcloud/l10n'
 import NcButton from '@nextcloud/vue/components/NcButton'
 import NcCheckboxRadioSwitch from '@nextcloud/vue/components/NcCheckboxRadioSwitch'
@@ -58,6 +62,7 @@ defineProps({ status: { type: Object, required: true } })
 const emit = defineEmits(['changed'])
 
 const adding = ref(false)
+const editing = ref(null) // the target being edited, or null while adding
 const busy = ref(false)
 const error = ref('')
 const backends = ref([])
@@ -83,35 +88,83 @@ const toFields = (params) => Object.entries(params || {})
 	.map(([key, p]) => ({ key, label: p.value, type: p.type, optional: !!(p.flags & 1) }))
 const fields = computed(() => [...toFields(backend.value?.parameters), ...toFields(auth.value?.parameters)])
 
+let prefilling = false
 watch(backend, (b) => {
+	if (prefilling) {
+		return
+	}
 	auth.value = b?.auth?.[0] ?? null
 	form.options = {}
 })
 
-async function startAdd() {
-	adding.value = true
-	error.value = ''
+async function loadBackends() {
 	if (!backends.value.length) {
-		try {
-			backends.value = await api.backends()
-		} catch (e) {
-			error.value = e.message
-		}
+		backends.value = await api.backends()
 	}
 }
 
-async function add() {
-	busy.value = true
+async function startAdd() {
+	error.value = ''
+	editing.value = null
+	Object.assign(form, { name: '', path: 'ng_backup', options: {}, maxGb: '' })
+	backend.value = null
+	adding.value = true
+	try {
+		await loadBackends()
+	} catch (e) {
+		error.value = e.message
+	}
+}
+
+async function startEdit(target) {
 	error.value = ''
 	try {
 		await confirmPassword()
-		await api.addTarget({ name: form.name, backend: backend.value.id, auth: auth.value.id, options: form.options, path: form.path,
-			maxGb: form.maxGb === '' ? null : Number(form.maxGb) })
+		await loadBackends()
+		const settings = await api.targetSettings(target.id)
+		prefilling = true
+		backend.value = backends.value.find((b) => b.id === settings.backend) ?? null
+		auth.value = backend.value?.auth.find((a) => a.id === settings.auth) ?? null
+		Object.assign(form, { name: settings.name, path: settings.path, options: Object.fromEntries(Object.entries(settings.options).map(([k, v]) => [k, v ?? ''])),
+			maxGb: target.maxBytes ? String(+(target.maxBytes / 1073741824).toFixed(2)) : '' })
+		await nextTick()
+		prefilling = false
+		editing.value = target
+		adding.value = true
+	} catch (e) {
+		prefilling = false
+		error.value = e?.message || ''
+	}
+}
+
+async function save() {
+	busy.value = true
+	error.value = ''
+	const maxGb = form.maxGb === '' ? null : Number(form.maxGb)
+	try {
+		await confirmPassword()
+		if (editing.value) {
+			// An empty password field sends null: the server keeps the stored password.
+			const options = { ...form.options }
+			for (const field of fields.value) {
+				if (field.type === 2 && !options[field.key]) {
+					options[field.key] = null
+				}
+			}
+			await api.updateTarget(editing.value.id, { name: form.name, backend: backend.value.id, auth: auth.value.id, options, path: form.path })
+			if (maxGb !== (editing.value.maxBytes ? Number((editing.value.maxBytes / 1073741824).toFixed(2)) : null)) {
+				await api.setTargetLimit(editing.value.id, maxGb)
+			}
+			delete tests[editing.value.id]
+		} else {
+			await api.addTarget({ name: form.name, backend: backend.value.id, auth: auth.value.id, options: form.options, path: form.path, maxGb })
+		}
 		adding.value = false
+		editing.value = null
 		Object.assign(form, { name: '', path: 'ng_backup', options: {}, maxGb: '' })
 		emit('changed')
 	} catch (e) {
-		error.value = e.message
+		error.value = e?.message || ''
 	} finally {
 		busy.value = false
 	}

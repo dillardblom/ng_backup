@@ -37,6 +37,7 @@ See the README for known limitations and the recovery kit before relying on it.]
         <command>OCA\NgBackup\Command\KeyConfirm</command>
         <command>OCA\NgBackup\Command\TargetBackends</command>
         <command>OCA\NgBackup\Command\TargetAdd</command>
+        <command>OCA\NgBackup\Command\TargetEdit</command>
         <command>OCA\NgBackup\Command\TargetList</command>
         <command>OCA\NgBackup\Command\TargetRemove</command>
         <command>OCA\NgBackup\Command\RunBackup</command>

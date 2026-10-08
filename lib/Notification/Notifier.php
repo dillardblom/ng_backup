@@ -59,6 +59,7 @@ final class Notifier implements INotifier {
 				$notification->setParsedSubject(match ($p['event'] ?? '') {
 					'kit_downloaded' => $l->t('%s downloaded the backup recovery kit', [$who]),
 					'target_removed' => $l->t('%1$s removed backup location %2$s', [$who, $p['target'] ?? '']),
+					'target_changed' => $l->t('%1$s changed the connection settings of backup location %2$s', [$who, $p['target'] ?? '']),
 					'append_only_off' => $l->t('%1$s turned off append-only for backup location %2$s', [$who, $p['target'] ?? '']),
 					'retention_changed' => $l->t('%1$s changed the backup retention to %2$s', [$who, $p['policy'] ?? '']),
 					'snapshots_forgotten' => $l->t('%1$s moved %2$s snapshots of %3$s to the trash; they are deleted permanently after %4$s unless restored', [$who, $p['count'] ?? '', $p['target'] ?? '', $p['until'] ?? '']),

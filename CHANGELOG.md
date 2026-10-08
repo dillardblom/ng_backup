@@ -9,6 +9,14 @@ instead carried by the app description, the git tag, the release, and this file.
 
 ## [Unreleased]
 
+### Added
+- Edit a backup location (web interface and `occ backup:target:edit`): change the password, host,
+  folder, connection type or name without losing its history. Before this the only option was a
+  new location, which starts an empty repository and, with a retention lock at the provider,
+  keeps paying for the old one. The new settings are only saved when they lead to the same
+  repository; stored passwords are never sent to the browser, and an empty password field keeps
+  the stored one. Administrators are notified of the change.
+
 ### Changed
 - App store listing: the homepage link points to the GitHub repository instead of back to the
   app store page itself.

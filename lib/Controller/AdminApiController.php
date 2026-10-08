@@ -181,6 +181,28 @@ final class AdminApiController extends Controller {
 		return new JSONResponse(['id' => $r['target']->getId(), 'created' => $r['created']]);
 	}
 
+	/** The stored settings for the edit form; password values are left out (null). */
+	#[PasswordConfirmationRequired]
+	public function targetSettings(int $id): JSONResponse {
+		$t = $this->targets->get((string)$id);
+		return new JSONResponse(['name' => $t->getName(), 'backend' => $t->getBackend(), 'auth' => $t->getAuth(),
+			'options' => $this->targets->editableOptions($t), 'path' => $t->getBasePath()]);
+	}
+
+	/** Options with a null value keep their stored value. */
+	#[PasswordConfirmationRequired]
+	public function updateTarget(int $id, string $name, string $backend, string $auth, array $options = [], string $path = 'ng_backup'): JSONResponse {
+		try {
+			$t = $this->targets->get((string)$id);
+			$before = $t->getName();
+			$t = $this->targets->update($t, $name, $backend, $auth, $options, $path);
+		} catch (\Throwable $e) {
+			return new JSONResponse(['error' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
+		}
+		$this->alerts->securityEvent('target_changed', ['target' => $before]);
+		return new JSONResponse(['id' => $t->getId()]);
+	}
+
 	/** Size limit in GiB; null or 0 = unlimited. */
 	#[PasswordConfirmationRequired]
 	public function setTargetLimit(int $id, ?float $maxGb = null): JSONResponse {

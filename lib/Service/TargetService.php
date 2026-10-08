@@ -37,7 +37,7 @@ final class TargetService {
 	) {
 	}
 
-	/** @return list<array{id:string, name:string, auth:list<string>, parameters:array}> */
+	/** @return list<array{id:string, name:string, auth:list<array{id:string, name:string, parameters:array}>, parameters:array}> */
 	public function availableBackends(): array {
 		return $this->factory()->describeBackends();
 	}
@@ -50,20 +50,8 @@ final class TargetService {
 	 * @return array{target: Target, created: bool}
 	 */
 	public function add(string $name, string $backend, string $auth, array $options, string $basePath): array {
-		if (!preg_match('/^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$/', $name)) {
-			throw new \InvalidArgumentException('Name: letters, digits, space, _ . - (max 64)');
-		}
-		// Without the native extension files_external falls back to the smbclient binary, which
-		// registers fine but cannot seek: the first backup then fails with "Seek failed". Refuse
-		// up front instead of letting the admin find out from a failed run.
-		if ($backend === 'smb' && !extension_loaded('smbclient')) {
-			throw new \InvalidArgumentException('The SMB backend needs the PHP smbclient extension (pecl install smbclient); the smbclient binary alone cannot seek and every backup would fail');
-		}
-		try {
-			$this->mapper->findByName($name);
-			throw new \InvalidArgumentException("A target named '$name' already exists");
-		} catch (\OCP\AppFramework\Db\DoesNotExistException) {
-		}
+		$this->validateName($name);
+		$this->requireUsableBackend($backend);
 		$keys = $this->keys->keyRing();
 		$storageBackend = $this->buildBackend($backend, $auth, $options, $basePath);
 		if ($storageBackend->exists('config')) {
@@ -95,6 +83,103 @@ final class TargetService {
 			$this->adoptSnapshots($target, $repo);
 		}
 		return ['target' => $target, 'created' => $created];
+	}
+
+	/**
+	 * Change how an existing location is reached (credentials, host, folder, even the connection
+	 * type) or its name. The new settings must lead to the same repository: the history stays
+	 * and a typo cannot silently start a new, empty repository. A null option value keeps the
+	 * stored one, so the web interface never has to send stored passwords back.
+	 *
+	 * @param array<string, mixed> $options
+	 */
+	public function update(Target $target, string $name, string $backend, string $auth, array $options, string $basePath): Target {
+		$this->validateName($name, $target->getId());
+		$this->requireUsableBackend($backend);
+		$stored = $this->options($target);
+		foreach ($options as $key => $value) {
+			if ($value === null) {
+				if (array_key_exists($key, $stored)) {
+					$options[$key] = $stored[$key];
+				} else {
+					unset($options[$key]);
+				}
+			}
+		}
+		// Do not create the folder: a typo in the path must not leave an empty folder behind.
+		$storageBackend = $this->buildBackend($backend, $auth, $options, $basePath, false);
+		if (!$storageBackend->exists('config')) {
+			if (!$storageBackend->canConnect()) {
+				throw new \InvalidArgumentException('Cannot connect with these settings. Check the host, user name and password');
+			}
+			throw new \InvalidArgumentException("No NG Backup repository found in folder '" . trim($basePath, '/') . "'. To start an empty repository, add a new location instead");
+		}
+		$repo = Repository::openWithKey($storageBackend, $this->keys->keyRing(), $this->indexCache, $this->anchor);
+		if ($target->getRepositoryId() !== null && $repo->id() !== $target->getRepositoryId()) {
+			throw new \InvalidArgumentException('These settings lead to a different repository than the one of this location');
+		}
+		$target->setName($name);
+		$target->setBackend($backend);
+		$target->setAuth($auth);
+		$target->setOptions($this->crypto->encrypt(json_encode($options, JSON_THROW_ON_ERROR)));
+		$target->setBasePath(trim($basePath, '/'));
+		return $this->mapper->update($target);
+	}
+
+	/**
+	 * The stored options for an edit form: password-type values are replaced by null, which
+	 * update() reads as "keep the stored value".
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function editableOptions(Target $target): array {
+		$secret = [];
+		foreach ($this->availableBackends() as $b) {
+			if ($b['id'] !== $target->getBackend()) {
+				continue;
+			}
+			$params = $b['parameters'];
+			foreach ($b['auth'] as $a) {
+				if ($a['id'] === $target->getAuth()) {
+					$params += $a['parameters'];
+				}
+			}
+			foreach ($params as $key => $p) {
+				if (($p['type'] ?? 0) === 2) {
+					$secret[$key] = true;
+				}
+			}
+		}
+		$options = $this->options($target);
+		foreach ($options as $key => $value) {
+			if (isset($secret[$key])) {
+				$options[$key] = null;
+			}
+		}
+		return $options;
+	}
+
+	private function validateName(string $name, ?int $ownId = null): void {
+		if (!preg_match('/^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$/', $name)) {
+			throw new \InvalidArgumentException('Name: letters, digits, space, _ . - (max 64)');
+		}
+		try {
+			$other = $this->mapper->findByName($name);
+		} catch (DoesNotExistException) {
+			return;
+		}
+		if ($other->getId() !== $ownId) {
+			throw new \InvalidArgumentException("A target named '$name' already exists");
+		}
+	}
+
+	private function requireUsableBackend(string $backend): void {
+		// Without the native extension files_external falls back to the smbclient binary, which
+		// registers fine but cannot seek: the first backup then fails with "Seek failed". Refuse
+		// up front instead of letting the admin find out from a failed run.
+		if ($backend === 'smb' && !extension_loaded('smbclient')) {
+			throw new \InvalidArgumentException('The SMB backend needs the PHP smbclient extension (pecl install smbclient); the smbclient binary alone cannot seek and every backup would fail');
+		}
 	}
 
 	/**
@@ -193,8 +278,8 @@ final class TargetService {
 		return json_decode($this->crypto->decrypt($target->getOptions()), true, 512, JSON_THROW_ON_ERROR);
 	}
 
-	private function buildBackend(string $backend, string $auth, array $options, string $basePath): StorageBackend {
-		return new StorageBackend($this->factory()->create($backend, $auth, $options), $basePath);
+	private function buildBackend(string $backend, string $auth, array $options, string $basePath, bool $createBase = true): StorageBackend {
+		return new StorageBackend($this->factory()->create($backend, $auth, $options), $basePath, $createBase);
 	}
 
 	private ?ExternalStorageFactory $factory = null;

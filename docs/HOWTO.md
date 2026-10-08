@@ -50,6 +50,14 @@ occ backup:target:list
 occ backup:status
 ```
 
+Changed password, new host name, or moved the repository? Edit the location instead of adding a
+new one, so its history stays (in the web interface: **Edit** next to the location). The new
+settings must lead to the same repository; options you do not pass keep their value:
+
+```
+occ backup:target:edit nas -o password=<new pw>
+```
+
 ## 3. Run the first backup
 
 ```

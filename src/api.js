@@ -27,6 +27,8 @@ export default {
 	confirmKit: (accepted, phrase, code) => call('post', '/key/confirm', { accepted, phrase, code }),
 	backends: () => call('get', '/backends'),
 	addTarget: (target) => call('post', '/targets', target),
+	targetSettings: (id) => call('get', `/targets/${id}/settings`),
+	updateTarget: (id, target) => call('put', `/targets/${id}`, target),
 	removeTarget: (id) => call('delete', `/targets/${id}`),
 	testTarget: (id) => call('post', `/targets/${id}/test`),
 	setTargetLimit: (id, maxGb) => call('put', `/targets/${id}/limit`, { maxGb }),
