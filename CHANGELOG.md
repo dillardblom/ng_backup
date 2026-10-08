@@ -18,6 +18,7 @@ instead carried by the app description, the git tag, the release, and this file.
   the stored one. Administrators are notified of the change.
 
 ### Changed
+- App store listing: the author's e-mail address is shown.
 - App store listing: the homepage link points to the GitHub repository instead of back to the
   app store page itself.
 
