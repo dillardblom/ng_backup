@@ -37,5 +37,15 @@ interface IBackend {
 	/** @return list<string> object paths below $prefix (recursive) */
 	public function list(string $prefix): array;
 
+	/**
+	 * Object paths directly in $dir, for a folder that only holds objects (index/, snapshots/,
+	 * catalog/, trash/info/). One listing, without checking the type of every entry: on a remote
+	 * storage list() costs a round trip per entry, which for index/ (one file per pack) grows
+	 * with the size of the repository.
+	 *
+	 * @return list<string>
+	 */
+	public function listFiles(string $dir): array;
+
 	public function delete(string $path): void;
 }

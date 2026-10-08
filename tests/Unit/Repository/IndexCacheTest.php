@@ -51,4 +51,41 @@ class IndexCacheTest extends TestCase {
 		$fourth->restore($r1['snapshot'], $target);
 		$this->assertCount(12, self::hashTree($target));
 	}
+
+	/** The database dump reads in a read-only transaction: a pack that fills up then must not write the cache yet. */
+	public function testHeldCacheWritesWaitForRelease(): void {
+		$cache = new class implements IIndexCache {
+			public array $data = [];
+			public bool $readOnly = false;
+			public function all(string $r): array { return $this->data[$r] ?? []; }
+			public function put(string $r, string $p, array $e): void {
+				if ($this->readOnly) {
+					throw new \RuntimeException('cannot execute INSERT in a read-only transaction');
+				}
+				$this->data[$r][$p] = $e;
+			}
+			public function remove(string $r, array $ps): void { foreach ($ps as $p) { unset($this->data[$r][$p]); } }
+		};
+		$backend = new LocalBackend($this->tempDir());
+		$keys = KeyRing::generate();
+		Repository::initWithKey($backend, $keys, $keys->wrap('pw'));
+		$repo = Repository::openWithKey($backend, $keys, $cache);
+
+		$stats = [];
+		$repo->holdIndexCache();
+		$cache->readOnly = true;
+		$writer = $repo->blobWriter($stats);
+		for ($i = 0; $i < 40; $i++) {
+			$writer->write(random_bytes(1048576)); // more than one 32 MiB pack
+		}
+		$writer->finish();
+		$this->assertGreaterThan(0, count($backend->list('index')), 'a full pack was uploaded during the hold');
+		$this->assertSame([], $cache->data);
+
+		$cache->readOnly = false;
+		$repo->releaseIndexCache();
+		$repo->flushPacks();
+		$this->assertCount(count($backend->list('index')), array_merge(...array_values($cache->data)));
+		$this->assertSame(0, Repository::openWithKey($backend, $keys, $cache)->indexDownloads());
+	}
 }

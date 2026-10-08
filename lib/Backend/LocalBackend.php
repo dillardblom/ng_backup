@@ -107,6 +107,25 @@ final class LocalBackend implements IBackend {
 		return $result;
 	}
 
+	public function listFiles(string $dir): array {
+		$base = $this->abs($dir);
+		if (!is_dir($base)) {
+			return [];
+		}
+		$result = [];
+		$names = scandir($base);
+		if ($names === false) {
+			throw new BackendException('Cannot list ' . $dir);
+		}
+		foreach ($names as $name) {
+			if ($name !== '.' && $name !== '..' && !StorageBackend::isTemporary($name)) {
+				$result[] = trim($dir, '/') . '/' . $name;
+			}
+		}
+		sort($result);
+		return $result;
+	}
+
 	public function delete(string $path): void {
 		@unlink($this->abs($path));
 	}

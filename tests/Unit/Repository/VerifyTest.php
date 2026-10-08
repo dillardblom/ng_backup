@@ -166,6 +166,10 @@ final class FlakyRangeBackend implements IBackend {
 		return $this->inner->list($prefix);
 	}
 
+	public function listFiles(string $dir): array {
+		return $this->inner->listFiles($dir);
+	}
+
 	public function delete(string $path): void {
 		$this->inner->delete($path);
 	}
