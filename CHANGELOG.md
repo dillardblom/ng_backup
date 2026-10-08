@@ -7,6 +7,12 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
+## [Unreleased]
+
+### Changed
+- App store listing: the homepage link points to the GitHub repository instead of back to the
+  app store page itself.
+
 ## [0.9.2-beta.3] - 2026-10-08
 
 Bugfix release.

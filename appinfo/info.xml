@@ -17,7 +17,7 @@ See the README for known limitations and the recovery kit before relying on it.]
         <admin>https://github.com/dillardblom/ng_backup/blob/main/docs/HOWTO.md</admin>
     </documentation>
     <category>tools</category>
-    <website>https://apps.nextcloud.com/apps/ng_backup</website>
+    <website>https://github.com/dillardblom/ng_backup</website>
     <bugs>https://github.com/dillardblom/ng_backup/issues</bugs>
     <repository type="git">https://github.com/dillardblom/ng_backup</repository>
     <screenshot>https://raw.githubusercontent.com/dillardblom/ng_backup/main/screenshots/1-backups.png</screenshot>
