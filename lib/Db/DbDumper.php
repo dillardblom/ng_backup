@@ -72,6 +72,9 @@ final class DbDumper {
 	public function dumpStep(Repository $repo, array $state, float $deadline, array &$stats): array {
 		$state['steps']++;
 		$sm = $this->db->createSchemaManager();
+		// A pack that fills up during the dump is uploaded right away; its index cache row must
+		// wait until the read-only transaction is over.
+		$repo->holdIndexCache();
 		$this->db->setTransactionIsolation(TransactionIsolationLevel::REPEATABLE_READ);
 		$this->db->beginTransaction();
 		try {
@@ -116,6 +119,7 @@ final class DbDumper {
 			}
 		} finally {
 			$this->db->rollBack();
+			$repo->releaseIndexCache();
 		}
 		$repo->flushPacks();
 		return $state;

@@ -262,6 +262,15 @@ final class Repository {
 		});
 	}
 
+	/** See BlobIndex::holdCache(): no database writes until releaseIndexCache(). */
+	public function holdIndexCache(): void {
+		$this->index->holdCache();
+	}
+
+	public function releaseIndexCache(): void {
+		$this->index->releaseCache();
+	}
+
 	public function flushPacks(): void {
 		$this->runPacks?->flush();
 	}

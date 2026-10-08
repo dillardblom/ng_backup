@@ -25,6 +25,8 @@ final class BlobIndex {
 	private array $pending = [];
 
 	private ?IIndexCache $cache = null;
+	/** @var list<\Closure():void>|null cache writes held back by holdCache(), or null when writing directly */
+	private ?array $heldCacheWrites = null;
 	private string $repositoryId = '';
 	/** @var int index files downloaded by the last load() (for tests and diagnostics) */
 	public int $downloaded = 0;
@@ -38,6 +40,46 @@ final class BlobIndex {
 	public function setCache(IIndexCache $cache, string $repositoryId): void {
 		$this->cache = $cache;
 		$this->repositoryId = $repositoryId;
+	}
+
+	/**
+	 * Hold back cache writes until releaseCache(). The database dump reads inside a read-only
+	 * transaction on the same connection that the cache writes to: a write there fails on
+	 * PostgreSQL and would be rolled back with the dump transaction elsewhere.
+	 */
+	public function holdCache(): void {
+		$this->heldCacheWrites ??= [];
+	}
+
+	/** Write the cache changes held back since holdCache(). */
+	public function releaseCache(): void {
+		$writes = $this->heldCacheWrites ?? [];
+		$this->heldCacheWrites = null;
+		foreach ($writes as $write) {
+			$write();
+		}
+	}
+
+	/** @param list<array{id:string, offset:int, length:int, raw:int, flags:int}> $entries */
+	private function cachePut(string $packId, array $entries): void {
+		if ($this->heldCacheWrites !== null) {
+			$this->heldCacheWrites[] = function () use ($packId, $entries): void {
+				$this->cache?->put($this->repositoryId, $packId, $entries);
+			};
+			return;
+		}
+		$this->cache?->put($this->repositoryId, $packId, $entries);
+	}
+
+	/** @param list<string> $packIds */
+	private function cacheRemove(array $packIds): void {
+		if ($this->heldCacheWrites !== null) {
+			$this->heldCacheWrites[] = function () use ($packIds): void {
+				$this->cache?->remove($this->repositoryId, $packIds);
+			};
+			return;
+		}
+		$this->cache?->remove($this->repositoryId, $packIds);
 	}
 
 	/**
@@ -112,7 +154,7 @@ final class BlobIndex {
 		fwrite($stream, $this->cipher->encryptString(json_encode($entries, JSON_THROW_ON_ERROR), 'index:' . $packId));
 		rewind($stream);
 		$this->backend->put('index/' . $packId, $stream);
-		$this->cache?->put($this->repositoryId, $packId, $entries);
+		$this->cachePut($packId, $entries);
 		foreach ($entries as $e) {
 			$this->blobs[$e['id']] = [$packId, $e['offset'], $e['length'], $e['raw'], $e['flags']];
 			unset($this->pending[$e['id']]);
@@ -131,7 +173,7 @@ final class BlobIndex {
 	/** Forget a pack: delete its index file and cache row. Blobs that now live elsewhere are kept. */
 	public function removePack(string $packId): void {
 		$this->backend->delete('index/' . $packId);
-		$this->cache?->remove($this->repositoryId, [$packId]);
+		$this->cacheRemove([$packId]);
 		foreach ($this->blobs as $id => $loc) {
 			if ($loc[0] === $packId) {
 				unset($this->blobs[$id]);
