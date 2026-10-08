@@ -128,7 +128,7 @@ final class Catalog {
 
 	/** @return list<int> */
 	private function generations(): array {
-		return array_map(fn ($p) => (int)basename($p), $this->backend->list('catalog'));
+		return array_map(fn ($p) => (int)basename($p), $this->backend->listFiles('catalog'));
 	}
 
 	private function path(int $gen): string {

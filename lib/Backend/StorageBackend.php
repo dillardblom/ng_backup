@@ -133,6 +133,28 @@ final class StorageBackend implements IBackend {
 		}
 	}
 
+	public function listFiles(string $dir): array {
+		$abs = $this->abs($dir);
+		if (!$this->storage->is_dir($abs)) {
+			return []; // not created yet
+		}
+		$dh = $this->storage->opendir($abs);
+		if ($dh === false) {
+			// An existing folder read as empty would look like a new repository.
+			throw new BackendException('Cannot list ' . $dir);
+		}
+		$cut = $this->base === '' ? 0 : strlen($this->base) + 1;
+		$result = [];
+		while (($name = readdir($dh)) !== false) {
+			if ($name !== '.' && $name !== '..' && !self::isTemporary($name)) {
+				$result[] = substr($abs . '/' . $name, $cut);
+			}
+		}
+		closedir($dh);
+		sort($result);
+		return $result;
+	}
+
 	private function listInto(string $dir, array &$result): void {
 		if (!$this->storage->is_dir($dir)) {
 			return;
