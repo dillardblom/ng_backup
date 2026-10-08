@@ -30,12 +30,18 @@ final class Repository {
 	private const FLAG_DEFLATE = 1;
 	/** Reads per blob in a deep verify before it is reported as unreadable (not corrupted). */
 	private const VERIFY_READ_ATTEMPTS = 3;
+	/** A gap up to this size in an open pack stream is read past instead of opening the pack again. */
+	private const SKIP_MAX = 8 * 1048576;
 
 	private StreamCipher $cipher;
 	private BlobIndex $index;
 	private ?PackWriter $runPacks = null;
 	private ?int $maxBytes = null;
 	private Catalog $catalog;
+	/** @var resource|null open read stream of the pack read last, positioned at $packStreamPos */
+	private $packStream = null;
+	private string $packStreamId = '';
+	private int $packStreamPos = 0;
 
 	private function __construct(
 		private IBackend $backend,
@@ -708,7 +714,70 @@ final class Repository {
 
 	private function loadBlob(string $id): string {
 		[$pack, $offset, $length] = $this->index->get($id);
-		return $this->decodeBlob($id, $this->backend->getRange('packs/' . substr($pack, 0, 2) . '/' . $pack, $offset, $length));
+		return $this->decodeBlob($id, $this->readPack($pack, $offset, $length));
+	}
+
+	/**
+	 * Bytes of a pack. Restores and deep verifies read the blobs of a snapshot in the order they
+	 * were written, so the stream of the pack read last is kept open and read on from where it
+	 * is: one request per pack instead of one per blob (a round trip each, and on most remote
+	 * storages a new connection or file handle too). Anything else opens the pack at the offset,
+	 * as a single read always did.
+	 */
+	private function readPack(string $pack, int $offset, int $length): string {
+		if ($this->packStream !== null && $this->packStreamId === $pack && $offset >= $this->packStreamPos && $offset - $this->packStreamPos <= self::SKIP_MAX) {
+			try {
+				while ($this->packStreamPos < $offset) {
+					$this->readExactly(min($offset - $this->packStreamPos, 1048576), $pack);
+				}
+				return $this->readExactly($length, $pack);
+			} catch (\Exception) {
+				// The open stream broke (e.g. a timeout); open the pack again below.
+			}
+		}
+		$this->closePackStream();
+		$fh = $this->backend->get('packs/' . substr($pack, 0, 2) . '/' . $pack);
+		$this->packStream = $fh;
+		$this->packStreamId = $pack;
+		$this->packStreamPos = 0;
+		try {
+			if ($offset > 0 && fseek($fh, $offset) !== 0) {
+				throw new RepositoryException('Seek failed in pack ' . $pack);
+			}
+			$this->packStreamPos = $offset;
+			return $this->readExactly($length, $pack);
+		} catch (\Exception $e) {
+			$this->closePackStream();
+			throw $e;
+		}
+	}
+
+	/** Read $length bytes from the open pack stream; a short read closes it. */
+	private function readExactly(int $length, string $pack): string {
+		$fh = $this->packStream ?? throw new RepositoryException('No open pack stream');
+		$data = '';
+		while (strlen($data) < $length) {
+			$chunk = fread($fh, min($length - strlen($data), 1048576));
+			if ($chunk === false || $chunk === '') {
+				$this->closePackStream();
+				throw new RepositoryException('Short read in pack ' . $pack);
+			}
+			$data .= $chunk;
+		}
+		$this->packStreamPos += $length;
+		return $data;
+	}
+
+	private function closePackStream(): void {
+		$fh = $this->packStream;
+		$this->packStream = null;
+		if ($fh !== null) {
+			@fclose($fh);
+		}
+	}
+
+	public function __destruct() {
+		$this->closePackStream();
 	}
 
 	/** Decrypts and checks a blob read from its pack; throws when it is corrupted or tampered with. */
@@ -848,7 +917,7 @@ final class Repository {
 		$encrypted = null;
 		for ($attempt = 1; $attempt <= self::VERIFY_READ_ATTEMPTS && $encrypted === null; $attempt++) {
 			try {
-				$encrypted = $this->backend->getRange('packs/' . substr($pack, 0, 2) . '/' . $pack, $offset, $length);
+				$encrypted = $this->readPack($pack, $offset, $length);
 			} catch (\Exception $e) { // storage adapters throw their own exceptions; \Error (a bug) is not retried
 				$stats['readError'] = $e->getMessage();
 			}

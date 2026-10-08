@@ -7,6 +7,15 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
+## [Unreleased]
+
+### Fixed
+- Restores and `occ backup:verify --deep` fetched every blob with its own request, so on a
+  remote location they ran far below the speed of the connection. The blobs of a pack are now
+  read from one open stream, in the order they were written. Restoring 86 MB in 202 files from a
+  Hetzner Storage Box over SMB went from 0.78 MB/s to 4.2 MB/s, the speed of reading the packs
+  as plain files over that connection.
+
 ## [0.9.3-beta.4] - 2026-10-08
 
 Bugfix release.
