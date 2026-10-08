@@ -75,50 +75,53 @@ final class DbDumper {
 		// A pack that fills up during the dump is uploaded right away; its index cache row must
 		// wait until the read-only transaction is over.
 		$repo->holdIndexCache();
-		$this->db->setTransactionIsolation(TransactionIsolationLevel::REPEATABLE_READ);
-		$this->db->beginTransaction();
 		try {
-			if ($this->db->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\PostgreSQLPlatform) {
-				$this->db->executeStatement('SET TRANSACTION READ ONLY');
-			}
-			while ($state['i'] < count($state['tables'])) {
-				$table = $state['tables'][$state['i']];
-				$schema = $sm->introspectTable($table);
-				$writer = $repo->blobWriter($stats);
-				$hash = $state['hash'] !== null ? unserialize(base64_decode($state['hash']), ['allowed_classes' => [\HashContext::class]]) : hash_init('sha256');
-				if ($state['after'] === null && $state['segments'] === []) {
-					$writer->write($this->header($schema) . "\n");
+			$this->db->setTransactionIsolation(TransactionIsolationLevel::REPEATABLE_READ);
+			$this->db->beginTransaction();
+			try {
+				if ($this->db->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\PostgreSQLPlatform) {
+					$this->db->executeStatement('SET TRANSACTION READ ONLY');
 				}
-				$complete = true;
-				foreach ($this->rowLines($schema, $state['after']) as [$key, $line]) {
-					$writer->write($line . "\n");
-					hash_update($hash, $line . "\n");
-					$state['rows']++;
-					$state['after'] = $key;
-					if (microtime(true) >= $deadline) {
-						$complete = false;
+				while ($state['i'] < count($state['tables'])) {
+					$table = $state['tables'][$state['i']];
+					$schema = $sm->introspectTable($table);
+					$writer = $repo->blobWriter($stats);
+					$hash = $state['hash'] !== null ? unserialize(base64_decode($state['hash']), ['allowed_classes' => [\HashContext::class]]) : hash_init('sha256');
+					if ($state['after'] === null && $state['segments'] === []) {
+						$writer->write($this->header($schema) . "\n");
+					}
+					$complete = true;
+					foreach ($this->rowLines($schema, $state['after']) as [$key, $line]) {
+						$writer->write($line . "\n");
+						hash_update($hash, $line . "\n");
+						$state['rows']++;
+						$state['after'] = $key;
+						if (microtime(true) >= $deadline) {
+							$complete = false;
+							break;
+						}
+					}
+					$state['segments'][] = $writer->finish();
+					$state['bytes'] += $writer->bytes();
+					if (!$complete) {
+						$state['hash'] = base64_encode(serialize($hash));
+						break;
+					}
+					$state['result'][$table] = ['blobs' => array_merge(...$state['segments']), 'rows' => $state['rows'],
+						'bytes' => $state['bytes'], 'sha256' => hash_final($hash)];
+					$state = array_merge($state, ['i' => $state['i'] + 1, 'after' => null, 'segments' => [], 'rows' => 0, 'bytes' => 0, 'hash' => null]);
+					if (microtime(true) >= $deadline && $state['i'] < count($state['tables'])) {
 						break;
 					}
 				}
-				$state['segments'][] = $writer->finish();
-				$state['bytes'] += $writer->bytes();
-				if (!$complete) {
-					$state['hash'] = base64_encode(serialize($hash));
-					break;
+				if ($state['i'] >= count($state['tables'])) {
+					$state['sequences'] = $this->sequenceStates($state['tables']);
+					$state['done'] = true;
 				}
-				$state['result'][$table] = ['blobs' => array_merge(...$state['segments']), 'rows' => $state['rows'],
-					'bytes' => $state['bytes'], 'sha256' => hash_final($hash)];
-				$state = array_merge($state, ['i' => $state['i'] + 1, 'after' => null, 'segments' => [], 'rows' => 0, 'bytes' => 0, 'hash' => null]);
-				if (microtime(true) >= $deadline && $state['i'] < count($state['tables'])) {
-					break;
-				}
-			}
-			if ($state['i'] >= count($state['tables'])) {
-				$state['sequences'] = $this->sequenceStates($state['tables']);
-				$state['done'] = true;
+			} finally {
+				$this->db->rollBack();
 			}
 		} finally {
-			$this->db->rollBack();
 			$repo->releaseIndexCache();
 		}
 		$repo->flushPacks();
