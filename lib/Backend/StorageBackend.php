@@ -113,7 +113,7 @@ final class StorageBackend implements IBackend {
 	/** Whether the storage accepts the connection settings (files_external's own check). */
 	public function canConnect(): bool {
 		try {
-			return !method_exists($this->storage, 'test') || (bool)$this->storage->test();
+			return !method_exists($this->storage, 'test') || $this->storage->test();
 		} catch (\Throwable) {
 			return false;
 		}
