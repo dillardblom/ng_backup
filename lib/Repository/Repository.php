@@ -92,8 +92,8 @@ final class Repository {
 	private function loadCatalog(?ICatalogAnchor $anchor): void {
 		$this->catalog = new Catalog($this->backend, $this->cipher, $this->repositoryId, $anchor);
 		$this->catalog->load(
-			fn () => array_map('basename', $this->backend->list('snapshots')),
-			fn () => array_map('basename', $this->backend->list('trash/info')),
+			fn () => array_map('basename', $this->backend->listFiles('snapshots')),
+			fn () => array_map('basename', $this->backend->listFiles('trash/info')),
 			fn () => $this->backend->list('users'));
 	}
 
@@ -643,7 +643,7 @@ final class Repository {
 	 * @return list<string>
 	 */
 	public function listSnapshots(): array {
-		$present = array_flip(array_map('basename', $this->backend->list('snapshots')));
+		$present = array_flip(array_map('basename', $this->backend->listFiles('snapshots')));
 		$listed = array_keys($this->catalog->snapshots);
 		foreach ($listed as $id) {
 			if (!isset($present[$id])) {

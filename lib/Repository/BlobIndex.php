@@ -92,7 +92,7 @@ final class BlobIndex {
 		$cached = $verify ? [] : ($this->cache?->all($this->repositoryId) ?? []);
 		$present = [];
 		$this->downloaded = 0;
-		foreach ($this->backend->list('index') as $path) {
+		foreach ($this->backend->listFiles('index') as $path) {
 			$packId = basename($path);
 			$present[$packId] = true;
 			if (isset($cached[$packId])) {
