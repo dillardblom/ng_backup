@@ -7,6 +7,17 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
+## [Unreleased]
+
+### Fixed
+- A backup failed with "cannot execute INSERT in a read-only transaction" on PostgreSQL as soon
+  as the database dump filled a whole pack (32 MiB): the pack's index cache row was written
+  inside the read-only dump transaction. On other databases that row was rolled back silently.
+- Backups to a remote location slowed down as the repository grew: every backup step listed the
+  repository's index with a round trip per file. Over SFTP to a Hetzner Storage Box a 60 GiB
+  repository already lost a large part of each step to it; backing up continuously
+  (`occ backup:run`) went from 45 KiB/s to 5.8 MB/s with the fix.
+
 ## [0.9.2-beta.3] - 2026-10-08
 
 Bugfix release.
