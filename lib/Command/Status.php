@@ -44,7 +44,7 @@ final class Status extends Command {
 		$rows = [];
 		foreach ($this->runs->findRecent(10) as $r) {
 			$s = json_decode($r->getStats() ?? '{}', true)['files'] ?? [];
-			$rows[] = [$r->getId(), $names[$r->getTargetId()] ?? '#' . $r->getTargetId(), $r->getKind(), $r->getStatus() . ($r->getStatus() === 'running' ? ' (' . $r->getPhase() . ')' : ''),
+			$rows[] = [$r->getId(), $names[$r->getTargetId()] ?? '#' . $r->getTargetId(), $r->getKind(), $r->getStatus() . ($r->getStatus() === 'running' ? ' (' . $r->getPhase() . self::percent($r) . ')' : ''),
 				date('Y-m-d H:i', $r->getStartedAt()), $r->getFinishedAt() ? gmdate('H:i:s', $r->getFinishedAt() - $r->getStartedAt()) : '',
 				$s['files'] ?? '', isset($s['uploaded']) ? sprintf('%.1f MiB', $s['uploaded'] / 1048576) : '', mb_strimwidth((string)$r->getError(), 0, 50, '…')];
 		}
@@ -52,5 +52,11 @@ final class Status extends Command {
 			(new Table($output))->setHeaders(['run', 'location', 'kind', 'status', 'started', 'took', 'files', 'uploaded', 'error'])->setRows($rows)->render();
 		}
 		return 0;
+	}
+
+	/** " 68%", or " ~68%" when estimated from the file cache; empty without an estimate */
+	private static function percent(\OCA\NgBackup\Db\Run $r): string {
+		$p = \OCA\NgBackup\Job\BackupRun::progressOf($r);
+		return $p === null ? '' : sprintf(' %s%d%%', $p['approximate'] ? '~' : '', (int)floor($p['fraction'] * 100.0));
 	}
 }

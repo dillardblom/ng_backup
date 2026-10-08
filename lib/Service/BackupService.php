@@ -17,6 +17,7 @@ use OCA\NgBackup\Job\BackupRun;
 use OCA\NgBackup\Repository\RepositoryException;
 use OCP\App\IAppManager;
 use OCP\IConfig;
+use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
 use OCP\Lock\ILockingProvider;
 use OCP\Lock\LockedException;
@@ -65,6 +66,46 @@ final class BackupService {
 			return $this->leases->with(PruneService::lockKey($target), LeaseService::EXCLUSIVE, 60, fn () => $this->createRun($target, $label));
 		} catch (LockedException) {
 			throw new \RuntimeException('A cleanup or another start for ' . $target->getName() . ' is running; try again later');
+		}
+	}
+
+	/**
+	 * The expected size of the files phase, for the progress shown while it runs: the size of the
+	 * previous snapshot, or for a first backup the users' files, versions and trash as Nextcloud's
+	 * file cache knows them (approximate: other data in the data directory is not counted).
+	 *
+	 * @return array{bytes: int, approximate: bool}
+	 */
+	private function estimateBytes(Run $run, array $files): array {
+		if (($files['parent'] ?? null) !== null) {
+			try {
+				return ['bytes' => $this->snapshots->findOne($run->getTargetId(), (string)$files['parent'])->getBytes() ?? 0, 'approximate' => false];
+			} catch (\Throwable) {
+			}
+		}
+		try {
+			$qb = $this->db->getQueryBuilder();
+			$qb->select('numeric_id')->from('storages')
+				->where($qb->expr()->like('id', $qb->createNamedParameter('home::%')))
+				->orWhere($qb->expr()->like('id', $qb->createNamedParameter('object::user:%')));
+			$result = $qb->executeQuery();
+			$storages = [];
+			while (($id = $result->fetchOne()) !== false) {
+				$storages[] = (int)$id;
+			}
+			$result->closeCursor();
+			$bytes = 0;
+			foreach (array_chunk($storages, 500) as $chunk) {
+				$qb = $this->db->getQueryBuilder();
+				$qb->select($qb->func()->sum('size'))->from('filecache')
+					->where($qb->expr()->in('storage', $qb->createNamedParameter($chunk, IQueryBuilder::PARAM_INT_ARRAY)))
+					->andWhere($qb->expr()->in('path_hash', $qb->createNamedParameter(array_map('md5', ['files', 'files_versions', 'files_trashbin']), IQueryBuilder::PARAM_STR_ARRAY)))
+					->andWhere($qb->expr()->gt('size', $qb->createNamedParameter(0, IQueryBuilder::PARAM_INT)));
+				$bytes += (int)$qb->executeQuery()->fetchOne();
+			}
+			return ['bytes' => $bytes, 'approximate' => true];
+		} catch (\Throwable) {
+			return ['bytes' => 0, 'approximate' => true];
 		}
 	}
 
@@ -147,6 +188,7 @@ final class BackupService {
 					$state['dump'] = $dump;
 				}
 			} else {
+				$state['files']['estimate'] ??= $this->estimateBytes($run, $state['files']);
 				$state['files'] = BackupRun::step($repo, $state['files'], $deadline);
 				if ($state['files']['phase'] === 'commit') {
 					// Catalog write under the catalog lock, from a repository opened inside it: a per-user

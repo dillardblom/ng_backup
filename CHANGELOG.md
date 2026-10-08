@@ -10,6 +10,10 @@ instead carried by the app description, the git tag, the release, and this file.
 ## [Unreleased]
 
 ### Added
+- Progress of a running backup in the web interface and `occ backup:status`, e.g.
+  "running (files) 68%". The total is the size of the previous snapshot; for a first backup it
+  is estimated from Nextcloud's file cache (users' files, versions and trash) and shown as
+  "~68%".
 - Edit a backup location (web interface and `occ backup:target:edit`): change the password, host,
   folder, connection type or name without losing its history. Before this the only option was a
   new location, which starts an empty repository and, with a retention lock at the provider,

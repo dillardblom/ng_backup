@@ -49,7 +49,7 @@
 						<td>{{ targetName(run.targetId) }}</td>
 						<td>{{ run.kind }}</td>
 						<td>{{ run.snapshot ? new Date(run.snapshot.createdAt * 1000).toLocaleString() + (run.snapshot.label ? ' – ' + run.snapshot.label : '') : '' }}</td>
-						<td :class="'ngb-' + run.status">{{ run.status }}{{ run.status === 'running' ? ' (' + run.phase + ')' : '' }}{{ run.error ? ': ' + run.error : '' }}</td>
+						<td :class="'ngb-' + run.status">{{ run.status }}{{ run.status === 'running' ? ' (' + run.phase + percent(run) + ')' : '' }}{{ run.error ? ': ' + run.error : '' }}</td>
 						<td>{{ run.stats?.files?.files ?? run.stats?.restored ?? '' }}</td>
 						<td>{{ run.stats?.files ? formatSize(run.stats.files.uploaded) : '' }}</td>
 					</tr>
@@ -101,6 +101,8 @@ async function untrash(target, item) {
 	}
 }
 
+// " 68%", or " ~68%" when the total is estimated from Nextcloud's file cache (first backup)
+const percent = (run) => run.progress ? ' ' + (run.progress.approximate ? '~' : '') + Math.floor(run.progress.fraction * 100) + '%' : ''
 const isRunning = (targetId) => props.status.runs.some(r => r.targetId === targetId && r.kind === 'full' && r.status === 'running')
 const targetName = (id) => props.status.targets.find(tg => tg.id === id)?.name ?? '#' + id
 

@@ -305,6 +305,6 @@ final class AdminApiController extends Controller {
 		return ['id' => $r->getId(), 'targetId' => $r->getTargetId(), 'kind' => $r->getKind(), 'status' => $r->getStatus(),
 			'phase' => $r->getPhase(), 'snapshotId' => $r->getSnapshotId(), 'snapshot' => $snapshot, 'startedAt' => $r->getStartedAt(),
 			'updatedAt' => $r->getUpdatedAt(), 'finishedAt' => $r->getFinishedAt(), 'error' => $r->getError(),
-			'stats' => json_decode($r->getStats() ?? 'null', true)];
+			'stats' => json_decode($r->getStats() ?? 'null', true), 'progress' => \OCA\NgBackup\Job\BackupRun::progressOf($r)];
 	}
 }
