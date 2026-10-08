@@ -15,6 +15,7 @@ instead carried by the app description, the git tag, the release, and this file.
   read from one open stream, in the order they were written. Restoring 86 MB in 202 files from a
   Hetzner Storage Box over SMB went from 0.78 MB/s to 4.2 MB/s, the speed of reading the packs
   as plain files over that connection.
+- README: a WebDAV location on a slow upload needs a higher `davstorage.request_timeout`.
 
 ## [0.9.3-beta.4] - 2026-10-08
 

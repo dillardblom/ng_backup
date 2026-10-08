@@ -136,9 +136,10 @@ Contributions welcome via PR — add what you ran into with your own provider.
   Conflict`. SMB: share = the sub-account name, port 445 must be reachable from your server (it was
   from a home connection here, but some providers block it), and the `smbclient` PECL extension is
   required (see the SMB entry below). Both have a noticeable fixed cost per run: an incremental run
-  that uploads nothing took about 20 s over WebDAV and 50 s over SMB. A deep verify is slow over
-  remote storage, since each blob is fetched with its own request (19 minutes for 66 MiB over
-  WebDAV); run it occasionally, not after every backup.
+  that uploads nothing took about 20 s over WebDAV and 50 s over SMB. Over WebDAV, Nextcloud gives
+  every request at most 30 s by default, also an upload of a whole 32 MiB pack: on an upload
+  slower than about 9 Mbit/s a backup fails with `cURL error 28: Operation timed out`. Raise the
+  limit with `occ config:system:set davstorage.request_timeout --value=600 --type=integer`.
 
 - **FTP, server-dependent absolute-path handling:** files_external's FTP backend always builds
   absolute paths (e.g. `MKD /repo`) for the configured root, never relative ones. `atmoz/sftp`-style
