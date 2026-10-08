@@ -140,7 +140,8 @@ final class StorageBackend implements IBackend {
 		}
 		$dh = $this->storage->opendir($abs);
 		if ($dh === false) {
-			return [];
+			// An existing folder read as empty would look like a new repository.
+			throw new BackendException('Cannot list ' . $dir);
 		}
 		$cut = $this->base === '' ? 0 : strlen($this->base) + 1;
 		$result = [];

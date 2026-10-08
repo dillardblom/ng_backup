@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\NgBackup\Tests\Unit\Backend;
 
+use OCA\NgBackup\Backend\BackendException;
 use OCA\NgBackup\Backend\StorageBackend;
 use OCA\NgBackup\Tests\Unit\TempDirTrait;
 use OCP\Files\Storage\IStorage;
@@ -43,5 +44,14 @@ class StorageBackendListTest extends TestCase {
 		$storage->method('is_dir')->willReturnCallback(fn (string $path): bool => $path === 'repo');
 		$storage->expects($this->never())->method('opendir');
 		$this->assertSame([], (new StorageBackend($storage, 'repo'))->listFiles('snapshots'));
+	}
+
+	public function testAnUnreadableFolderIsAnErrorNotEmpty(): void {
+		$storage = $this->createMock(IStorage::class);
+		$storage->method('instanceOfStorage')->willReturn(false);
+		$storage->method('is_dir')->willReturn(true);
+		$storage->method('opendir')->willReturn(false);
+		$this->expectException(BackendException::class);
+		(new StorageBackend($storage, 'repo'))->listFiles('catalog');
 	}
 }

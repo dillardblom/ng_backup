@@ -114,7 +114,10 @@ final class LocalBackend implements IBackend {
 		}
 		$result = [];
 		$names = scandir($base);
-		foreach ($names === false ? [] : $names as $name) {
+		if ($names === false) {
+			throw new BackendException('Cannot list ' . $dir);
+		}
+		foreach ($names as $name) {
 			if ($name !== '.' && $name !== '..' && !StorageBackend::isTemporary($name)) {
 				$result[] = trim($dir, '/') . '/' . $name;
 			}
