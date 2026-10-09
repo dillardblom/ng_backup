@@ -7,6 +7,25 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
+## [0.9.4-beta.5] - 2026-10-09
+
+Bugfix release: faster restores.
+
+### Fixed
+- Restores and `occ backup:verify --deep` fetched every blob with its own request, so on a
+  remote location they ran far below the speed of the connection. The blobs of a pack are now
+  read from one open stream, in the order they were written. Restoring 86 MB in 202 files from a
+  Hetzner Storage Box over SMB went from 0.78 MB/s to 4.2 MB/s, the speed of reading the packs
+  as plain files over that connection.
+- Reading from an SFTP location waited a full round trip for every 256 KiB, whatever the line
+  speed. Reads now keep up to 8 requests in flight. Restoring 1.97 GB in 500 files from a Hetzner
+  Storage Box (47 ms away) took 694 s before the fix above, 499 s with it and 142 s with both
+  (2.8 → 3.9 → 13.9 MB/s); a full 51 GB restore ran at 13.0 MB/s. When a server error
+  interrupts such a read, it goes on from the same position with Nextcloud's own SFTP stream;
+  after three failing files in a row, or on a Nextcloud whose SFTP library lacks what this needs,
+  only Nextcloud's own stream is used.
+- README: a WebDAV location on a slow upload needs a higher `davstorage.request_timeout`.
+
 ## [0.9.3-beta.4] - 2026-10-08
 
 Bugfix release.
@@ -135,6 +154,7 @@ and not implemented yet.
 - See the "Storage backend experiences" section of the README for provider-specific quirks found
   so far (e.g. Hetzner Storage Box sub-accounts).
 
+[0.9.4-beta.5]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.4-beta.5
 [0.9.3-beta.4]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.3-beta.4
 [0.9.2-beta.3]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.2-beta.3
 [0.9.1-beta.2]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.1-beta.2

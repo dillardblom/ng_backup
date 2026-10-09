@@ -17,6 +17,8 @@ use OCP\Files\Storage\IWriteStreamStorage;
 final class StorageBackend implements IBackend {
 	/** Object stores write whole objects atomically; other storages get a temp name + rename. */
 	private bool $atomicPut;
+	/** SFTP: read through SftpReadStream, which keeps several requests in flight. */
+	private bool $sftpReads;
 
 	public function __construct(
 		private IStorage $storage,
@@ -25,6 +27,7 @@ final class StorageBackend implements IBackend {
 		$this->base = trim($base, '/');
 		self::validate($this->base, true);
 		$this->atomicPut = $storage->instanceOfStorage(\OCA\Files_External\Lib\Storage\AmazonS3::class);
+		$this->sftpReads = $storage->instanceOfStorage(\OCA\Files_External\Lib\Storage\SFTP::class);
 		if ($this->base !== '') {
 			$this->mkdirs($this->base);
 		}
@@ -79,6 +82,14 @@ final class StorageBackend implements IBackend {
 	}
 
 	public function get(string $path) {
+		if ($this->sftpReads) {
+			$fh = SftpReadStream::open($this->storage, $this->abs($path));
+			if (is_resource($fh)) {
+				return $fh;
+			}
+			// null: not supported or failing for now; false: not opened, which need not mean
+			// missing. Either way the storage's own stream decides.
+		}
 		$fh = $this->storage->fopen($this->abs($path), 'r');
 		if ($fh === false) {
 			throw new BackendException('Not found: ' . $path);

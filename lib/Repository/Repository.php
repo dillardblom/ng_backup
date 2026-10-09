@@ -36,6 +36,7 @@ final class Repository {
 	private ?PackWriter $runPacks = null;
 	private ?int $maxBytes = null;
 	private Catalog $catalog;
+	private PackReader $packReader;
 
 	private function __construct(
 		private IBackend $backend,
@@ -43,7 +44,9 @@ final class Repository {
 		private string $repositoryId,
 	) {
 		$this->cipher = new StreamCipher($keys);
-		$this->index = new BlobIndex($backend, $this->cipher);
+		$this->packReader = new PackReader($backend);
+		$this->backend = new PackReaderGuard($backend, $this->packReader);
+		$this->index = new BlobIndex($this->backend, $this->cipher);
 	}
 
 	public static function init(IBackend $backend, #[\SensitiveParameter] string $passphrase): self {
@@ -708,7 +711,7 @@ final class Repository {
 
 	private function loadBlob(string $id): string {
 		[$pack, $offset, $length] = $this->index->get($id);
-		return $this->decodeBlob($id, $this->backend->getRange('packs/' . substr($pack, 0, 2) . '/' . $pack, $offset, $length));
+		return $this->decodeBlob($id, $this->packReader->read($pack, $offset, $length));
 	}
 
 	/** Decrypts and checks a blob read from its pack; throws when it is corrupted or tampered with. */
@@ -848,7 +851,7 @@ final class Repository {
 		$encrypted = null;
 		for ($attempt = 1; $attempt <= self::VERIFY_READ_ATTEMPTS && $encrypted === null; $attempt++) {
 			try {
-				$encrypted = $this->backend->getRange('packs/' . substr($pack, 0, 2) . '/' . $pack, $offset, $length);
+				$encrypted = $this->packReader->read($pack, $offset, $length);
 			} catch (\Exception $e) { // storage adapters throw their own exceptions; \Error (a bug) is not retried
 				$stats['readError'] = $e->getMessage();
 			}
@@ -859,7 +862,7 @@ final class Repository {
 		}
 		try {
 			$stats['bytesChecked'] += strlen($this->decodeBlob($id, $encrypted));
-		} catch (\Throwable) {
+		} catch (\Exception) { // damage; an \Error is a bug and must not be reported as damage
 			$stats['failed'][] = $id;
 		}
 	}
