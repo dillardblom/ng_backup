@@ -7,7 +7,9 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
-## [Unreleased]
+## [0.9.4-beta.5] - 2026-10-09
+
+Bugfix release: faster restores.
 
 ### Fixed
 - Restores and `occ backup:verify --deep` fetched every blob with its own request, so on a
@@ -152,6 +154,7 @@ and not implemented yet.
 - See the "Storage backend experiences" section of the README for provider-specific quirks found
   so far (e.g. Hetzner Storage Box sub-accounts).
 
+[0.9.4-beta.5]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.4-beta.5
 [0.9.3-beta.4]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.3-beta.4
 [0.9.2-beta.3]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.2-beta.3
 [0.9.1-beta.2]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.1-beta.2
