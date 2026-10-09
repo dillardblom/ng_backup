@@ -87,10 +87,8 @@ final class StorageBackend implements IBackend {
 			if (is_resource($fh)) {
 				return $fh;
 			}
-			if ($fh === null) {
-				$this->sftpReads = false;
-			}
-			// false: not opened, which need not mean missing; the storage's own stream decides
+			// null: not supported or failing for now; false: not opened, which need not mean
+			// missing. Either way the storage's own stream decides.
 		}
 		$fh = $this->storage->fopen($this->abs($path), 'r');
 		if ($fh === false) {

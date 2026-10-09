@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\NgBackup\Tests\Unit\Backend;
 
+use OCA\NgBackup\Backend\BackendException;
 use OCA\NgBackup\Backend\SftpReadStream;
 use PHPUnit\Framework\TestCase;
 
@@ -102,24 +103,132 @@ class SftpReadStreamTest extends TestCase {
 		$this->assertSame(0, $sftp->pending());
 	}
 
-	public function testAServerErrorFailsTheReadAndLeavesTheConnectionUsable(): void {
-		$sftp = new FakeSftpConnection(['/home/f' => random_bytes(3 * 1048576), '/home/g' => 'second'], failAt: 1048576);
-		$fh = SftpReadStream::open(new FakeSftpStorage($sftp), 'f');
-		$read = '';
-		while (!feof($fh)) {
-			$chunk = fread($fh, 65536);
-			if ($chunk === false || $chunk === '') {
-				break;
-			}
-			$read .= $chunk;
-		}
-		$this->assertLessThan(3 * 1048576, strlen($read));
-		fclose($fh);
-		$this->assertSame(0, $sftp->pending());
+	public function testAServerErrorGoesOnWithTheStoragesOwnStreamFromTheSamePosition(): void {
+		$data = random_bytes(3 * 1048576);
+		$sftp = new FakeSftpConnection(['/home/f' => $data], failAt: 1048576);
+		$storage = new FakeSftpStorage($sftp);
+		$fh = SftpReadStream::open($storage, 'f');
 
-		$fh = SftpReadStream::open(new FakeSftpStorage($sftp), 'g');
-		$this->assertSame('second', stream_get_contents($fh));
+		$this->assertSame($data, $this->readAll($fh));
+		$this->assertSame(['f'], $storage->fopens);
+		$this->assertSame(strlen($data), ftell($fh));
 		fclose($fh);
+		$this->assertSame(0, $sftp->pending(), 'the connection is clean for the storage\'s own stream');
+		$this->assertSame([], $sftp->openHandles, 'the failed handle is closed');
+
+		// One failure is no reason to give up on the fast reads.
+		$fh = SftpReadStream::open($storage, 'f');
+		$this->assertIsResource($fh);
+		fclose($fh);
+	}
+
+	public function testOnlyFailuresInARowSwitchTheFastReadsOff(): void {
+		$data = random_bytes(2 * 1048576);
+		$failing = new FakeSftpStorage(new FakeSftpConnection(['/home/f' => $data], failAt: 1048576));
+		$working = new FakeSftpStorage(new FakeSftpConnection(['/home/f' => $data]));
+		for ($i = 1; $i < SftpReadStream::MAX_FAILURES; $i++) {
+			$fh = SftpReadStream::open($failing, 'f');
+			$this->assertSame($data, $this->readAll($fh));
+			fclose($fh);
+		}
+		$fh = SftpReadStream::open($working, 'f'); // a stream that works resets the count
+		$this->assertSame($data, $this->readAll($fh));
+		fclose($fh);
+		for ($i = 1; $i <= SftpReadStream::MAX_FAILURES; $i++) {
+			$fh = SftpReadStream::open($failing, 'f');
+			$this->assertIsResource($fh, "failure $i");
+			$this->assertSame($data, $this->readAll($fh));
+			fclose($fh);
+		}
+		$this->assertNull(SftpReadStream::open($working, 'f'));
+		$this->assertSame(SftpReadStream::MAX_FAILURES * 2 - 1, count($failing->fopens), 'every failed stream still gave all its data');
+	}
+
+	public function testAServerErrorAfterASeekGoesOnFromTheSeekedPosition(): void {
+		$data = random_bytes(3 * 1048576);
+		$sftp = new FakeSftpConnection(['/home/f' => $data], failAt: 2500000);
+		$storage = new FakeSftpStorage($sftp);
+		$fh = SftpReadStream::open($storage, 'f');
+		$this->assertSame(0, fseek($fh, 2400000));
+		$this->assertSame(substr($data, 2400000), $this->readAll($fh));
+		$this->assertSame(0, fseek($fh, 100)); // seeks go to the storage's stream now
+		$this->assertSame(substr($data, 100, 1000), $this->readExactly($fh, 1000));
+		fclose($fh);
+	}
+
+	public function testAConnectionErrorDoesNotFallBackOnTheSameConnection(): void {
+		// After an exception, answers may still be on their way; files_external's stream would
+		// take them for its own.
+		$sftp = new FakeSftpConnection(['/home/f' => random_bytes(3 * 1048576)], throwAt: 1048576);
+		$storage = new FakeSftpStorage($sftp);
+		$fh = SftpReadStream::open($storage, 'f');
+		$this->assertLessThan(3 * 1048576, strlen($this->readAll($fh)));
+		fclose($fh);
+		$this->assertSame([], $storage->fopens);
+	}
+
+	public function testALostConnectionDoesNotFallBackEither(): void {
+		$sftp = new FakeSftpConnection(['/home/f' => random_bytes(3 * 1048576)], loseAt: 1048576);
+		$storage = new FakeSftpStorage($sftp);
+		$fh = SftpReadStream::open($storage, 'f');
+		$this->assertLessThan(3 * 1048576, strlen($this->readAll($fh)));
+		fclose($fh);
+		$this->assertSame([], $storage->fopens);
+	}
+
+	public function testWhenTheStoragesOwnStreamFailsTooTheReadFails(): void {
+		$sftp = new FakeSftpConnection(['/home/f' => random_bytes(3 * 1048576)], failAt: 1048576);
+		$storage = new FakeSftpStorage($sftp, fopenFails: true);
+		$fh = SftpReadStream::open($storage, 'f');
+		$this->assertLessThan(3 * 1048576, strlen($this->readAll($fh)));
+		fclose($fh);
+		$this->assertSame(['f'], $storage->fopens);
+	}
+
+	public function testAConnectionErrorWhileOpeningIsAnErrorNotAMissingFile(): void {
+		// The OPEN request went out: the storage's own stream must not be tried on this connection.
+		$storage = new FakeSftpStorage(new FakeSftpConnection(['/home/f' => 'x'], throwAt: -1));
+		try {
+			SftpReadStream::open($storage, 'f');
+			$this->fail('expected a BackendException');
+		} catch (BackendException $e) {
+			$this->assertStringContainsString('connection', $e->getMessage());
+		}
+		$lost = new FakeSftpStorage(new FakeSftpConnection(['/home/f' => 'x'], loseAt: -1));
+		$this->expectException(BackendException::class);
+		SftpReadStream::open($lost, 'f');
+	}
+
+	public function testAConnectionErrorWhileOpeningDoesNotStopTheNextFile(): void {
+		try {
+			SftpReadStream::open(new FakeSftpStorage(new FakeSftpConnection(['/home/f' => 'x'], throwAt: -1)), 'f');
+		} catch (BackendException) {
+		}
+		$fh = SftpReadStream::open(new FakeSftpStorage(new FakeSftpConnection(['/home/f' => 'x'])), 'f');
+		$this->assertSame('x', stream_get_contents($fh));
+		fclose($fh);
+	}
+
+	public function testAFailedCloseDoesNotFallBackOnTheSameConnection(): void {
+		$sftp = new FakeSftpConnection(['/home/f' => random_bytes(3 * 1048576)], failAt: 1048576, closeFails: true);
+		$storage = new FakeSftpStorage($sftp);
+		$fh = SftpReadStream::open($storage, 'f');
+		$this->assertLessThan(3 * 1048576, strlen($this->readAll($fh)));
+		fclose($fh);
+		$this->assertSame([], $storage->fopens);
+	}
+
+	public function testAStorageThatThrowsIsNotUsed(): void {
+		$storage = new class {
+			public function getRoot(): string {
+				return '/';
+			}
+
+			public function getConnection(): object {
+				throw new \RuntimeException('Login failed');
+			}
+		};
+		$this->assertNull(SftpReadStream::open($storage, 'f'));
 	}
 
 	public function testAConnectionWithoutTheNeededMethodsIsNotUsed(): void {
@@ -136,6 +245,90 @@ class SftpReadStreamTest extends TestCase {
 		$this->assertNull(SftpReadStream::open(new \stdClass(), 'f'));
 	}
 
+	public function testAPhpseclib3ConnectionIsNotUsed(): void {
+		// phpseclib 3 has no _-prefixed methods; its packet_type and packet methods are private.
+		$v3 = new class {
+			private int $packet_type = -1;
+
+			private function _send_sftp_packet(): bool {
+				return true;
+			}
+
+			private function _get_sftp_packet(): string {
+				return '';
+			}
+
+			public function _realpath(string $path): string {
+				return $path;
+			}
+
+			public function realpath(string $path): string {
+				return $path . (string)$this->packet_type . $this->_send_sftp_packet() . $this->_get_sftp_packet();
+			}
+		};
+		$storage = new class($v3) {
+			public function __construct(
+				private object $connection,
+			) {
+			}
+
+			public function getRoot(): string {
+				return '/';
+			}
+
+			public function getConnection(): object {
+				return $this->connection;
+			}
+		};
+		$this->assertNull(SftpReadStream::open($storage, 'f'));
+	}
+
+	public function testAPrivatePacketTypeIsNotUsed(): void {
+		$conn = new class {
+			private int $packet_type = -1;
+
+			public function _send_sftp_packet(): bool {
+				return true;
+			}
+
+			public function _get_sftp_packet(): string {
+				return (string)$this->packet_type;
+			}
+
+			public function _realpath(string $path): string {
+				return $path;
+			}
+		};
+		$storage = new class($conn) {
+			public function __construct(
+				private object $connection,
+			) {
+			}
+
+			public function getRoot(): string {
+				return '/';
+			}
+
+			public function getConnection(): object {
+				return $this->connection;
+			}
+		};
+		$this->assertNull(SftpReadStream::open($storage, 'f'));
+	}
+
+	/** @param resource $fh */
+	private function readAll($fh): string {
+		$data = '';
+		while (!feof($fh)) {
+			$chunk = fread($fh, 65536);
+			if ($chunk === false || $chunk === '') {
+				break;
+			}
+			$data .= $chunk;
+		}
+		return $data;
+	}
+
 	/** @param resource $fh */
 	private function readExactly($fh, int $length): string {
 		$data = '';
@@ -147,9 +340,26 @@ class SftpReadStreamTest extends TestCase {
 }
 
 final class FakeSftpStorage {
+	/** @var list<string> paths opened through the storage's own stream */
+	public array $fopens = [];
+
 	public function __construct(
 		private FakeSftpConnection $connection,
+		private bool $fopenFails = false,
 	) {
+	}
+
+	/** files_external's own read stream: here the file from memory, seekable. */
+	public function fopen(string $path, string $mode) {
+		$this->fopens[] = $path;
+		$data = $this->connection->file('/home/' . $path);
+		if ($this->fopenFails || $data === null) {
+			return false;
+		}
+		$fh = fopen('php://memory', 'r+');
+		fwrite($fh, $data);
+		rewind($fh);
+		return $fh;
 	}
 
 	public function getRoot(): string {
@@ -178,7 +388,16 @@ final class FakeSftpConnection {
 		private array $files,
 		private int $cap = 261120,
 		private ?int $failAt = null,
+		/** READ at or past this offset throws; -1: OPEN throws */
+		private ?int $throwAt = null,
+		/** READ at or past this offset finds the connection gone (phpseclib returns false); -1: OPEN */
+		private ?int $loseAt = null,
+		private bool $closeFails = false,
 	) {
+	}
+
+	public function file(string $path): ?string {
+		return $this->files[$path] ?? null;
 	}
 
 	public function pending(): int {
@@ -192,6 +411,12 @@ final class FakeSftpConnection {
 	public function _send_sftp_packet(int $type, string $data, int $id = 1): bool {
 		switch ($type) {
 			case 3: // OPEN
+				if ($this->throwAt === -1) {
+					throw new \RuntimeException('Connection closed by server');
+				}
+				if ($this->loseAt === -1) {
+					return false;
+				}
 				$path = substr($data, 4, unpack('N', $data)[1]);
 				if (!isset($this->files[$path])) {
 					$this->answers[$id] = [101, pack('N', 2)];
@@ -202,6 +427,9 @@ final class FakeSftpConnection {
 				$this->answers[$id] = [102, pack('Na*', strlen($handle), $handle)];
 				break;
 			case 4: // CLOSE
+				if ($this->closeFails) {
+					return false;
+				}
 				$handle = substr($data, 4, unpack('N', $data)[1]);
 				unset($this->openHandles[$handle]);
 				$this->answers[$id] = [101, pack('N', 0)];
@@ -212,6 +440,13 @@ final class FakeSftpConnection {
 				['hi' => $hi, 'lo' => $lo, 'n' => $n] = unpack('Nhi/Nlo/Nn', substr($data, 4 + $len));
 				$offset = $hi * 4294967296 + $lo;
 				$this->reads[] = $n;
+				if ($this->throwAt !== null && $this->throwAt >= 0 && $offset >= $this->throwAt) {
+					throw new \RuntimeException('Connection closed by server');
+				}
+				if ($this->loseAt !== null && $this->loseAt >= 0 && $offset >= $this->loseAt) {
+					$this->answers = [];
+					return false;
+				}
 				$file = $this->files[$this->openHandles[$handle]];
 				if ($this->failAt !== null && $offset >= $this->failAt) {
 					$this->answers[$id] = [101, pack('N', 4)]; // FX_FAILURE
