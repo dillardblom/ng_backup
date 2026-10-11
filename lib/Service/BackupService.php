@@ -15,6 +15,7 @@ use OCA\NgBackup\Db\SnapshotMapper;
 use OCA\NgBackup\Db\Target;
 use OCA\NgBackup\Job\BackupRun;
 use OCA\NgBackup\Repository\RepositoryException;
+use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\App\IAppManager;
 use OCP\IConfig;
 use OCP\IDBConnection;
@@ -105,7 +106,10 @@ final class BackupService {
 	 */
 	public function step(Run $run, float $deadline): Run {
 		// Leases expire on their own: a step killed by a time limit or OOM blocks nothing for long.
-		$ttl = (int)min(3600, max(120, $deadline - microtime(true) + 120));
+		// A step can run well past its deadline (the commit of a large snapshot writes its tree and
+		// index), so the lease holds at least 15 minutes; should it still expire and another process
+		// take the run over, the checks below keep the two from overwriting each other.
+		$ttl = (int)min(3600, max(900, $deadline - microtime(true) + 600));
 		try {
 			$runLease = $this->leases->acquire('run/' . $run->getId(), LeaseService::EXCLUSIVE, $ttl);
 		} catch (LockedException) {
@@ -123,6 +127,7 @@ final class BackupService {
 			if ($run->getStatus() !== Run::RUNNING || $run->getKind() !== self::KIND_FULL) {
 				return $run;
 			}
+			$loadedAt = $run->getUpdatedAt();
 			$target = $this->targets->get((string)$run->getTargetId());
 			$repo = $this->targets->repository($target);
 			$state = json_decode($run->getState(), true, 512, JSON_THROW_ON_ERROR);
@@ -179,8 +184,16 @@ final class BackupService {
 			$run->setState(json_encode($state, JSON_THROW_ON_ERROR));
 			$run->setStats(json_encode(['db' => $state['dbStats'] ?? null, 'files' => $state['files']['stats']], JSON_THROW_ON_ERROR));
 			$run->setUpdatedAt(time());
-			return $this->runs->update($run);
+			$current = $this->takenOver($run->getId(), $loadedAt);
+			return $current ?? $this->runs->update($run);
 		} catch (\Throwable $e) {
+			// Another process that took the run over (after this step's lease expired) may have
+			// finished it in the meantime: its result stands, this step's error does not.
+			$current = isset($loadedAt) ? $this->takenOver($run->getId(), $loadedAt) : null;
+			if ($current !== null) {
+				$this->logger->warning('NG Backup run ' . $run->getId() . ': a step that another process had taken over ended with: ' . $e->getMessage());
+				return $current;
+			}
 			$this->logger->error('NG Backup run ' . $run->getId() . ' failed: ' . $e->getMessage(), ['exception' => $e]);
 			$run->setStatus(Run::FAILED);
 			$run->setError($e->getMessage());
@@ -196,6 +209,15 @@ final class BackupService {
 			$this->leases->release($targetLease);
 			$this->leases->release($runLease);
 		}
+	}
+
+	/**
+	 * The run as stored, when another process has written it since this step loaded it (updated_at
+	 * $loadedAt); null when it is still this step's to write.
+	 */
+	private function takenOver(int $runId, int $loadedAt): ?Run {
+		$current = $this->runs->find($runId);
+		return $current->getUpdatedAt() !== $loadedAt || $current->getStatus() !== Run::RUNNING ? $current : null;
 	}
 
 	/** Run to completion in this process (occ, system cron), reporting progress. */
@@ -224,6 +246,11 @@ final class BackupService {
 	}
 
 	private function recordSnapshot(Run $run, array $files): void {
+		try {
+			$this->snapshots->findOne($run->getTargetId(), $files['snapshot']);
+			return; // already recorded, by an earlier attempt at this step
+		} catch (DoesNotExistException) {
+		}
 		$s = new Snapshot();
 		$s->setTargetId($run->getTargetId());
 		$s->setSnapshotId($files['snapshot']);

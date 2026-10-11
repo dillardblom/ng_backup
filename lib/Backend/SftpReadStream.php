@@ -108,7 +108,13 @@ final class SftpReadStream {
 			// is_callable and get_object_vars from here only see what is public: phpseclib 3 has
 			// methods of these names neither public nor at all.
 			if (!is_object($sftp) || !is_callable([$sftp, '_send_sftp_packet']) || !is_callable([$sftp, '_get_sftp_packet'])
-				|| !is_callable([$sftp, '_realpath']) || !array_key_exists('packet_type', get_object_vars($sftp))) {
+				|| !is_callable([$sftp, '_realpath']) || !is_callable([$sftp, 'pwd'])
+				|| !array_key_exists('packet_type', get_object_vars($sftp))) {
+				return null;
+			}
+			// phpseclib opens the SFTP channel on its first SFTP call, not at login: on a fresh
+			// connection a packet sent directly would go nowhere. pwd() opens it like any call does.
+			if ($sftp->pwd() === false) {
 				return null;
 			}
 			if (!in_array(self::PROTOCOL, stream_get_wrappers(), true)) {
