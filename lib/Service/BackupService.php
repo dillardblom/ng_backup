@@ -168,14 +168,20 @@ final class BackupService {
 				}
 				if ($state['files']['phase'] === 'done') {
 					$this->recordSnapshot($run, $state['files']);
-					$this->alerts->storedBytes($target, $repo->storedBytes());
-					$stats = $state['files']['stats'];
-					if (($stats['unreadable'] ?? 0) > 0 || ($stats['changing'] ?? 0) > 0) {
-						$warnings = BackupRun::warnings($state['files']);
-						$this->logger->warning(sprintf('NG Backup run %d to %s: %d unreadable (missing from the snapshot): %s; %d changed while being read: %s',
-							$run->getId(), $target->getName(), $stats['unreadable'] ?? 0, implode(', ', $warnings['unreadable']),
-							$stats['changing'] ?? 0, implode(', ', $warnings['changing'])));
-						$this->alerts->runWarnings($run, $target->getName(), (int)($stats['unreadable'] ?? 0), (int)($stats['changing'] ?? 0), $warnings);
+					// The snapshot is committed: what follows only reports on it and must not turn
+					// the run into a failure.
+					try {
+						$this->alerts->storedBytes($target, $repo->storedBytes());
+						$stats = $state['files']['stats'];
+						if (($stats['unreadable'] ?? 0) > 0 || ($stats['changing'] ?? 0) > 0) {
+							$warnings = BackupRun::warnings($state['files']);
+							$this->logger->warning(sprintf('NG Backup run %d to %s: %d unreadable (missing from the snapshot): %s; %d changed while being read: %s',
+								$run->getId(), $target->getName(), $stats['unreadable'] ?? 0, implode(', ', $warnings['unreadable']),
+								$stats['changing'] ?? 0, implode(', ', $warnings['changing'])));
+							$this->alerts->runWarnings($run, $target->getName(), (int)($stats['unreadable'] ?? 0), (int)($stats['changing'] ?? 0), $warnings);
+						}
+					} catch (\Throwable $e) {
+						$this->logger->warning('NG Backup run ' . $run->getId() . ': reporting on the finished backup failed: ' . $e->getMessage(), ['exception' => $e]);
 					}
 					$run->setStatus(Run::DONE);
 					$run->setPhase('done');
@@ -258,8 +264,13 @@ final class BackupService {
 		try {
 			$this->snapshots->insert($s);
 		} catch (\OCP\DB\Exception $e) {
-			// Recorded by another process between the check above and this insert.
+			// Recorded by another process between the check above and this insert?
 			if ($e->getReason() !== \OCP\DB\Exception::REASON_UNIQUE_CONSTRAINT_VIOLATION) {
+				throw $e;
+			}
+			try {
+				$this->snapshots->findOne($run->getTargetId(), $files['snapshot']);
+			} catch (DoesNotExistException) {
 				throw $e;
 			}
 		}
