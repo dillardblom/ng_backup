@@ -110,14 +110,15 @@ final class BlobIndex {
 		}
 		if ($verify && $this->cache !== null) {
 			// Refresh the cache from what was just verified.
+			// One pass over the blobs: a pass per pack took half an hour on a 1 TB repository
+			// (27,547 packs x 400,000 blobs), long enough for the location to drop the idle
+			// connection before the check went on.
+			$byPack = [];
+			foreach ($this->blobs as $id => [$pack, $offset, $length, $raw, $flags]) {
+				$byPack[$pack][] = ['id' => $id, 'offset' => $offset, 'length' => $length, 'raw' => $raw, 'flags' => $flags];
+			}
 			$this->cache->remove($this->repositoryId, array_keys($this->cache->all($this->repositoryId)));
-			foreach ($this->packs() as $packId => $_) {
-				$entries = [];
-				foreach ($this->blobs as $id => [$pack, $offset, $length, $raw, $flags]) {
-					if ($pack === $packId) {
-						$entries[] = ['id' => $id, 'offset' => $offset, 'length' => $length, 'raw' => $raw, 'flags' => $flags];
-					}
-				}
+			foreach ($byPack as $packId => $entries) {
 				$this->cache->put($this->repositoryId, $packId, $entries);
 			}
 			return;
