@@ -99,7 +99,11 @@ final class VerifyService {
 		$ttl = $deep ? 600 : 300;
 		$state = ['what' => $what, 'deep' => $deep, 'status' => 'running', 'started' => time(), 'updated' => time(),
 			'pid' => getmypid(), 'phase' => 'starting', 'done' => 0, 'total' => null, 'blobs' => 0, 'bytes' => 0];
-		$this->store($target, $state);
+		try {
+			$this->store($target, $state);
+		} catch (\Throwable) {
+			// progress reports are a convenience; the check itself goes ahead
+		}
 		try {
 			$result = $this->leases->with(PruneService::lockKey($target), LeaseService::SHARED, $ttl, function (callable $refresh) use ($target, $ttl, $fn, $onProgress, &$state): array {
 				$lastRefresh = time();

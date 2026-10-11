@@ -117,10 +117,25 @@ class VerifyTest extends TestCase {
 		$this->assertGreaterThan(0, $counting->packExists);
 	}
 
-	public function testAPackMissingFromItsFolderListingIsReported(): void {
+	public function testAnEmptyFolderListingIsNoProofThatItsPacksAreGone(): void {
+		// A storage also reports an empty folder when it could not look (is_dir() false).
 		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'));
 		$s = $repo->backupDirectory($this->src);
-		foreach ($this->backend->list('packs') as $pack) {
+		$counting = new ListingBackend($this->backend, emptyListings: true);
+
+		$result = Repository::openWithKey($counting, $this->keys, null, null)->verify($s['snapshot']);
+
+		$this->assertSame([], $result['missing']);
+		$this->assertGreaterThan(0, $counting->packExists);
+	}
+
+	public function testAPackMissingFromAFolderThatIsNotEmptyIsReportedWithoutAskingForIt(): void {
+		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'));
+		$s = $repo->backupDirectory($this->src);
+		$packs = $this->backend->list('packs');
+		// Another file in the same folder keeps its listing non-empty.
+		$this->backend->put(dirname($packs[0]) . '/0000other', fopen('data://text/plain,x', 'r'));
+		foreach ($packs as $pack) {
 			$this->backend->delete($pack);
 		}
 		$counting = new ListingBackend($this->backend);
@@ -129,6 +144,18 @@ class VerifyTest extends TestCase {
 
 		$this->assertNotSame([], $result['missing']);
 		$this->assertSame(0, $counting->packExists);
+	}
+
+	public function testAPackMissingFromAnEmptyFolderIsReportedToo(): void {
+		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'));
+		$s = $repo->backupDirectory($this->src);
+		foreach ($this->backend->list('packs') as $pack) {
+			$this->backend->delete($pack);
+		}
+
+		$result = Repository::openWithKey(new ListingBackend($this->backend), $this->keys, null, null)->verify($s['snapshot']);
+
+		$this->assertNotSame([], $result['missing']);
 	}
 
 	public function testDeepVerifyDetectsATamperedPack(): void {
@@ -246,6 +273,7 @@ final class ListingBackend implements IBackend {
 	public function __construct(
 		private IBackend $inner,
 		private bool $unlistable = false,
+		private bool $emptyListings = false,
 	) {
 	}
 
@@ -279,6 +307,9 @@ final class ListingBackend implements IBackend {
 	public function listFiles(string $dir): array {
 		if ($this->unlistable && str_starts_with($dir, 'packs/')) {
 			throw new BackendException('Cannot list ' . $dir);
+		}
+		if ($this->emptyListings && str_starts_with($dir, 'packs/')) {
+			return [];
 		}
 		return $this->inner->listFiles($dir);
 	}

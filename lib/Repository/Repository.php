@@ -750,14 +750,11 @@ final class Repository {
 	 * referenced by more than one file is only checked once; a missing database manifest is a
 	 * failure, not something to silently skip over.
 	 *
-	 * @param ?callable $heartbeat called after every blob (shallow) or every blob read (deep);
-	 *        callers use it to keep a time-boxed lease alive during a large audit
-	 * @return array{filesChecked:int, blobsChecked:int, bytesChecked:int, missing:list<string>, failed:list<string>, unreadable:list<string>, readError:string}
-	 */
-	/**
 	 * @param ?callable(array{phase:string, done:int, total:?int, blobs?:int, bytes?:int}):void $heartbeat
 	 *        called often during the check, with how far it is: phase "index" (index files
-	 *        downloaded), "packs" (pack folders listed), "files" (files of the snapshot checked)
+	 *        downloaded), "packs" (pack folders listed), "files" and "database" (files of the
+	 *        snapshot checked); callers use it to keep a time-boxed lease alive and to report
+	 * @return array{filesChecked:int, blobsChecked:int, bytesChecked:int, missing:list<string>, failed:list<string>, unreadable:list<string>, readError:string}
 	 */
 	public function verify(string $snapshotId, bool $deep = false, ?callable $heartbeat = null): array {
 		$heartbeat ??= static function (array $progress): void {
@@ -805,7 +802,8 @@ final class Repository {
 
 	/**
 	 * Which packs are on the location, from one listing per pack folder instead of a request per
-	 * pack. A folder that cannot be listed is left out: its packs are then checked one by one.
+	 * pack. A folder that cannot be listed, or comes back empty (which a storage also reports when
+	 * it could not look), is left out: its packs are then checked one by one.
 	 *
 	 * @return array{0: array<string, bool>, 1: array<string, true>} pack id => present, and the
 	 *                                                              folders that were listed
@@ -816,11 +814,15 @@ final class Repository {
 		for ($i = 0; $i < 256; $i++) {
 			$dir = sprintf('%02x', $i);
 			try {
-				foreach ($this->backend->listFiles('packs/' . $dir) as $path) {
-					$present[basename($path)] = true;
-				}
-				$listed[$dir] = true;
+				$files = $this->backend->listFiles('packs/' . $dir);
 			} catch (BackendException) {
+				$files = [];
+			}
+			foreach ($files as $path) {
+				$present[basename($path)] = true;
+			}
+			if ($files !== []) {
+				$listed[$dir] = true;
 			}
 			$heartbeat(['phase' => 'packs', 'done' => $i + 1, 'total' => 256]);
 		}
@@ -864,7 +866,6 @@ final class Repository {
 		return $stats;
 	}
 
-	/** @param array<string, bool> $packSeen */
 	/**
 	 * @param array<string, bool> $packSeen pack id => present; filled in as packs are checked
 	 * @param array<string, true> $listedDirs pack folders whose listing is in $packSeen: a pack

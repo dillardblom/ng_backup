@@ -92,31 +92,37 @@ final class BlobIndex {
 		$cached = $verify ? [] : ($this->cache?->all($this->repositoryId) ?? []);
 		$present = [];
 		$this->downloaded = 0;
+		$order = []; // pack ids in listing order: where a blob is in two packs, the last listed wins
 		$fetch = [];
-		$entriesByPack = []; // in listing order: where a blob is in two packs, the last one listed wins
 		foreach ($this->backend->listFiles('index') as $path) {
 			$packId = basename($path);
 			$present[$packId] = true;
-			$entriesByPack[$packId] = $cached[$packId] ?? null;
+			$order[] = $packId;
 			if (!isset($cached[$packId])) {
 				$fetch[] = $path;
 			}
 		}
 		// The rest is downloaded several at a time where the location allows it: on a large
-		// repository these are tens of thousands of small files.
+		// repository these are tens of thousands of small files. getMany() keeps their order, so
+		// the cached packs listed before each one are added first.
+		$next = 0;
 		$total = count($fetch);
 		foreach ($this->backend->getMany($fetch) as $path => $data) {
 			$packId = basename($path);
 			$entries = json_decode($this->cipher->decryptString($data, 'index:' . $packId), true, 512, JSON_THROW_ON_ERROR);
 			$this->downloaded++;
 			$this->cache?->put($this->repositoryId, $packId, $entries);
-			$entriesByPack[$packId] = $entries;
+			for (; $next < count($order) && $order[$next] !== $packId; $next++) {
+				$this->add($order[$next], $cached[$order[$next]] ?? []);
+			}
+			$this->add($packId, $entries);
+			$next++;
 			if ($progress !== null) {
 				$progress($this->downloaded, $total);
 			}
 		}
-		foreach ($entriesByPack as $packId => $entries) {
-			$this->add($packId, $entries ?? []);
+		for (; $next < count($order); $next++) {
+			$this->add($order[$next], $cached[$order[$next]] ?? []);
 		}
 		if ($verify && $this->cache !== null) {
 			// Refresh the cache from what was just verified.

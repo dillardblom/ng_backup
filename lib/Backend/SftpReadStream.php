@@ -30,6 +30,8 @@ final class SftpReadStream {
 	public const DEPTH = 8;
 	/** Files read at once by readMany(): each holds a handle on the server while its batch runs. */
 	public const BATCH = 32;
+	/** Larger files are left to the usual read by readMany(), which holds every file in memory. */
+	private const MANY_MAX_BYTES = 16 * 1048576;
 	/** OpenSSH and the Hetzner Storage Box both answer at most 255 KiB per READ. */
 	private const CHUNK = 261120;
 	/** Every SFTP server must handle packets of this size (draft-ietf-secsh-filexfer-02, section 3). */
@@ -42,6 +44,7 @@ final class SftpReadStream {
 	private const FXP_HANDLE = 102;
 	private const FXP_DATA = 103;
 	private const FXF_READ = 1;
+	private const FX_OK = 0;
 	private const FX_EOF = 1;
 
 	/**
@@ -182,26 +185,45 @@ final class SftpReadStream {
 		if ($sftp === null) {
 			return null;
 		}
-		$result = [];
+		$result = array_fill_keys($paths, null);
 		foreach (array_chunk($paths, self::BATCH) as $batch) {
 			try {
-				$result += self::readBatch($sftp, $root, $batch);
+				[$read, $closed] = self::readBatch($sftp, $root, $batch);
 			} catch (\Throwable $e) {
 				self::$failures++;
+				// Answers to requests already sent may still arrive, and files_external would take
+				// them for its own: end the connection rather than leave it out of step.
+				self::disconnect($sftp);
 				throw $e instanceof BackendException ? $e : new BackendException('SFTP connection failed while reading ' . count($batch) . ' files: ' . $e->getMessage(), 0, $e);
+			}
+			foreach ($read as $path => $contents) {
+				$result[$path] = $contents;
+			}
+			if (!$closed) {
+				// The server did not confirm closing these files: no more batches, so handles
+				// cannot pile up. The rest is read the usual way, one at a time.
+				break;
 			}
 		}
 		self::$failures = 0;
 		return $result;
 	}
 
-	/** Requests of one kind for a whole batch, then their answers in order. @return list<array{int, string|false}> */
+	private static function disconnect(object $sftp): void {
+		try {
+			if (is_callable([$sftp, 'disconnect'])) {
+				$sftp->disconnect();
+			}
+		} catch (\Throwable) {
+		}
+	}
+
+	/** Requests of one kind for a whole batch, then their answers in order. @return list<array{int, string}> */
 	private static function exchange(object $sftp, int $type, array $packets): array {
 		$ids = [];
 		foreach ($packets as $packet) {
 			$id = self::nextId();
 			if (!$sftp->_send_sftp_packet($type, $packet, $id)) {
-				// Requests already sent cannot be taken back: the connection is unusable now.
 				throw new BackendException('SFTP connection failed while sending a request');
 			}
 			$ids[] = $id;
@@ -217,23 +239,28 @@ final class SftpReadStream {
 		return $answers;
 	}
 
-	/** @param list<string> $batch @return array<string, string|null> */
+	/**
+	 * @param list<string> $batch
+	 * @return array{0: array<string, string>, 1: bool} the files read whole, and whether the
+	 *                                                  server confirmed closing every handle
+	 */
 	private static function readBatch(object $sftp, string $root, array $batch): array {
-		$result = array_fill_keys($batch, null);
 		$opens = [];
+		$openPaths = [];
 		foreach ($batch as $path) {
 			$remote = $sftp->_realpath($root . '/' . ltrim($path, '/'));
-			if (!is_string($remote)) {
-				throw new BackendException('SFTP path could not be resolved: ' . $path);
+			if (is_string($remote)) {
+				$opens[] = pack('Na*N2', strlen($remote), $remote, self::FXF_READ, 0);
+				$openPaths[] = $path;
 			}
-			$opens[] = pack('Na*N2', strlen($remote), $remote, self::FXF_READ, 0);
+			// a path that cannot be resolved is left to the caller's usual read
 		}
 		$handles = []; // path => handle
 		foreach (self::exchange($sftp, self::FXP_OPEN, $opens) as $i => [$type, $response]) {
 			if ($type === self::FXP_HANDLE) {
-				$handles[$batch[$i]] = substr($response, 4);
+				$handles[$openPaths[$i]] = substr($response, 4);
 			}
-			// any other answer: not readable this way, the caller reads it the usual way
+			// any other answer (missing, no permission): the caller reads it the usual way
 		}
 		$data = array_fill_keys(array_keys($handles), '');
 		$reading = $handles;
@@ -247,14 +274,18 @@ final class SftpReadStream {
 			$paths = array_keys($reading);
 			foreach (self::exchange($sftp, self::FXP_READ, $reads) as $i => [$type, $response]) {
 				$path = $paths[$i];
-				if ($type === self::FXP_DATA && strlen($response) > 4) {
+				$declared = strlen($response) >= 4 ? unpack('N', $response) : false;
+				if ($type === self::FXP_DATA && is_array($declared) && $declared[1] > 0 && $declared[1] === strlen($response) - 4
+					&& $declared[1] <= $length && strlen($data[$path]) + $declared[1] <= self::MANY_MAX_BYTES) {
 					$data[$path] .= substr($response, 4); // more may follow: read on from there
 					continue;
 				}
 				unset($reading[$path]);
-				$status = $type === self::FXP_STATUS ? unpack('N', $response) : false;
-				if (!is_array($status) || ($status[1] ?? null) !== self::FX_EOF) {
-					unset($data[$path]); // a server error on this file: read it the usual way
+				$status = $type === self::FXP_STATUS && is_array($declared) ? $declared[1] : null;
+				if ($status !== self::FX_EOF) {
+					// a server error, a malformed answer or a file too large for this: the caller
+					// reads it the usual way
+					unset($data[$path]);
 				}
 			}
 		}
@@ -262,11 +293,14 @@ final class SftpReadStream {
 		foreach ($handles as $handle) {
 			$closes[] = pack('Na*', strlen($handle), $handle);
 		}
-		self::exchange($sftp, self::FXP_CLOSE, $closes);
-		foreach ($data as $path => $contents) {
-			$result[$path] = $contents;
+		$closed = true;
+		foreach (self::exchange($sftp, self::FXP_CLOSE, $closes) as [$type, $response]) {
+			$status = $type === self::FXP_STATUS && strlen($response) >= 4 ? unpack('N', $response) : false;
+			if (!is_array($status) || $status[1] !== self::FX_OK) {
+				$closed = false;
+			}
 		}
-		return $result;
+		return [$data, $closed];
 	}
 
 	/** Test hook: forget the learned READ sizes and earlier failures. */

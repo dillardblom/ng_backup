@@ -264,10 +264,34 @@ class SftpReadStreamTest extends TestCase {
 		$this->assertSame(['a' => $data, 'b' => 'b'], SftpReadStream::readMany(new FakeSftpStorage($sftp), ['a', 'b']));
 	}
 
-	public function testReadManyFailsOnAConnectionError(): void {
+	public function testReadManyEndsTheConnectionOnAConnectionError(): void {
+		// Answers to requests already out may still come: files_external must not get them.
 		$sftp = new FakeSftpConnection(['/home/a' => random_bytes(10), '/home/b' => 'b'], loseAt: 0);
-		$this->expectException(BackendException::class);
-		SftpReadStream::readMany(new FakeSftpStorage($sftp), ['a', 'b']);
+		try {
+			SftpReadStream::readMany(new FakeSftpStorage($sftp), ['a', 'b']);
+			$this->fail('expected a BackendException');
+		} catch (BackendException) {
+		}
+		$this->assertTrue($sftp->disconnected);
+	}
+
+	public function testReadManyStopsBatchingWhenCloseIsNotConfirmed(): void {
+		$files = [];
+		for ($i = 0; $i < 40; $i++) {
+			$files["/home/$i"] = "file $i";
+		}
+		$sftp = new FakeSftpConnection($files, closeStatus: 4);
+		$got = SftpReadStream::readMany(new FakeSftpStorage($sftp), array_map('strval', range(0, 39)));
+		$this->assertSame('file 0', $got['0']);
+		$this->assertSame('file 31', $got['31']);
+		$this->assertNull($got['32'], 'no second batch after unconfirmed closes');
+		$this->assertCount(SftpReadStream::BATCH, array_filter($got, fn ($v) => $v !== null));
+	}
+
+	public function testReadManyLeavesAMalformedAnswerToTheCaller(): void {
+		$sftp = new FakeSftpConnection(['/home/a' => 'aaaa', '/home/b' => 'bbbb'], malformed: '/home/a');
+		$this->assertSame(['a' => null, 'b' => 'bbbb'], SftpReadStream::readMany(new FakeSftpStorage($sftp), ['a', 'b']));
+		$this->assertSame([], $sftp->openHandles);
 	}
 
 	public function testReadManyOnAnUnsupportedConnectionIsNull(): void {
@@ -458,7 +482,17 @@ final class FakeSftpConnection {
 		private ?int $loseAt = null,
 		private bool $closeFails = false,
 		private bool $channelFails = false,
+		/** status code the server answers CLOSE with */
+		private int $closeStatus = 0,
+		/** a file whose DATA answers declare a wrong length */
+		private ?string $malformed = null,
 	) {
+	}
+
+	public bool $disconnected = false;
+
+	public function disconnect(): void {
+		$this->disconnected = true;
 	}
 
 	public function pwd(): string|false {
@@ -509,7 +543,7 @@ final class FakeSftpConnection {
 				}
 				$handle = substr($data, 4, unpack('N', $data)[1]);
 				unset($this->openHandles[$handle]);
-				$this->answers[$id] = [101, pack('N', 0)];
+				$this->answers[$id] = [101, pack('N', $this->closeStatus)];
 				break;
 			case 5: // READ
 				$len = unpack('N', $data)[1];
@@ -531,7 +565,8 @@ final class FakeSftpConnection {
 					$this->answers[$id] = [101, pack('N', 1)]; // FX_EOF
 				} else {
 					$chunk = substr($file, $offset, min($n, $this->cap));
-					$this->answers[$id] = [103, pack('Na*', strlen($chunk), $chunk)];
+					$declared = $this->openHandles[$handle] === $this->malformed ? strlen($chunk) + 7 : strlen($chunk);
+					$this->answers[$id] = [103, pack('Na*', $declared, $chunk)];
 				}
 				$this->maxInFlight = max($this->maxInFlight, count($this->answers));
 				break;
