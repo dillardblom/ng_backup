@@ -122,6 +122,7 @@ final class BackupService {
 			$this->leases->release($runLease);
 			return $run;
 		}
+		$loadedAt = null;
 		try {
 			$run = $this->runs->find($run->getId()); // fresh state after acquiring the lock
 			if ($run->getStatus() !== Run::RUNNING || $run->getKind() !== self::KIND_FULL) {
@@ -183,23 +184,27 @@ final class BackupService {
 			}
 			$run->setState(json_encode($state, JSON_THROW_ON_ERROR));
 			$run->setStats(json_encode(['db' => $state['dbStats'] ?? null, 'files' => $state['files']['stats']], JSON_THROW_ON_ERROR));
-			$run->setUpdatedAt(time());
-			$current = $this->takenOver($run->getId(), $loadedAt);
-			return $current ?? $this->runs->update($run);
+			// Another process may have taken the run over after this step's lease expired: then its
+			// writes stand and this step's are dropped.
+			return $this->runs->updateIfUnchanged($run, $loadedAt) ?? $this->runs->find($run->getId());
 		} catch (\Throwable $e) {
-			// Another process that took the run over (after this step's lease expired) may have
-			// finished it in the meantime: its result stands, this step's error does not.
-			$current = isset($loadedAt) ? $this->takenOver($run->getId(), $loadedAt) : null;
-			if ($current !== null) {
-				$this->logger->warning('NG Backup run ' . $run->getId() . ': a step that another process had taken over ended with: ' . $e->getMessage());
-				return $current;
+			if ($loadedAt === null) {
+				// The run could not even be loaded: there is nothing fresh to mark as failed, and
+				// the caller's copy may be stale.
+				$this->logger->error('NG Backup run ' . $run->getId() . ': step could not load the run: ' . $e->getMessage(), ['exception' => $e]);
+				return $run;
 			}
-			$this->logger->error('NG Backup run ' . $run->getId() . ' failed: ' . $e->getMessage(), ['exception' => $e]);
 			$run->setStatus(Run::FAILED);
 			$run->setError($e->getMessage());
 			$run->setFinishedAt(time());
-			$run->setUpdatedAt(time());
-			$run = $this->runs->update($run);
+			$failed = $this->runs->updateIfUnchanged($run, $loadedAt);
+			if ($failed === null) {
+				// Another process that took the run over may have finished it: its result stands.
+				$this->logger->warning('NG Backup run ' . $run->getId() . ': a step that another process had taken over ended with: ' . $e->getMessage());
+				return $this->runs->find($run->getId());
+			}
+			$run = $failed;
+			$this->logger->error('NG Backup run ' . $run->getId() . ' failed: ' . $e->getMessage(), ['exception' => $e]);
 			try {
 				$this->alerts->runFailed($run, isset($target) ? $target->getName() : '#' . $run->getTargetId());
 			} catch (\Throwable) {
@@ -209,15 +214,6 @@ final class BackupService {
 			$this->leases->release($targetLease);
 			$this->leases->release($runLease);
 		}
-	}
-
-	/**
-	 * The run as stored, when another process has written it since this step loaded it (updated_at
-	 * $loadedAt); null when it is still this step's to write.
-	 */
-	private function takenOver(int $runId, int $loadedAt): ?Run {
-		$current = $this->runs->find($runId);
-		return $current->getUpdatedAt() !== $loadedAt || $current->getStatus() !== Run::RUNNING ? $current : null;
 	}
 
 	/** Run to completion in this process (occ, system cron), reporting progress. */
@@ -259,7 +255,14 @@ final class BackupService {
 		$s->setCreatedAt(time());
 		$s->setFiles($files['stats']['files']);
 		$s->setBytes($files['stats']['bytes']);
-		$this->snapshots->insert($s);
+		try {
+			$this->snapshots->insert($s);
+		} catch (\OCP\DB\Exception $e) {
+			// Recorded by another process between the check above and this insert.
+			if ($e->getReason() !== \OCP\DB\Exception::REASON_UNIQUE_CONSTRAINT_VIOLATION) {
+				throw $e;
+			}
+		}
 	}
 
 	/** @return list<string> */

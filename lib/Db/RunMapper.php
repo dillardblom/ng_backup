@@ -17,6 +17,36 @@ final class RunMapper extends QBMapper {
 		parent::__construct($db, 'ngb_runs', Run::class);
 	}
 
+	/**
+	 * Write $run only if it is still running and unchanged since it was loaded (updated_at
+	 * $loadedAt), in one statement: two processes that loaded the same run cannot both write it.
+	 * The new updated_at is always later than $loadedAt, so every write is seen as a change.
+	 *
+	 * @return Run|null the written run, or null when another process wrote it first
+	 */
+	public function updateIfUnchanged(Run $run, int $loadedAt): ?Run {
+		$run->setUpdatedAt(max(time(), $loadedAt + 1));
+		$types = $run->getFieldTypes();
+		$qb = $this->db->getQueryBuilder();
+		$qb->update($this->getTableName());
+		foreach (array_keys($run->getUpdatedFields()) as $field) {
+			if ($field === 'id') {
+				continue;
+			}
+			$value = $run->{'get' . ucfirst($field)}();
+			$type = ($types[$field] ?? 'string') === 'integer' ? IQueryBuilder::PARAM_INT : IQueryBuilder::PARAM_STR;
+			$qb->set($run->propertyToColumn($field), $qb->createNamedParameter($value, $value === null ? IQueryBuilder::PARAM_NULL : $type));
+		}
+		$qb->where($qb->expr()->eq('id', $qb->createNamedParameter($run->getId(), IQueryBuilder::PARAM_INT)))
+			->andWhere($qb->expr()->eq('status', $qb->createNamedParameter(Run::RUNNING)))
+			->andWhere($qb->expr()->eq('updated_at', $qb->createNamedParameter($loadedAt, IQueryBuilder::PARAM_INT)));
+		if ($qb->executeStatement() !== 1) {
+			return null;
+		}
+		$run->resetUpdatedFields();
+		return $run;
+	}
+
 	public function find(int $id): Run {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('*')->from($this->getTableName())->where($qb->expr()->eq('id', $qb->createNamedParameter($id, IQueryBuilder::PARAM_INT)));

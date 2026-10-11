@@ -17,9 +17,9 @@ instead carried by the app description, the git tag, the release, and this file.
 - A long first backup could end as failed although its snapshot was complete: when its final
   step took longer than the step's lease (150 s with `occ backup:run`), the background job took
   the run over, finished it a second time and failed on the snapshot it had already recorded,
-  overwriting the result. The lease now lasts at least 15 minutes, a step no longer overwrites a
-  run that another process wrote in the meantime, and recording a snapshot that is already
-  recorded is no longer an error.
+  overwriting the result. The lease now lasts at least 15 minutes, a step writes the run only if
+  no other process wrote it since the step loaded it (in one database statement), and recording
+  a snapshot that is already recorded is no longer an error.
 
 ## [0.9.4-beta.5] - 2026-10-09
 
