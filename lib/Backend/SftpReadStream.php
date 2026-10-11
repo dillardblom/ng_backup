@@ -55,6 +55,8 @@ final class SftpReadStream {
 	public const MAX_FAILURES = 3;
 	/** Set by stream_open() when the connection failed rather than the file. */
 	private static bool $openBroke = false;
+	/** Why the last stream_open() failed on the connection. */
+	private static string $openCause = '';
 
 	/** @var resource|null set by PHP for stream wrappers */
 	public $context;
@@ -135,7 +137,7 @@ final class SftpReadStream {
 			return null;
 		}
 		if ($fh === false && self::openBroke()) {
-			throw new BackendException('SFTP connection failed while opening ' . $path);
+			throw new BackendException('SFTP connection failed while opening ' . $path . ': ' . self::$openCause);
 		}
 		return $fh;
 	}
@@ -162,14 +164,14 @@ final class SftpReadStream {
 			}
 			$id = self::nextId();
 			if (!$this->sftp->_send_sftp_packet(self::FXP_OPEN, pack('Na*N2', strlen($remote), $remote, self::FXF_READ, 0), $id)) {
-				return $this->connectionFailed();
+				return $this->connectionFailed('the request could not be sent');
 			}
 			$response = $this->sftp->_get_sftp_packet($id);
-		} catch (\Throwable) {
-			return $this->connectionFailed();
+		} catch (\Throwable $e) {
+			return $this->connectionFailed(get_class($e) . ': ' . $e->getMessage());
 		}
 		if (!is_string($response)) {
-			return $this->connectionFailed();
+			return $this->connectionFailed('no answer');
 		}
 		if ($this->sftp->packet_type !== self::FXP_HANDLE) {
 			return false; // an answer, but no handle: the file cannot be opened
@@ -179,10 +181,35 @@ final class SftpReadStream {
 	}
 
 	/** Not a missing file but a connection that does not behave as expected. */
-	private function connectionFailed(): bool {
+	private function connectionFailed(string $cause): bool {
 		self::$failures++;
 		self::$openBroke = true;
+		self::$openCause = $cause . self::connectionState($this->sftp);
 		return false;
+	}
+
+	/** What phpseclib knows about the connection, for an error message. */
+	private static function connectionState(object $sftp): string {
+		$state = [];
+		try {
+			if (is_callable([$sftp, 'isConnected'])) {
+				$state[] = 'connected: ' . ($sftp->isConnected() ? 'yes' : 'no');
+			}
+			if (is_callable([$sftp, 'getLastError'])) {
+				$last = (string)$sftp->getLastError();
+				if ($last !== '') {
+					$state[] = 'ssh: ' . $last;
+				}
+			}
+			if (is_callable([$sftp, 'getLastSFTPError'])) {
+				$last = (string)$sftp->getLastSFTPError();
+				if ($last !== '') {
+					$state[] = 'sftp: ' . $last;
+				}
+			}
+		} catch (\Throwable) {
+		}
+		return $state === [] ? '' : ' (' . implode('; ', $state) . ')';
 	}
 
 	/** Whether the last stream_open() failed on the connection; a call, as fopen() sets it. */
