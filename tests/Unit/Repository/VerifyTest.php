@@ -129,7 +129,7 @@ class VerifyTest extends TestCase {
 	}
 }
 
-/** Delegates to a real backend, but getRange() throws for the first $failures calls. */
+/** Delegates to a real backend, but reading a pack throws for the first $failures reads. */
 final class FlakyRangeBackend implements IBackend {
 	public function __construct(
 		private IBackend $inner,
@@ -143,15 +143,22 @@ final class FlakyRangeBackend implements IBackend {
 	}
 
 	public function get(string $path) {
+		if (str_starts_with($path, 'packs/')) {
+			$this->fail();
+		}
 		return $this->inner->get($path);
 	}
 
 	public function getRange(string $path, int $offset, int $length): string {
+		$this->fail();
+		return $this->inner->getRange($path, $offset, $length);
+	}
+
+	private function fail(): void {
 		if ($this->failures > 0) {
 			$this->failures--;
 			throw $this->error ?? new BackendException('connection reset');
 		}
-		return $this->inner->getRange($path, $offset, $length);
 	}
 
 	public function exists(string $path): bool {
