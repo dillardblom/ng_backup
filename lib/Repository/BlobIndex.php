@@ -28,6 +28,8 @@ final class BlobIndex {
 	/** @var list<\Closure():void>|null cache writes held back by holdCache(), or null when writing directly */
 	private ?array $heldCacheWrites = null;
 	private string $repositoryId = '';
+	/** Index files written to the cache per database transaction while loading. */
+	private const CACHE_LOT = 256;
 	/** @var int index files downloaded by the last load() (for tests and diagnostics) */
 	public int $downloaded = 0;
 
@@ -107,11 +109,19 @@ final class BlobIndex {
 		// the cached packs listed before each one are added first.
 		$next = 0;
 		$total = count($fetch);
+		$toCache = []; // written to the cache a few hundred at a time, each lot in one transaction
 		foreach ($this->backend->getMany($fetch) as $path => $data) {
 			$packId = basename($path);
 			$entries = json_decode($this->cipher->decryptString($data, 'index:' . $packId), true, 512, JSON_THROW_ON_ERROR);
 			$this->downloaded++;
-			$this->cache?->put($this->repositoryId, $packId, $entries);
+			if ($this->cache !== null) {
+				$toCache[$packId] = $entries;
+				// a check writes the whole cache afresh at the end
+				if (!$verify && count($toCache) >= self::CACHE_LOT) {
+					$this->cache->putMany($this->repositoryId, $toCache);
+					$toCache = [];
+				}
+			}
 			for (; $next < count($order) && $order[$next] !== $packId; $next++) {
 				$this->add($order[$next], $cached[$order[$next]] ?? []);
 			}
@@ -125,19 +135,15 @@ final class BlobIndex {
 			$this->add($order[$next], $cached[$order[$next]] ?? []);
 		}
 		if ($verify && $this->cache !== null) {
-			// Refresh the cache from what was just verified.
-			// One pass over the blobs: a pass per pack took half an hour on a 1 TB repository
-			// (27,547 packs x 400,000 blobs), long enough for the location to drop the idle
-			// connection before the check went on.
-			$byPack = [];
-			foreach ($this->blobs as $id => [$pack, $offset, $length, $raw, $flags]) {
-				$byPack[$pack][] = ['id' => $id, 'offset' => $offset, 'length' => $length, 'raw' => $raw, 'flags' => $flags];
-			}
-			$this->cache->remove($this->repositoryId, array_keys($this->cache->all($this->repositoryId)));
-			foreach ($byPack as $packId => $entries) {
-				$this->cache->put($this->repositoryId, $packId, $entries);
-			}
+			// Refresh the cache from what was just verified, as the index files list it: a blob in
+			// two packs is in both rows, so that removing one of the packs leaves the other right.
+			// In one transaction: one row at a time took more than 6 minutes on a 1 TB repository
+			// (27,547 packs), long enough for the location to drop the connection.
+			$this->cache->replaceAll($this->repositoryId, $toCache);
 			return;
+		}
+		if ($toCache !== []) {
+			$this->cache?->putMany($this->repositoryId, $toCache);
 		}
 		$stale = array_keys(array_diff_key($cached, $present));
 		if ($stale !== []) {

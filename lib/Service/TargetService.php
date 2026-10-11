@@ -17,6 +17,7 @@ use OCA\NgBackup\Db\TargetMapper;
 use OCA\NgBackup\Repository\Repository;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Db\DoesNotExistException;
+use OCP\Files\Storage\IStorage;
 use OCP\Security\ICrypto;
 use OCP\Server;
 
@@ -279,7 +280,8 @@ final class TargetService {
 	}
 
 	private function buildBackend(string $backend, string $auth, array $options, string $basePath, bool $createBase = true): StorageBackend {
-		return new StorageBackend($this->factory()->create($backend, $auth, $options), $basePath, $createBase);
+		$create = fn (): IStorage => $this->factory()->create($backend, $auth, $options);
+		return new StorageBackend($create(), $basePath, $createBase, $create);
 	}
 
 	private ?ExternalStorageFactory $factory = null;

@@ -49,9 +49,18 @@ instead carried by the app description, the git tag, the release, and this file.
   no other process wrote it since the step loaded it (in one database statement), and recording
   a snapshot that is already recorded is no longer an error.
 - `occ backup:verify` on a large repository failed with "SFTP connection failed while opening
-  snapshots/…": after downloading the index it refreshed the local index cache with a pass over
-  all blobs for every pack, which took 29 minutes for 1 TB (27,547 packs, 400,000 blobs). The
-  location dropped the idle connection in the meantime. It is one pass now (under a second).
+  snapshots/…" or "Not found: snapshots/…". A Hetzner Storage Box drops an SFTP connection that
+  carried a lot of data (some 40 MB) and then stayed quiet for a few minutes, and the check went
+  quiet after downloading the index: it refreshed the local index cache, first in 29 minutes (a
+  pass over all blobs for every pack: 27,547 packs, 400,000 blobs for 1 TB), then still in more
+  than 6 minutes (a database transaction per pack on PostgreSQL). Nextcloud's SFTP storage keeps
+  using a dropped connection, on which every file looks missing. Now:
+  - an SFTP connection that was not used for a minute is checked first, and one that turns out
+    to be dead after a failed request is replaced, once per request; uploads, moves and deletes
+    are only checked first, never repeated;
+  - the index cache is written in one transaction (27,547 packs in 11 seconds on a test server, against about a minute row by row);
+  - after a check the cache holds the index files as they are: before, a blob that was in two
+    packs was only cached for one of them.
 
 ## [0.9.4-beta.5] - 2026-10-09
 

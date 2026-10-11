@@ -362,6 +362,8 @@ final class SftpReadStream {
 		self::$failures++;
 		self::$openBroke = true;
 		self::$openCause = $cause . self::connectionState($this->sftp);
+		// unknown state: closed, so that nothing else uses it (and the backend can build a new one)
+		self::disconnect($this->sftp);
 		return false;
 	}
 
@@ -514,6 +516,9 @@ final class SftpReadStream {
 			} catch (\Throwable) {
 				$this->broken = true;
 			}
+			if ($this->broken) {
+				self::disconnect($this->sftp);
+			}
 		}
 		$this->handle = '';
 	}
@@ -595,18 +600,19 @@ final class SftpReadStream {
 	private function drain(): void {
 		$inFlight = $this->inFlight;
 		$this->inFlight = [];
-		if ($this->broken) {
-			return;
-		}
 		try {
-			foreach ($inFlight as [$id]) {
+			foreach ($this->broken ? [] : $inFlight as [$id]) {
 				if (!is_string($this->sftp->_get_sftp_packet($id))) {
 					$this->broken = true;
-					return;
+					break;
 				}
 			}
 		} catch (\Throwable) {
 			$this->broken = true;
+		}
+		if ($this->broken) {
+			// unknown state: closed, so that nothing else uses it (and the backend can build a new one)
+			self::disconnect($this->sftp);
 		}
 	}
 

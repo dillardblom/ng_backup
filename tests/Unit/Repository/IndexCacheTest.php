@@ -20,6 +20,8 @@ class IndexCacheTest extends TestCase {
 			public function all(string $r): array { return $this->data[$r] ?? []; }
 			public function put(string $r, string $p, array $e): void { $this->data[$r][$p] = $e; }
 			public function remove(string $r, array $ps): void { foreach ($ps as $p) { unset($this->data[$r][$p]); } }
+			public function putMany(string $r, array $packs): void { foreach ($packs as $p => $e) { $this->put($r, (string)$p, $e); } }
+			public function replaceAll(string $r, array $packs): void { $this->data[$r] = []; $this->putMany($r, $packs); }
 		};
 		$src = $this->tempDir();
 		for ($i = 0; $i < 12; $i++) {
@@ -65,6 +67,8 @@ class IndexCacheTest extends TestCase {
 				$this->data[$r][$p] = $e;
 			}
 			public function remove(string $r, array $ps): void { foreach ($ps as $p) { unset($this->data[$r][$p]); } }
+			public function putMany(string $r, array $packs): void { foreach ($packs as $p => $e) { $this->put($r, (string)$p, $e); } }
+			public function replaceAll(string $r, array $packs): void { $this->data[$r] = []; $this->putMany($r, $packs); }
 		};
 		$backend = new LocalBackend($this->tempDir());
 		$keys = KeyRing::generate();
@@ -87,5 +91,39 @@ class IndexCacheTest extends TestCase {
 		$repo->flushPacks();
 		$this->assertCount(count($backend->list('index')), array_merge(...array_values($cache->data)));
 		$this->assertSame(0, Repository::openWithKey($backend, $keys, $cache)->indexDownloads());
+	}
+
+	/** After a check the cache holds every index file as it is, also a blob that is in two packs. */
+	public function testACheckCachesTheIndexFilesAsTheyAre(): void {
+		$cache = new class implements IIndexCache {
+			public array $data = [];
+			public int $replaced = 0;
+			public function all(string $r): array { return $this->data[$r] ?? []; }
+			public function put(string $r, string $p, array $e): void { $this->data[$r][$p] = $e; }
+			public function remove(string $r, array $ps): void { foreach ($ps as $p) { unset($this->data[$r][$p]); } }
+			public function putMany(string $r, array $packs): void { foreach ($packs as $p => $e) { $this->put($r, (string)$p, $e); } }
+			public function replaceAll(string $r, array $packs): void { $this->replaced++; $this->data[$r] = $packs; }
+		};
+		$backend = new LocalBackend($this->tempDir());
+		$cipher = new \OCA\NgBackup\Crypto\StreamCipher(KeyRing::generate());
+		$index = new \OCA\NgBackup\Repository\BlobIndex($backend, $cipher);
+		$index->setCache($cache, 'r');
+		$blob = static fn (string $id, int $offset): array => ['id' => $id, 'offset' => $offset, 'length' => 10, 'raw' => 8, 'flags' => 0];
+		$index->addPack('pack1', [$blob('a', 0), $blob('shared', 10)]);
+		$index->addPack('pack2', [$blob('shared', 0), $blob('b', 10)]);
+		$cache->data = ['r' => ['gone' => [$blob('x', 0)]]];
+
+		$index->load(true);
+		$this->assertSame(1, $cache->replaced);
+		$this->assertSame(['pack1', 'pack2'], array_keys($cache->data['r']));
+		$this->assertCount(2, $cache->data['r']['pack1'], 'the shared blob stays in the row of its first pack');
+
+		// the second pack goes: the shared blob is still found in the first
+		$index->removePack('pack2');
+		$again = new \OCA\NgBackup\Repository\BlobIndex($backend, $cipher);
+		$again->setCache($cache, 'r');
+		$again->load();
+		$this->assertSame(0, $again->downloaded);
+		$this->assertSame('pack1', $again->get('shared')[0]);
 	}
 }
