@@ -286,6 +286,8 @@ class SftpReadStreamTest extends TestCase {
 		$this->assertSame('file 31', $got['31']);
 		$this->assertNull($got['32'], 'no second batch after unconfirmed closes');
 		$this->assertCount(SftpReadStream::BATCH, array_filter($got, fn ($v) => $v !== null));
+		// Nor on a later call over the same connection.
+		$this->assertNull(SftpReadStream::readMany(new FakeSftpStorage($sftp), ['0']));
 	}
 
 	public function testReadManyLeavesAMalformedAnswerToTheCaller(): void {

@@ -55,6 +55,13 @@ final class SftpReadStream {
 	 */
 	private static ?\WeakMap $chunks = null;
 	private static int $requestId = 0x4e470000;
+	/**
+	 * Connections whose server did not confirm closing a batch's files: readMany() is not used on
+	 * them again, so handles cannot pile up.
+	 *
+	 * @var \WeakMap<object, true>|null
+	 */
+	private static ?\WeakMap $noBatches = null;
 	/** Streams in a row that failed; at MAX_FAILURES only the storage's own stream is used. */
 	private static int $failures = 0;
 	public const MAX_FAILURES = 3;
@@ -182,7 +189,7 @@ final class SftpReadStream {
 			self::$failures++;
 			return null;
 		}
-		if ($sftp === null) {
+		if ($sftp === null || self::$noBatches?->offsetExists($sftp) === true) {
 			return null;
 		}
 		$result = array_fill_keys($paths, null);
@@ -200,13 +207,19 @@ final class SftpReadStream {
 				$result[$path] = $contents;
 			}
 			if (!$closed) {
-				// The server did not confirm closing these files: no more batches, so handles
-				// cannot pile up. The rest is read the usual way, one at a time.
+				// The server did not confirm closing these files: no more batches on this
+				// connection, so handles cannot pile up. The rest is read the usual way.
+				self::noMoreBatches($sftp);
 				break;
 			}
 		}
 		self::$failures = 0;
 		return $result;
+	}
+
+	private static function noMoreBatches(object $sftp): void {
+		self::$noBatches ??= new \WeakMap();
+		self::$noBatches[$sftp] = true;
 	}
 
 	private static function disconnect(object $sftp): void {
@@ -306,6 +319,7 @@ final class SftpReadStream {
 	/** Test hook: forget the learned READ sizes and earlier failures. */
 	public static function reset(): void {
 		self::$chunks = null;
+		self::$noBatches = null;
 		self::$failures = 0;
 	}
 
