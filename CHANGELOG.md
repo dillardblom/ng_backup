@@ -21,7 +21,15 @@ instead carried by the app description, the git tag, the release, and this file.
   repository; stored passwords are never sent to the browser, and an empty password field keeps
   the stored one. Administrators are notified of the change.
 
+- `occ backup:verify` reports how far it is every 30 seconds, and `occ backup:status` shows the
+  progress of a running check and how the last check of each location ended. On a large
+  repository a check takes hours, a deep one days.
+
 ### Changed
+- Checking and opening a large repository over SFTP is much faster: the index files (one per
+  pack, 27,547 for 1 TB) are downloaded 32 at a time instead of one after the other, 114 instead
+  of 6 files per second to a Hetzner Storage Box (about 4 minutes instead of 77 for 1 TB). A check
+  also lists the pack folders (256 requests) instead of asking for every pack.
 - App store listing: the author's e-mail address is shown.
 - App store listing: the homepage link points to the GitHub repository instead of back to the
   app store page itself.
@@ -31,6 +39,9 @@ instead carried by the app description, the git tag, the release, and this file.
   SFTP reads sent their first request before phpseclib had opened the SFTP channel, which only
   happens on the first SFTP call after login. Every backup then failed with "No repository at
   this location". The channel is now opened first.
+- A check (`occ backup:verify`) did not renew its hold on the location while it downloaded the
+  index; on a large repository that takes longer than the hold lasts, so a weekly cleanup could
+  have started during the check.
 - A long first backup could end as failed although its snapshot was complete: when its final
   step took longer than the step's lease (150 s with `occ backup:run`), the background job took
   the run over, finished it a second time and failed on the snapshot it had already recorded,

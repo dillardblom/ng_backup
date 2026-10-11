@@ -106,6 +106,8 @@ class PackReadTest extends TestCase {
 }
 
 final class PackOpenCountingBackend implements IBackend {
+	use \OCA\NgBackup\Backend\GetsOneByOne;
+
 	/** @var list<string> */
 	public array $gets = [];
 	/** @var list<bool> */

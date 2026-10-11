@@ -28,6 +28,8 @@ final class SftpReadStream {
 	private const PROTOCOL = 'ngbsftpread';
 	/** Requests in flight once a stream reads sequentially; it starts at one and doubles. */
 	public const DEPTH = 8;
+	/** Files read at once by readMany(): each holds a handle on the server while its batch runs. */
+	public const BATCH = 32;
 	/** OpenSSH and the Hetzner Storage Box both answer at most 255 KiB per READ. */
 	private const CHUNK = 261120;
 	/** Every SFTP server must handle packets of this size (draft-ietf-secsh-filexfer-02, section 3). */
@@ -101,20 +103,8 @@ final class SftpReadStream {
 			return null;
 		}
 		try {
-			if (!is_callable([$storage, 'getConnection']) || !is_callable([$storage, 'getRoot'])) {
-				return null;
-			}
-			$sftp = $storage->getConnection();
-			// is_callable and get_object_vars from here only see what is public: phpseclib 3 has
-			// methods of these names neither public nor at all.
-			if (!is_object($sftp) || !is_callable([$sftp, '_send_sftp_packet']) || !is_callable([$sftp, '_get_sftp_packet'])
-				|| !is_callable([$sftp, '_realpath']) || !is_callable([$sftp, 'pwd'])
-				|| !array_key_exists('packet_type', get_object_vars($sftp))) {
-				return null;
-			}
-			// phpseclib opens the SFTP channel on its first SFTP call, not at login: on a fresh
-			// connection a packet sent directly would go nowhere. pwd() opens it like any call does.
-			if ($sftp->pwd() === false) {
+			$sftp = self::connection($storage);
+			if ($sftp === null) {
 				return null;
 			}
 			if (!in_array(self::PROTOCOL, stream_get_wrappers(), true)) {
@@ -138,6 +128,145 @@ final class SftpReadStream {
 			throw new BackendException('SFTP connection failed while opening ' . $path);
 		}
 		return $fh;
+	}
+
+	/**
+	 * The storage's phpseclib connection, with its SFTP channel open, when it offers what these
+	 * streams need; null otherwise.
+	 */
+	private static function connection(object $storage): ?object {
+		if (!is_callable([$storage, 'getConnection']) || !is_callable([$storage, 'getRoot'])) {
+			return null;
+		}
+		$sftp = $storage->getConnection();
+		// is_callable and get_object_vars from here only see what is public: phpseclib 3 has
+		// methods of these names neither public nor at all.
+		if (!is_object($sftp) || !is_callable([$sftp, '_send_sftp_packet']) || !is_callable([$sftp, '_get_sftp_packet'])
+			|| !is_callable([$sftp, '_realpath']) || !is_callable([$sftp, 'pwd'])
+			|| !array_key_exists('packet_type', get_object_vars($sftp))) {
+			return null;
+		}
+		// phpseclib opens the SFTP channel on its first SFTP call, not at login: on a fresh
+		// connection a packet sent directly would go nowhere. pwd() opens it like any call does.
+		if ($sftp->pwd() === false) {
+			return null;
+		}
+		return $sftp;
+	}
+
+	/**
+	 * Read many small files whole, BATCH at a time: the OPEN, READ and CLOSE requests of a batch
+	 * all go out before their answers are read, so a batch costs a few round trips instead of
+	 * four per file. Meant for files of up to a few hundred KiB (the repository's index files):
+	 * every file is held in memory.
+	 *
+	 * @param list<string> $paths below the storage's root
+	 * @return array<string, string|null>|null contents by path; null for a file this could not
+	 *                                         read (missing, or a server error), so the caller
+	 *                                         reads it the usual way; null for all when the
+	 *                                         connection does not offer what this needs
+	 * @throws BackendException when the connection failed while requests were out: the storage's
+	 *                          own stream must not be tried on it
+	 */
+	public static function readMany(object $storage, array $paths): ?array {
+		if (self::$failures >= self::MAX_FAILURES) {
+			return null;
+		}
+		try {
+			$sftp = self::connection($storage);
+			$root = $sftp === null ? '' : rtrim((string)$storage->getRoot(), '/');
+		} catch (\Throwable) {
+			self::$failures++;
+			return null;
+		}
+		if ($sftp === null) {
+			return null;
+		}
+		$result = [];
+		foreach (array_chunk($paths, self::BATCH) as $batch) {
+			try {
+				$result += self::readBatch($sftp, $root, $batch);
+			} catch (\Throwable $e) {
+				self::$failures++;
+				throw $e instanceof BackendException ? $e : new BackendException('SFTP connection failed while reading ' . count($batch) . ' files: ' . $e->getMessage(), 0, $e);
+			}
+		}
+		self::$failures = 0;
+		return $result;
+	}
+
+	/** Requests of one kind for a whole batch, then their answers in order. @return list<array{int, string|false}> */
+	private static function exchange(object $sftp, int $type, array $packets): array {
+		$ids = [];
+		foreach ($packets as $packet) {
+			$id = self::nextId();
+			if (!$sftp->_send_sftp_packet($type, $packet, $id)) {
+				// Requests already sent cannot be taken back: the connection is unusable now.
+				throw new BackendException('SFTP connection failed while sending a request');
+			}
+			$ids[] = $id;
+		}
+		$answers = [];
+		foreach ($ids as $id) {
+			$response = $sftp->_get_sftp_packet($id);
+			if (!is_string($response)) {
+				throw new BackendException('SFTP connection failed while waiting for an answer');
+			}
+			$answers[] = [$sftp->packet_type, $response];
+		}
+		return $answers;
+	}
+
+	/** @param list<string> $batch @return array<string, string|null> */
+	private static function readBatch(object $sftp, string $root, array $batch): array {
+		$result = array_fill_keys($batch, null);
+		$opens = [];
+		foreach ($batch as $path) {
+			$remote = $sftp->_realpath($root . '/' . ltrim($path, '/'));
+			if (!is_string($remote)) {
+				throw new BackendException('SFTP path could not be resolved: ' . $path);
+			}
+			$opens[] = pack('Na*N2', strlen($remote), $remote, self::FXF_READ, 0);
+		}
+		$handles = []; // path => handle
+		foreach (self::exchange($sftp, self::FXP_OPEN, $opens) as $i => [$type, $response]) {
+			if ($type === self::FXP_HANDLE) {
+				$handles[$batch[$i]] = substr($response, 4);
+			}
+			// any other answer: not readable this way, the caller reads it the usual way
+		}
+		$data = array_fill_keys(array_keys($handles), '');
+		$reading = $handles;
+		while ($reading !== []) {
+			$length = self::chunk($sftp);
+			$reads = [];
+			foreach ($reading as $path => $handle) {
+				$offset = strlen($data[$path]);
+				$reads[] = pack('Na*N3', strlen($handle), $handle, intdiv($offset, 4294967296), $offset % 4294967296, $length);
+			}
+			$paths = array_keys($reading);
+			foreach (self::exchange($sftp, self::FXP_READ, $reads) as $i => [$type, $response]) {
+				$path = $paths[$i];
+				if ($type === self::FXP_DATA && strlen($response) > 4) {
+					$data[$path] .= substr($response, 4); // more may follow: read on from there
+					continue;
+				}
+				unset($reading[$path]);
+				$status = $type === self::FXP_STATUS ? unpack('N', $response) : false;
+				if (!is_array($status) || ($status[1] ?? null) !== self::FX_EOF) {
+					unset($data[$path]); // a server error on this file: read it the usual way
+				}
+			}
+		}
+		$closes = [];
+		foreach ($handles as $handle) {
+			$closes[] = pack('Na*', strlen($handle), $handle);
+		}
+		self::exchange($sftp, self::FXP_CLOSE, $closes);
+		foreach ($data as $path => $contents) {
+			$result[$path] = $contents;
+		}
+		return $result;
 	}
 
 	/** Test hook: forget the learned READ sizes and earlier failures. */

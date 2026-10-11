@@ -10,6 +10,7 @@ namespace OCA\NgBackup\Command;
 use OCA\NgBackup\Db\RunMapper;
 use OCA\NgBackup\Service\KeyService;
 use OCA\NgBackup\Service\TargetService;
+use OCA\NgBackup\Service\VerifyService;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\Table;
 use Symfony\Component\Console\Input\InputInterface;
@@ -20,6 +21,7 @@ final class Status extends Command {
 		private KeyService $keys,
 		private TargetService $targets,
 		private RunMapper $runs,
+		private VerifyService $verify,
 	) {
 		parent::__construct();
 	}
@@ -50,6 +52,10 @@ final class Status extends Command {
 		}
 		if ($rows !== []) {
 			(new Table($output))->setHeaders(['run', 'location', 'kind', 'status', 'started', 'took', 'files', 'uploaded', 'error'])->setRows($rows)->render();
+		}
+		foreach ($this->verify->progress() as $targetId => $state) {
+			$output->writeln(sprintf('Verify of %s on %s: %s', mb_strimwidth((string)($state['what'] ?? ''), 0, 40, '…'),
+				$names[$targetId] ?? '#' . $targetId, VerifyService::describe($state)));
 		}
 		return 0;
 	}

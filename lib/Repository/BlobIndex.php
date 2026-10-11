@@ -87,26 +87,36 @@ final class BlobIndex {
 	 * and only the index files that are not cached yet are downloaded. Cached packs that no
 	 * longer exist on the backend are dropped from the cache.
 	 */
-	public function load(bool $verify = false): void {
+	public function load(bool $verify = false, ?callable $progress = null): void {
 		$this->blobs = [];
 		$cached = $verify ? [] : ($this->cache?->all($this->repositoryId) ?? []);
 		$present = [];
 		$this->downloaded = 0;
+		$fetch = [];
+		$entriesByPack = []; // in listing order: where a blob is in two packs, the last one listed wins
 		foreach ($this->backend->listFiles('index') as $path) {
 			$packId = basename($path);
 			$present[$packId] = true;
-			if (isset($cached[$packId])) {
-				$entries = $cached[$packId];
-			} else {
-				$fh = $this->backend->get($path);
-				$entries = json_decode($this->cipher->decryptString((string)stream_get_contents($fh), 'index:' . $packId), true, 512, JSON_THROW_ON_ERROR);
-				fclose($fh);
-				$this->downloaded++;
-				$this->cache?->put($this->repositoryId, $packId, $entries);
+			$entriesByPack[$packId] = $cached[$packId] ?? null;
+			if (!isset($cached[$packId])) {
+				$fetch[] = $path;
 			}
-			foreach ($entries as $e) {
-				$this->blobs[$e['id']] = [$packId, $e['offset'], $e['length'], $e['raw'], $e['flags']];
+		}
+		// The rest is downloaded several at a time where the location allows it: on a large
+		// repository these are tens of thousands of small files.
+		$total = count($fetch);
+		foreach ($this->backend->getMany($fetch) as $path => $data) {
+			$packId = basename($path);
+			$entries = json_decode($this->cipher->decryptString($data, 'index:' . $packId), true, 512, JSON_THROW_ON_ERROR);
+			$this->downloaded++;
+			$this->cache?->put($this->repositoryId, $packId, $entries);
+			$entriesByPack[$packId] = $entries;
+			if ($progress !== null) {
+				$progress($this->downloaded, $total);
 			}
+		}
+		foreach ($entriesByPack as $packId => $entries) {
+			$this->add($packId, $entries ?? []);
 		}
 		if ($verify && $this->cache !== null) {
 			// Refresh the cache from what was just verified.
@@ -125,6 +135,13 @@ final class BlobIndex {
 		$stale = array_keys(array_diff_key($cached, $present));
 		if ($stale !== []) {
 			$this->cache?->remove($this->repositoryId, $stale);
+		}
+	}
+
+	/** @param list<array{id:string, offset:int, length:int, raw:int, flags:int}> $entries */
+	private function add(string $packId, array $entries): void {
+		foreach ($entries as $e) {
+			$this->blobs[$e['id']] = [$packId, $e['offset'], $e['length'], $e['raw'], $e['flags']];
 		}
 	}
 

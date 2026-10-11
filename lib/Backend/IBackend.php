@@ -22,6 +22,16 @@ interface IBackend {
 	/** @return resource readable stream of the whole object */
 	public function get(string $path);
 
+	/**
+	 * Many small objects whole, in the order given (the repository's index files). A backend
+	 * where every request costs a round trip can fetch them several at a time.
+	 *
+	 * @param list<string> $paths
+	 * @return \Generator<string, string> contents by path
+	 * @throws BackendException for an object that cannot be read
+	 */
+	public function getMany(array $paths): \Generator;
+
 	/** @return string bytes [$offset, $offset + $length) of the object (used to fetch single blobs from a pack) */
 	public function getRange(string $path, int $offset, int $length): string;
 

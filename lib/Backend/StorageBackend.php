@@ -98,6 +98,35 @@ final class StorageBackend implements IBackend {
 		return $fh;
 	}
 
+	/** Over SFTP several at a time (SftpReadStream::readMany()); elsewhere one after the other. */
+	public function getMany(array $paths): \Generator {
+		foreach (array_chunk($paths, 8 * SftpReadStream::BATCH) as $chunk) {
+			$fast = null;
+			if ($this->sftpReads) {
+				$abs = array_map(fn (string $p): string => $this->abs($p), $chunk);
+				$fast = SftpReadStream::readMany($this->storage, $abs);
+				$fast = $fast === null ? null : array_combine($chunk, array_map(fn (string $a): ?string => $fast[$a] ?? null, $abs));
+			}
+			foreach ($chunk as $path) {
+				$data = $fast[$path] ?? null;
+				if ($data === null) {
+					// not read in the batch (or no batches here): the usual way, which also
+					// reports a missing file as such
+					$fh = $this->get($path);
+					try {
+						$data = stream_get_contents($fh);
+					} finally {
+						fclose($fh);
+					}
+					if ($data === false) {
+						throw new BackendException('Read failed for ' . $path);
+					}
+				}
+				yield $path => $data;
+			}
+		}
+	}
+
 	public function getRange(string $path, int $offset, int $length): string {
 		$fh = $this->get($path);
 		try {

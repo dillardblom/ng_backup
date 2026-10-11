@@ -231,6 +231,50 @@ class SftpReadStreamTest extends TestCase {
 		$this->assertNull(SftpReadStream::open($storage, 'f'));
 	}
 
+	public function testReadManyReadsSmallFilesInBatches(): void {
+		$files = [];
+		for ($i = 0; $i < 70; $i++) {
+			$files["/home/index/$i"] = random_bytes(random_int(0, 5000));
+		}
+		$files['/home/index/big'] = random_bytes(600000); // more than one READ
+		$sftp = new FakeSftpConnection($files);
+		$paths = array_map(fn ($p) => substr($p, 6), array_keys($files));
+
+		$got = SftpReadStream::readMany(new FakeSftpStorage($sftp), $paths);
+
+		$this->assertSame(array_combine($paths, array_values($files)), $got);
+		$this->assertSame(SftpReadStream::BATCH, $sftp->maxInFlight, 'a batch goes out at once');
+		$this->assertSame(0, $sftp->pending());
+		$this->assertSame([], $sftp->openHandles);
+	}
+
+	public function testReadManyLeavesAMissingOrFailingFileToTheCaller(): void {
+		$sftp = new FakeSftpConnection(['/home/a' => 'aaa', '/home/b' => random_bytes(400000), '/home/c' => 'ccc'], failAt: 300000);
+
+		$got = SftpReadStream::readMany(new FakeSftpStorage($sftp), ['a', 'missing', 'b', 'c']);
+
+		$this->assertSame(['a' => 'aaa', 'missing' => null, 'b' => null, 'c' => 'ccc'], $got);
+		$this->assertSame(0, $sftp->pending());
+		$this->assertSame([], $sftp->openHandles);
+	}
+
+	public function testReadManyAcrossACappedServer(): void {
+		$data = random_bytes(300000);
+		$sftp = new FakeSftpConnection(['/home/a' => $data, '/home/b' => 'b'], cap: 100000);
+		$this->assertSame(['a' => $data, 'b' => 'b'], SftpReadStream::readMany(new FakeSftpStorage($sftp), ['a', 'b']));
+	}
+
+	public function testReadManyFailsOnAConnectionError(): void {
+		$sftp = new FakeSftpConnection(['/home/a' => random_bytes(10), '/home/b' => 'b'], loseAt: 0);
+		$this->expectException(BackendException::class);
+		SftpReadStream::readMany(new FakeSftpStorage($sftp), ['a', 'b']);
+	}
+
+	public function testReadManyOnAnUnsupportedConnectionIsNull(): void {
+		$this->assertNull(SftpReadStream::readMany(new \stdClass(), ['a']));
+		$this->assertNull(SftpReadStream::readMany(new FakeSftpStorage(new FakeSftpConnection(['/home/a' => 'a'], channelFails: true)), ['a']));
+	}
+
 	public function testAFreshConnectionHasItsSftpChannelOpenedFirst(): void {
 		// phpseclib 2 logs in at connect time but opens the SFTP channel on the first SFTP call.
 		$sftp = new FakeSftpConnection(['/home/config' => 'repository config']);

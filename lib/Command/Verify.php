@@ -37,6 +37,9 @@ blob is also downloaded and decrypted, which fails loudly on exactly that even i
 lists it -- the same verification an actual restore would do, run here deliberately instead of
 waiting to find out during one.
 
+While it runs it prints how far it is every 30 seconds; occ backup:status shows the same, and
+how the last check of each location ended.
+
 Run this periodically (cron, picking a sample of recent snapshots) rather than only right before
 you'd need to rely on a restore.
 
@@ -51,9 +54,12 @@ HELP);
 			$target = $this->targets->get($input->getArgument('target'));
 			$ref = (string)$input->getArgument('snapshot');
 			$deep = (bool)$input->getOption('deep');
+			$onProgress = static function (array $state) use ($output): void {
+				$output->writeln(date('H:i:s') . ' ' . VerifyService::describe($state));
+			};
 			$result = str_starts_with($ref, 'users/')
-				? $this->verify->verifyUserExport($target, $ref, $deep)
-				: $this->verify->verify($target, $ref, $deep);
+				? $this->verify->verifyUserExport($target, $ref, $deep, $onProgress)
+				: $this->verify->verify($target, $ref, $deep, $onProgress);
 		} catch (\Throwable $e) {
 			$output->writeln('<error>' . $e->getMessage() . '</error>');
 			return 1;

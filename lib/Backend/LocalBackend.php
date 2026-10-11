@@ -8,6 +8,8 @@ declare(strict_types=1);
 namespace OCA\NgBackup\Backend;
 
 final class LocalBackend implements IBackend {
+	use GetsOneByOne;
+
 	public function __construct(
 		private string $root,
 	) {
