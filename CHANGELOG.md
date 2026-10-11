@@ -48,6 +48,10 @@ instead carried by the app description, the git tag, the release, and this file.
   overwriting the result. The lease now lasts at least 15 minutes, a step writes the run only if
   no other process wrote it since the step loaded it (in one database statement), and recording
   a snapshot that is already recorded is no longer an error.
+- `occ backup:verify` on a large repository failed with "SFTP connection failed while opening
+  snapshots/…": after downloading the index it refreshed the local index cache with a pass over
+  all blobs for every pack, which took 29 minutes for 1 TB (27,547 packs, 400,000 blobs). The
+  location dropped the idle connection in the meantime. It is one pass now (under a second).
 
 ## [0.9.4-beta.5] - 2026-10-09
 
