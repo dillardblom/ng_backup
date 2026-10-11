@@ -231,6 +231,22 @@ class SftpReadStreamTest extends TestCase {
 		$this->assertNull(SftpReadStream::open($storage, 'f'));
 	}
 
+	public function testAFreshConnectionHasItsSftpChannelOpenedFirst(): void {
+		// phpseclib 2 logs in at connect time but opens the SFTP channel on the first SFTP call.
+		$sftp = new FakeSftpConnection(['/home/config' => 'repository config']);
+		$this->assertFalse($sftp->initialised);
+		$fh = SftpReadStream::open(new FakeSftpStorage($sftp), 'config');
+		$this->assertIsResource($fh);
+		$this->assertSame('repository config', stream_get_contents($fh));
+		fclose($fh);
+	}
+
+	public function testAChannelThatCannotBeOpenedLeavesItToTheStoragesOwnStream(): void {
+		$sftp = new FakeSftpConnection(['/home/config' => 'x'], channelFails: true);
+		$this->assertNull(SftpReadStream::open(new FakeSftpStorage($sftp), 'config'));
+		$this->assertSame(0, $sftp->sent, 'nothing may be sent on a connection without an SFTP channel');
+	}
+
 	public function testAConnectionWithoutTheNeededMethodsIsNotUsed(): void {
 		$storage = new class {
 			public function getRoot(): string {
@@ -379,6 +395,10 @@ final class FakeSftpConnection {
 	public array $reads = [];
 	/** @var array<string, string> */
 	public array $openHandles = [];
+	/** Whether the SFTP channel is open: phpseclib 2 opens it on the first SFTP call. */
+	public bool $initialised = false;
+	/** Packets sent */
+	public int $sent = 0;
 	/** @var array<int, array{int, string}> answers by request id, in the order the server sent them */
 	private array $answers = [];
 	private int $handles = 0;
@@ -393,7 +413,16 @@ final class FakeSftpConnection {
 		/** READ at or past this offset finds the connection gone (phpseclib returns false); -1: OPEN */
 		private ?int $loseAt = null,
 		private bool $closeFails = false,
+		private bool $channelFails = false,
 	) {
+	}
+
+	public function pwd(): string|false {
+		if ($this->channelFails) {
+			return false;
+		}
+		$this->initialised = true;
+		return '/home';
 	}
 
 	public function file(string $path): ?string {
@@ -409,6 +438,10 @@ final class FakeSftpConnection {
 	}
 
 	public function _send_sftp_packet(int $type, string $data, int $id = 1): bool {
+		$this->sent++;
+		if (!$this->initialised) {
+			return false; // like phpseclib 2: no SFTP channel yet
+		}
 		switch ($type) {
 			case 3: // OPEN
 				if ($this->throwAt === -1) {

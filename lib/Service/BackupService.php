@@ -15,6 +15,7 @@ use OCA\NgBackup\Db\SnapshotMapper;
 use OCA\NgBackup\Db\Target;
 use OCA\NgBackup\Job\BackupRun;
 use OCA\NgBackup\Repository\RepositoryException;
+use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\App\IAppManager;
 use OCP\IConfig;
 use OCP\DB\QueryBuilder\IQueryBuilder;
@@ -146,7 +147,10 @@ final class BackupService {
 	 */
 	public function step(Run $run, float $deadline): Run {
 		// Leases expire on their own: a step killed by a time limit or OOM blocks nothing for long.
-		$ttl = (int)min(3600, max(120, $deadline - microtime(true) + 120));
+		// A step can run well past its deadline (the commit of a large snapshot writes its tree and
+		// index), so the lease holds at least 15 minutes; should it still expire and another process
+		// take the run over, the checks below keep the two from overwriting each other.
+		$ttl = (int)min(3600, max(900, $deadline - microtime(true) + 600));
 		try {
 			$runLease = $this->leases->acquire('run/' . $run->getId(), LeaseService::EXCLUSIVE, $ttl);
 		} catch (LockedException) {
@@ -159,11 +163,13 @@ final class BackupService {
 			$this->leases->release($runLease);
 			return $run;
 		}
+		$loadedAt = null;
 		try {
 			$run = $this->runs->find($run->getId()); // fresh state after acquiring the lock
 			if ($run->getStatus() !== Run::RUNNING || $run->getKind() !== self::KIND_FULL) {
 				return $run;
 			}
+			$loadedAt = $run->getUpdatedAt();
 			$target = $this->targets->get((string)$run->getTargetId());
 			$repo = $this->targets->repository($target);
 			$state = json_decode($run->getState(), true, 512, JSON_THROW_ON_ERROR);
@@ -204,14 +210,20 @@ final class BackupService {
 				}
 				if ($state['files']['phase'] === 'done') {
 					$this->recordSnapshot($run, $state['files']);
-					$this->alerts->storedBytes($target, $repo->storedBytes());
-					$stats = $state['files']['stats'];
-					if (($stats['unreadable'] ?? 0) > 0 || ($stats['changing'] ?? 0) > 0) {
-						$warnings = BackupRun::warnings($state['files']);
-						$this->logger->warning(sprintf('NG Backup run %d to %s: %d unreadable (missing from the snapshot): %s; %d changed while being read: %s',
-							$run->getId(), $target->getName(), $stats['unreadable'] ?? 0, implode(', ', $warnings['unreadable']),
-							$stats['changing'] ?? 0, implode(', ', $warnings['changing'])));
-						$this->alerts->runWarnings($run, $target->getName(), (int)($stats['unreadable'] ?? 0), (int)($stats['changing'] ?? 0), $warnings);
+					// The snapshot is committed: what follows only reports on it and must not turn
+					// the run into a failure.
+					try {
+						$this->alerts->storedBytes($target, $repo->storedBytes());
+						$stats = $state['files']['stats'];
+						if (($stats['unreadable'] ?? 0) > 0 || ($stats['changing'] ?? 0) > 0) {
+							$warnings = BackupRun::warnings($state['files']);
+							$this->logger->warning(sprintf('NG Backup run %d to %s: %d unreadable (missing from the snapshot): %s; %d changed while being read: %s',
+								$run->getId(), $target->getName(), $stats['unreadable'] ?? 0, implode(', ', $warnings['unreadable']),
+								$stats['changing'] ?? 0, implode(', ', $warnings['changing'])));
+							$this->alerts->runWarnings($run, $target->getName(), (int)($stats['unreadable'] ?? 0), (int)($stats['changing'] ?? 0), $warnings);
+						}
+					} catch (\Throwable $e) {
+						$this->logger->warning('NG Backup run ' . $run->getId() . ': reporting on the finished backup failed: ' . $e->getMessage(), ['exception' => $e]);
 					}
 					$run->setStatus(Run::DONE);
 					$run->setPhase('done');
@@ -220,15 +232,27 @@ final class BackupService {
 			}
 			$run->setState(json_encode($state, JSON_THROW_ON_ERROR));
 			$run->setStats(json_encode(['db' => $state['dbStats'] ?? null, 'files' => $state['files']['stats']], JSON_THROW_ON_ERROR));
-			$run->setUpdatedAt(time());
-			return $this->runs->update($run);
+			// Another process may have taken the run over after this step's lease expired: then its
+			// writes stand and this step's are dropped.
+			return $this->runs->updateIfUnchanged($run, $loadedAt) ?? $this->runs->find($run->getId());
 		} catch (\Throwable $e) {
-			$this->logger->error('NG Backup run ' . $run->getId() . ' failed: ' . $e->getMessage(), ['exception' => $e]);
+			if ($loadedAt === null) {
+				// The run could not even be loaded: there is nothing fresh to mark as failed, and
+				// the caller's copy may be stale.
+				$this->logger->error('NG Backup run ' . $run->getId() . ': step could not load the run: ' . $e->getMessage(), ['exception' => $e]);
+				return $run;
+			}
 			$run->setStatus(Run::FAILED);
 			$run->setError($e->getMessage());
 			$run->setFinishedAt(time());
-			$run->setUpdatedAt(time());
-			$run = $this->runs->update($run);
+			$failed = $this->runs->updateIfUnchanged($run, $loadedAt);
+			if ($failed === null) {
+				// Another process that took the run over may have finished it: its result stands.
+				$this->logger->warning('NG Backup run ' . $run->getId() . ': a step that another process had taken over ended with: ' . $e->getMessage());
+				return $this->runs->find($run->getId());
+			}
+			$run = $failed;
+			$this->logger->error('NG Backup run ' . $run->getId() . ' failed: ' . $e->getMessage(), ['exception' => $e]);
 			try {
 				$this->alerts->runFailed($run, isset($target) ? $target->getName() : '#' . $run->getTargetId());
 			} catch (\Throwable) {
@@ -266,6 +290,11 @@ final class BackupService {
 	}
 
 	private function recordSnapshot(Run $run, array $files): void {
+		try {
+			$this->snapshots->findOne($run->getTargetId(), $files['snapshot']);
+			return; // already recorded, by an earlier attempt at this step
+		} catch (DoesNotExistException) {
+		}
 		$s = new Snapshot();
 		$s->setTargetId($run->getTargetId());
 		$s->setSnapshotId($files['snapshot']);
@@ -274,7 +303,19 @@ final class BackupService {
 		$s->setCreatedAt(time());
 		$s->setFiles($files['stats']['files']);
 		$s->setBytes($files['stats']['bytes']);
-		$this->snapshots->insert($s);
+		try {
+			$this->snapshots->insert($s);
+		} catch (\OCP\DB\Exception $e) {
+			// Recorded by another process between the check above and this insert?
+			if ($e->getReason() !== \OCP\DB\Exception::REASON_UNIQUE_CONSTRAINT_VIOLATION) {
+				throw $e;
+			}
+			try {
+				$this->snapshots->findOne($run->getTargetId(), $files['snapshot']);
+			} catch (DoesNotExistException) {
+				throw $e;
+			}
+		}
 	}
 
 	/** @return list<string> */

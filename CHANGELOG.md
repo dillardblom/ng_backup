@@ -26,6 +26,18 @@ instead carried by the app description, the git tag, the release, and this file.
 - App store listing: the homepage link points to the GitHub repository instead of back to the
   app store page itself.
 
+### Fixed
+- 0.9.4 could not open a repository at the root of an SFTP location (empty path): its faster
+  SFTP reads sent their first request before phpseclib had opened the SFTP channel, which only
+  happens on the first SFTP call after login. Every backup then failed with "No repository at
+  this location". The channel is now opened first.
+- A long first backup could end as failed although its snapshot was complete: when its final
+  step took longer than the step's lease (150 s with `occ backup:run`), the background job took
+  the run over, finished it a second time and failed on the snapshot it had already recorded,
+  overwriting the result. The lease now lasts at least 15 minutes, a step writes the run only if
+  no other process wrote it since the step loaded it (in one database statement), and recording
+  a snapshot that is already recorded is no longer an error.
+
 ## [0.9.4-beta.5] - 2026-10-09
 
 Bugfix release: faster restores.

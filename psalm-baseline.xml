@@ -395,7 +395,7 @@
   </file>
   <file src="lib/Service/BackupService.php">
     <InvalidOperand>
-      <code><![CDATA[$deadline - microtime(true) + 120]]></code>
+      <code><![CDATA[$deadline - microtime(true) + 600]]></code>
     </InvalidOperand>
     <UndefinedClass>
       <code><![CDATA[\OC]]></code>
