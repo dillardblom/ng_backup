@@ -234,7 +234,8 @@ class SftpReadStreamTest extends TestCase {
 	public function testReadManyReadsSmallFilesInBatches(): void {
 		$files = [];
 		for ($i = 0; $i < 70; $i++) {
-			$files["/home/index/$i"] = random_bytes(random_int(0, 5000));
+			// one empty file on purpose (random_bytes(0) throws)
+			$files["/home/index/$i"] = $i === 0 ? '' : random_bytes(random_int(1, 5000));
 		}
 		$files['/home/index/big'] = random_bytes(600000); // more than one READ
 		$sftp = new FakeSftpConnection($files);
