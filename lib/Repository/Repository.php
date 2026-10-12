@@ -37,6 +37,8 @@ final class Repository {
 	private ?int $maxBytes = null;
 	private Catalog $catalog;
 	private PackReader $packReader;
+	/** verify() lists the pack folders from this many packs on (see presentPacks()); tests lower it. */
+	public int $listPacksAbove = 256;
 
 	private function __construct(
 		private IBackend $backend,
@@ -803,7 +805,9 @@ final class Repository {
 	/**
 	 * Which packs are on the location, from one listing per pack folder instead of a request per
 	 * pack. A folder that cannot be listed, or comes back empty (which a storage also reports when
-	 * it could not look), is left out: its packs are then checked one by one.
+	 * it could not look), is left out: its packs are then checked one by one. With no more packs
+	 * than folders nothing is listed: a request per pack is fewer requests then, and on FTP every
+	 * request takes a data connection, of which a server may have only a few.
 	 *
 	 * @return array{0: array<string, bool>, 1: array<string, true>} pack id => present, and the
 	 *                                                              folders that were listed
@@ -811,6 +815,9 @@ final class Repository {
 	private function presentPacks(callable $heartbeat): array {
 		$present = [];
 		$listed = [];
+		if ($this->index->packCount() <= $this->listPacksAbove) {
+			return [$present, $listed];
+		}
 		for ($i = 0; $i < 256; $i++) {
 			$dir = sprintf('%02x', $i);
 			try {

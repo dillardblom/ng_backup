@@ -83,7 +83,9 @@ class VerifyTest extends TestCase {
 		$s = $repo->backupDirectory($this->src);
 		$seen = [];
 
-		$this->open()->verify($s['snapshot'], heartbeat: function (array $p) use (&$seen): void {
+		$open = $this->open();
+		$open->listPacksAbove = 0;
+		$open->verify($s['snapshot'], heartbeat: function (array $p) use (&$seen): void {
 			$seen[] = $p;
 		});
 
@@ -95,12 +97,31 @@ class VerifyTest extends TestCase {
 		$this->assertNull($last['total'], 'this snapshot has no file count in its metadata (a backup run records one)');
 	}
 
-	public function testVerifyListsPackFoldersInsteadOfCheckingEveryPack(): void {
+	/** Lists the pack folders however few packs there are. */
+	private static function listing(Repository $repo): Repository {
+		$repo->listPacksAbove = 0;
+		return $repo;
+	}
+
+	public function testWithNoMorePacksThanFoldersEveryPackIsCheckedInstead(): void {
+		// fewer requests; on FTP each takes a data connection, of which a server may have few
 		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'));
 		$s = $repo->backupDirectory($this->src);
 		$counting = new ListingBackend($this->backend);
 
 		$result = Repository::openWithKey($counting, $this->keys, null, null)->verify($s['snapshot']);
+
+		$this->assertSame([], $result['missing']);
+		$this->assertSame(0, $counting->packListings);
+		$this->assertGreaterThan(0, $counting->packExists);
+	}
+
+	public function testVerifyListsPackFoldersInsteadOfCheckingEveryPack(): void {
+		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'));
+		$s = $repo->backupDirectory($this->src);
+		$counting = new ListingBackend($this->backend);
+
+		$result = self::listing(Repository::openWithKey($counting, $this->keys, null, null))->verify($s['snapshot']);
 
 		$this->assertSame([], $result['missing']);
 		$this->assertSame(0, $counting->packExists);
@@ -111,7 +132,7 @@ class VerifyTest extends TestCase {
 		$s = $repo->backupDirectory($this->src);
 		$counting = new ListingBackend($this->backend, unlistable: true);
 
-		$result = Repository::openWithKey($counting, $this->keys, null, null)->verify($s['snapshot']);
+		$result = self::listing(Repository::openWithKey($counting, $this->keys, null, null))->verify($s['snapshot']);
 
 		$this->assertSame([], $result['missing']);
 		$this->assertGreaterThan(0, $counting->packExists);
@@ -123,7 +144,7 @@ class VerifyTest extends TestCase {
 		$s = $repo->backupDirectory($this->src);
 		$counting = new ListingBackend($this->backend, emptyListings: true);
 
-		$result = Repository::openWithKey($counting, $this->keys, null, null)->verify($s['snapshot']);
+		$result = self::listing(Repository::openWithKey($counting, $this->keys, null, null))->verify($s['snapshot']);
 
 		$this->assertSame([], $result['missing']);
 		$this->assertGreaterThan(0, $counting->packExists);
@@ -140,7 +161,7 @@ class VerifyTest extends TestCase {
 		}
 		$counting = new ListingBackend($this->backend);
 
-		$result = Repository::openWithKey($counting, $this->keys, null, null)->verify($s['snapshot']);
+		$result = self::listing(Repository::openWithKey($counting, $this->keys, null, null))->verify($s['snapshot']);
 
 		$this->assertNotSame([], $result['missing']);
 		$this->assertSame(0, $counting->packExists);
@@ -153,7 +174,7 @@ class VerifyTest extends TestCase {
 			$this->backend->delete($pack);
 		}
 
-		$result = Repository::openWithKey(new ListingBackend($this->backend), $this->keys, null, null)->verify($s['snapshot']);
+		$result = self::listing(Repository::openWithKey(new ListingBackend($this->backend), $this->keys, null, null))->verify($s['snapshot']);
 
 		$this->assertNotSame([], $result['missing']);
 	}
@@ -269,6 +290,7 @@ final class ListingBackend implements IBackend {
 	use \OCA\NgBackup\Backend\GetsOneByOne;
 
 	public int $packExists = 0;
+	public int $packListings = 0;
 
 	public function __construct(
 		private IBackend $inner,
@@ -305,6 +327,9 @@ final class ListingBackend implements IBackend {
 	}
 
 	public function listFiles(string $dir): array {
+		if (str_starts_with($dir, 'packs/')) {
+			$this->packListings++;
+		}
 		if ($this->unlistable && str_starts_with($dir, 'packs/')) {
 			throw new BackendException('Cannot list ' . $dir);
 		}

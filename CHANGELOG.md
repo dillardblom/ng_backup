@@ -32,7 +32,8 @@ Bugfix release for SFTP locations and large repositories. Tested on a production
 - Checking and opening a large repository over SFTP is much faster: the index files (one per
   pack, 27,547 for 1 TB) are downloaded 32 at a time instead of one after the other, 114 instead
   of 6 files per second to a Hetzner Storage Box (about 4 minutes instead of 77 for 1 TB). A check
-  also lists the pack folders (256 requests) instead of asking for every pack.
+  of a repository with more than 256 packs also lists the pack folders (256 requests) instead of
+  asking for every pack.
 - App store listing: the author's e-mail address is shown.
 - App store listing: the homepage link points to the GitHub repository instead of back to the
   app store page itself.
