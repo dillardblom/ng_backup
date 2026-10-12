@@ -51,7 +51,10 @@ final class Notifier implements INotifier {
 				$notification->setParsedMessage($l->t('Backups stop when the limit is reached. Raise the limit, or let the retention policy remove older backups.'));
 				break;
 			case 'backup_stale':
-				$notification->setParsedSubject($l->t('No successful backup to %1$s since %2$s', [$p['target'], $p['since']]));
+				// 'never' was stored by 0.9.4 and earlier
+				$notification->setParsedSubject(in_array($p['since'] ?? '', ['', 'never'], true)
+					? $l->t('No successful backup to %s yet', [$p['target']])
+					: $l->t('No successful backup to %1$s since %2$s', [$p['target'], $p['since']]));
 				$notification->setParsedMessage($l->t('Check the backup settings and the server log.'));
 				break;
 			case 'security_event':

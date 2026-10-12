@@ -33,6 +33,8 @@ instead carried by the app description, the git tag, the release, and this file.
 - App store listing: the author's e-mail address is shown.
 - App store listing: the homepage link points to the GitHub repository instead of back to the
   app store page itself.
+- The notification for a location without a successful backup read "No successful backup to …
+  since never" when there had never been one; it now reads "No successful backup to … yet".
 
 ### Fixed
 - 0.9.4 could not open a repository at the root of an SFTP location (empty path): its faster
