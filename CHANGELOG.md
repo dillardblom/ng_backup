@@ -7,7 +7,11 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
-## [Unreleased]
+## [0.9.5-beta.6] - 2026-10-12
+
+Bugfix release for SFTP locations and large repositories. Tested on a production instance with a
+1 TB repository on a Hetzner Storage Box over SFTP: a check in 5.5 minutes, a deep check of all
+316,529 blobs (815 GiB) in 11 hours, and an incremental backup in under 8 minutes.
 
 ### Added
 - Progress of a running backup in the web interface and `occ backup:status`, e.g.
@@ -20,7 +24,6 @@ instead carried by the app description, the git tag, the release, and this file.
   keeps paying for the old one. The new settings are only saved when they lead to the same
   repository; stored passwords are never sent to the browser, and an empty password field keeps
   the stored one. Administrators are notified of the change.
-
 - `occ backup:verify` reports how far it is every 30 seconds, and `occ backup:status` shows the
   progress of a running check and how the last check of each location ended. On a large
   repository a check takes hours, a deep one days.
@@ -60,7 +63,8 @@ instead carried by the app description, the git tag, the release, and this file.
   - an SFTP connection that was not used for a minute is checked first, and one that turns out
     to be dead after a failed request is replaced, once per request; uploads, moves and deletes
     are only checked first, never repeated;
-  - the index cache is written in one transaction (27,547 packs in 11 seconds on a test server, against about a minute row by row);
+  - the index cache is written in one transaction (27,547 packs in 11 seconds on a test server,
+    against about a minute row by row);
   - after a check the cache holds the index files as they are: before, a blob that was in two
     packs was only cached for one of them.
 
@@ -211,6 +215,7 @@ and not implemented yet.
 - See the "Storage backend experiences" section of the README for provider-specific quirks found
   so far (e.g. Hetzner Storage Box sub-accounts).
 
+[0.9.5-beta.6]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.5-beta.6
 [0.9.4-beta.5]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.4-beta.5
 [0.9.3-beta.4]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.3-beta.4
 [0.9.2-beta.3]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.2-beta.3
