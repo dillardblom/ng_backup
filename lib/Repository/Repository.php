@@ -37,6 +37,8 @@ final class Repository {
 	private ?int $maxBytes = null;
 	private Catalog $catalog;
 	private PackReader $packReader;
+	/** verify() lists the pack folders from this many packs on (see presentPacks()); tests lower it. */
+	public int $listPacksAbove = 256;
 
 	private function __construct(
 		private IBackend $backend,
@@ -750,17 +752,23 @@ final class Repository {
 	 * referenced by more than one file is only checked once; a missing database manifest is a
 	 * failure, not something to silently skip over.
 	 *
-	 * @param ?callable $heartbeat called after every blob (shallow) or every blob read (deep);
-	 *        callers use it to keep a time-boxed lease alive during a large audit
+	 * @param ?callable(array{phase:string, done:int, total:?int, blobs?:int, bytes?:int}):void $heartbeat
+	 *        called often during the check, with how far it is: phase "index" (index files
+	 *        downloaded), "packs" (pack folders listed), "files" and "database" (files of the
+	 *        snapshot checked); callers use it to keep a time-boxed lease alive and to report
 	 * @return array{filesChecked:int, blobsChecked:int, bytesChecked:int, missing:list<string>, failed:list<string>, unreadable:list<string>, readError:string}
 	 */
 	public function verify(string $snapshotId, bool $deep = false, ?callable $heartbeat = null): array {
-		$heartbeat ??= static function (): void {
+		$heartbeat ??= static function (array $progress): void {
 		};
-		$this->index->load(true);
+		$meta = $this->snapshotMeta($snapshotId);
+		$filesTotal = isset($meta['stats']['files']) ? (int)$meta['stats']['files'] : null;
+		$this->index->load(true, static function (int $done, int $total) use ($heartbeat): void {
+			$heartbeat(['phase' => 'index', 'done' => $done, 'total' => $total]);
+		});
 		$stats = ['filesChecked' => 0, 'blobsChecked' => 0, 'bytesChecked' => 0, 'missing' => [], 'failed' => [], 'unreadable' => [], 'readError' => ''];
 		$seen = [];
-		$packSeen = []; // pack id => exists on the backend; avoids one exists() call per blob
+		[$packSeen, $listedDirs] = $this->presentPacks($heartbeat);
 		foreach ($this->streamEntries($snapshotId) as $entry) {
 			$stats['filesChecked']++;
 			foreach ($entry['b'] as $id) {
@@ -768,11 +776,11 @@ final class Repository {
 					continue;
 				}
 				$seen[$id] = true;
-				$this->verifyBlob($id, $deep, $stats, $packSeen);
-				$heartbeat();
+				$this->verifyBlob($id, $deep, $stats, $packSeen, $listedDirs);
+				$heartbeat(['phase' => 'files', 'done' => $stats['filesChecked'], 'total' => $filesTotal,
+					'blobs' => $stats['blobsChecked'], 'bytes' => $stats['bytesChecked']]);
 			}
 		}
-		$meta = $this->snapshotMeta($snapshotId);
 		if (isset($meta['db']) && is_string($meta['db'])) {
 			if (!$this->backend->exists($meta['db'])) {
 				$stats['missing'][] = $meta['db'];
@@ -784,13 +792,48 @@ final class Repository {
 							continue;
 						}
 						$seen[$id] = true;
-						$this->verifyBlob($id, $deep, $stats, $packSeen);
-						$heartbeat();
+						$this->verifyBlob($id, $deep, $stats, $packSeen, $listedDirs);
+						$heartbeat(['phase' => 'database', 'done' => $stats['filesChecked'], 'total' => $filesTotal,
+							'blobs' => $stats['blobsChecked'], 'bytes' => $stats['bytesChecked']]);
 					}
 				}
 			}
 		}
 		return $stats;
+	}
+
+	/**
+	 * Which packs are on the location, from one listing per pack folder instead of a request per
+	 * pack. A folder that cannot be listed, or comes back empty (which a storage also reports when
+	 * it could not look), is left out: its packs are then checked one by one. With no more packs
+	 * than folders nothing is listed: a request per pack is fewer requests then, and on FTP every
+	 * request takes a data connection, of which a server may have only a few.
+	 *
+	 * @return array{0: array<string, bool>, 1: array<string, true>} pack id => present, and the
+	 *                                                              folders that were listed
+	 */
+	private function presentPacks(callable $heartbeat): array {
+		$present = [];
+		$listed = [];
+		if ($this->index->packCount() <= $this->listPacksAbove) {
+			return [$present, $listed];
+		}
+		for ($i = 0; $i < 256; $i++) {
+			$dir = sprintf('%02x', $i);
+			try {
+				$files = $this->backend->listFiles('packs/' . $dir);
+			} catch (BackendException) {
+				$files = [];
+			}
+			foreach ($files as $path) {
+				$present[basename($path)] = true;
+			}
+			if ($files !== []) {
+				$listed[$dir] = true;
+			}
+			$heartbeat(['phase' => 'packs', 'done' => $i + 1, 'total' => 256]);
+		}
+		return [$present, $listed];
 	}
 
 	/**
@@ -803,9 +846,11 @@ final class Repository {
 		if (!$this->isRecordedUserExport($manifestPath)) {
 			throw new RepositoryException("$manifestPath is not a recorded user export for this location");
 		}
-		$heartbeat ??= static function (): void {
+		$heartbeat ??= static function (array $progress): void {
 		};
-		$this->index->load(true);
+		$this->index->load(true, static function (int $done, int $total) use ($heartbeat): void {
+			$heartbeat(['phase' => 'index', 'done' => $done, 'total' => $total]);
+		});
 		$stats = ['filesChecked' => 0, 'blobsChecked' => 0, 'bytesChecked' => 0, 'missing' => [], 'failed' => [], 'unreadable' => [], 'readError' => ''];
 		$seen = [];
 		$packSeen = [];
@@ -821,20 +866,27 @@ final class Repository {
 				}
 				$seen[$id] = true;
 				$this->verifyBlob($id, $deep, $stats, $packSeen);
-				$heartbeat();
+				$heartbeat(['phase' => 'files', 'done' => $stats['filesChecked'], 'total' => null,
+					'blobs' => $stats['blobsChecked'], 'bytes' => $stats['bytesChecked']]);
 			}
 		}
 		return $stats;
 	}
 
-	/** @param array<string, bool> $packSeen */
-	private function verifyBlob(string $id, bool $deep, array &$stats, array &$packSeen): void {
+	/**
+	 * @param array<string, bool> $packSeen pack id => present; filled in as packs are checked
+	 * @param array<string, true> $listedDirs pack folders whose listing is in $packSeen: a pack
+	 *                                        not in it is not there
+	 */
+	private function verifyBlob(string $id, bool $deep, array &$stats, array &$packSeen, array $listedDirs = []): void {
 		if (!$this->index->has($id)) {
 			$stats['missing'][] = $id;
 			return;
 		}
 		[$pack] = $this->index->get($id);
-		$packExists = $packSeen[$pack] ??= $this->backend->exists('packs/' . substr($pack, 0, 2) . '/' . $pack);
+		$packExists = $packSeen[$pack] ??= isset($listedDirs[substr($pack, 0, 2)])
+			? false
+			: $this->backend->exists('packs/' . substr($pack, 0, 2) . '/' . $pack);
 		if (!$packExists) {
 			$stats['missing'][] = $id;
 			return;

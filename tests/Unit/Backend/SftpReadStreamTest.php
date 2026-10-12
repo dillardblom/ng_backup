@@ -231,6 +231,93 @@ class SftpReadStreamTest extends TestCase {
 		$this->assertNull(SftpReadStream::open($storage, 'f'));
 	}
 
+	public function testReadManyReadsSmallFilesInBatches(): void {
+		$files = [];
+		for ($i = 0; $i < 70; $i++) {
+			// one empty file on purpose (random_bytes(0) throws)
+			$files["/home/index/$i"] = $i === 0 ? '' : random_bytes(random_int(1, 5000));
+		}
+		$files['/home/index/big'] = random_bytes(600000); // more than one READ
+		$sftp = new FakeSftpConnection($files);
+		$paths = array_map(fn ($p) => substr($p, 6), array_keys($files));
+
+		$got = SftpReadStream::readMany(new FakeSftpStorage($sftp), $paths);
+
+		$this->assertSame(array_combine($paths, array_values($files)), $got);
+		$this->assertSame(SftpReadStream::BATCH, $sftp->maxInFlight, 'a batch goes out at once');
+		$this->assertSame(0, $sftp->pending());
+		$this->assertSame([], $sftp->openHandles);
+	}
+
+	public function testReadManyLeavesAMissingOrFailingFileToTheCaller(): void {
+		$sftp = new FakeSftpConnection(['/home/a' => 'aaa', '/home/b' => random_bytes(400000), '/home/c' => 'ccc'], failAt: 300000);
+
+		$got = SftpReadStream::readMany(new FakeSftpStorage($sftp), ['a', 'missing', 'b', 'c']);
+
+		$this->assertSame(['a' => 'aaa', 'missing' => null, 'b' => null, 'c' => 'ccc'], $got);
+		$this->assertSame(0, $sftp->pending());
+		$this->assertSame([], $sftp->openHandles);
+	}
+
+	public function testReadManyAcrossACappedServer(): void {
+		$data = random_bytes(300000);
+		$sftp = new FakeSftpConnection(['/home/a' => $data, '/home/b' => 'b'], cap: 100000);
+		$this->assertSame(['a' => $data, 'b' => 'b'], SftpReadStream::readMany(new FakeSftpStorage($sftp), ['a', 'b']));
+	}
+
+	public function testReadManyEndsTheConnectionOnAConnectionError(): void {
+		// Answers to requests already out may still come: files_external must not get them.
+		$sftp = new FakeSftpConnection(['/home/a' => random_bytes(10), '/home/b' => 'b'], loseAt: 0);
+		try {
+			SftpReadStream::readMany(new FakeSftpStorage($sftp), ['a', 'b']);
+			$this->fail('expected a BackendException');
+		} catch (BackendException) {
+		}
+		$this->assertTrue($sftp->disconnected);
+	}
+
+	public function testReadManyStopsBatchingWhenCloseIsNotConfirmed(): void {
+		$files = [];
+		for ($i = 0; $i < 40; $i++) {
+			$files["/home/$i"] = "file $i";
+		}
+		$sftp = new FakeSftpConnection($files, closeStatus: 4);
+		$got = SftpReadStream::readMany(new FakeSftpStorage($sftp), array_map('strval', range(0, 39)));
+		$this->assertSame('file 0', $got['0']);
+		$this->assertSame('file 31', $got['31']);
+		$this->assertNull($got['32'], 'no second batch after unconfirmed closes');
+		$this->assertCount(SftpReadStream::BATCH, array_filter($got, fn ($v) => $v !== null));
+		// Nor on a later call over the same connection.
+		$this->assertNull(SftpReadStream::readMany(new FakeSftpStorage($sftp), ['0']));
+	}
+
+	public function testReadManyLeavesAMalformedAnswerToTheCaller(): void {
+		$sftp = new FakeSftpConnection(['/home/a' => 'aaaa', '/home/b' => 'bbbb'], malformed: '/home/a');
+		$this->assertSame(['a' => null, 'b' => 'bbbb'], SftpReadStream::readMany(new FakeSftpStorage($sftp), ['a', 'b']));
+		$this->assertSame([], $sftp->openHandles);
+	}
+
+	public function testReadManyOnAnUnsupportedConnectionIsNull(): void {
+		$this->assertNull(SftpReadStream::readMany(new \stdClass(), ['a']));
+		$this->assertNull(SftpReadStream::readMany(new FakeSftpStorage(new FakeSftpConnection(['/home/a' => 'a'], channelFails: true)), ['a']));
+	}
+
+	public function testAFreshConnectionHasItsSftpChannelOpenedFirst(): void {
+		// phpseclib 2 logs in at connect time but opens the SFTP channel on the first SFTP call.
+		$sftp = new FakeSftpConnection(['/home/config' => 'repository config']);
+		$this->assertFalse($sftp->initialised);
+		$fh = SftpReadStream::open(new FakeSftpStorage($sftp), 'config');
+		$this->assertIsResource($fh);
+		$this->assertSame('repository config', stream_get_contents($fh));
+		fclose($fh);
+	}
+
+	public function testAChannelThatCannotBeOpenedLeavesItToTheStoragesOwnStream(): void {
+		$sftp = new FakeSftpConnection(['/home/config' => 'x'], channelFails: true);
+		$this->assertNull(SftpReadStream::open(new FakeSftpStorage($sftp), 'config'));
+		$this->assertSame(0, $sftp->sent, 'nothing may be sent on a connection without an SFTP channel');
+	}
+
 	public function testAConnectionWithoutTheNeededMethodsIsNotUsed(): void {
 		$storage = new class {
 			public function getRoot(): string {
@@ -379,6 +466,10 @@ final class FakeSftpConnection {
 	public array $reads = [];
 	/** @var array<string, string> */
 	public array $openHandles = [];
+	/** Whether the SFTP channel is open: phpseclib 2 opens it on the first SFTP call. */
+	public bool $initialised = false;
+	/** Packets sent */
+	public int $sent = 0;
 	/** @var array<int, array{int, string}> answers by request id, in the order the server sent them */
 	private array $answers = [];
 	private int $handles = 0;
@@ -393,7 +484,26 @@ final class FakeSftpConnection {
 		/** READ at or past this offset finds the connection gone (phpseclib returns false); -1: OPEN */
 		private ?int $loseAt = null,
 		private bool $closeFails = false,
+		private bool $channelFails = false,
+		/** status code the server answers CLOSE with */
+		private int $closeStatus = 0,
+		/** a file whose DATA answers declare a wrong length */
+		private ?string $malformed = null,
 	) {
+	}
+
+	public bool $disconnected = false;
+
+	public function disconnect(): void {
+		$this->disconnected = true;
+	}
+
+	public function pwd(): string|false {
+		if ($this->channelFails) {
+			return false;
+		}
+		$this->initialised = true;
+		return '/home';
 	}
 
 	public function file(string $path): ?string {
@@ -409,6 +519,10 @@ final class FakeSftpConnection {
 	}
 
 	public function _send_sftp_packet(int $type, string $data, int $id = 1): bool {
+		$this->sent++;
+		if (!$this->initialised) {
+			return false; // like phpseclib 2: no SFTP channel yet
+		}
 		switch ($type) {
 			case 3: // OPEN
 				if ($this->throwAt === -1) {
@@ -432,7 +546,7 @@ final class FakeSftpConnection {
 				}
 				$handle = substr($data, 4, unpack('N', $data)[1]);
 				unset($this->openHandles[$handle]);
-				$this->answers[$id] = [101, pack('N', 0)];
+				$this->answers[$id] = [101, pack('N', $this->closeStatus)];
 				break;
 			case 5: // READ
 				$len = unpack('N', $data)[1];
@@ -454,7 +568,8 @@ final class FakeSftpConnection {
 					$this->answers[$id] = [101, pack('N', 1)]; // FX_EOF
 				} else {
 					$chunk = substr($file, $offset, min($n, $this->cap));
-					$this->answers[$id] = [103, pack('Na*', strlen($chunk), $chunk)];
+					$declared = $this->openHandles[$handle] === $this->malformed ? strlen($chunk) + 7 : strlen($chunk);
+					$this->answers[$id] = [103, pack('Na*', $declared, $chunk)];
 				}
 				$this->maxInFlight = max($this->maxInFlight, count($this->answers));
 				break;

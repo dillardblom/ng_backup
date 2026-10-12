@@ -15,6 +15,20 @@ interface IIndexCache {
 	/** @param list<array{id:string, offset:int, length:int, raw:int, flags:int}> $entries */
 	public function put(string $repositoryId, string $packId, array $entries): void;
 
+	/**
+	 * put() for many packs at once (one database transaction).
+	 *
+	 * @param array<string, list<array{id:string, offset:int, length:int, raw:int, flags:int}>> $packs packId => entries
+	 */
+	public function putMany(string $repositoryId, array $packs): void;
+
+	/**
+	 * Replace everything cached for the repository with $packs (one database transaction).
+	 *
+	 * @param array<string, list<array{id:string, offset:int, length:int, raw:int, flags:int}>> $packs packId => entries
+	 */
+	public function replaceAll(string $repositoryId, array $packs): void;
+
 	/** @param list<string> $packIds */
 	public function remove(string $repositoryId, array $packIds): void;
 }

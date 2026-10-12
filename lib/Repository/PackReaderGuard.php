@@ -28,6 +28,11 @@ final class PackReaderGuard implements IBackend {
 		return $this->inner->get($path);
 	}
 
+	public function getMany(array $paths): \Generator {
+		$this->reader->close();
+		return $this->inner->getMany($paths);
+	}
+
 	public function getRange(string $path, int $offset, int $length): string {
 		$this->reader->close();
 		return $this->inner->getRange($path, $offset, $length);

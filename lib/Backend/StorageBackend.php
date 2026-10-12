@@ -19,16 +19,28 @@ final class StorageBackend implements IBackend {
 	private bool $atomicPut;
 	/** SFTP: read through SftpReadStream, which keeps several requests in flight. */
 	private bool $sftpReads;
+	/** Seconds without a request after which an SFTP connection is checked before it is used. */
+	public const IDLE_CHECK = 60;
+	private float $lastUsed;
+	/** Times the storage was built anew after its connection died (for tests and diagnostics). */
+	public int $reconnects = 0;
 
+	/**
+	 * @param (\Closure():IStorage)|null $reconnect builds the same storage anew, with a new
+	 *                                             connection
+	 */
 	public function __construct(
 		private IStorage $storage,
 		private string $base = '',
+		bool $createBase = true,
+		private ?\Closure $reconnect = null,
 	) {
+		$this->lastUsed = microtime(true);
 		$this->base = trim($base, '/');
 		self::validate($this->base, true);
 		$this->atomicPut = $storage->instanceOfStorage(\OCA\Files_External\Lib\Storage\AmazonS3::class);
 		$this->sftpReads = $storage->instanceOfStorage(\OCA\Files_External\Lib\Storage\SFTP::class);
-		if ($this->base !== '') {
+		if ($createBase && $this->base !== '') {
 			$this->mkdirs($this->base);
 		}
 	}
@@ -39,6 +51,8 @@ final class StorageBackend implements IBackend {
 	}
 
 	public function put(string $path, $stream): void {
+		// not repeated on a new connection: the stream is (partly) read
+		$this->idleCheck();
 		$expected = self::remaining($stream);
 		$target = $this->abs($path);
 		$this->mkdirs(dirname($target));
@@ -82,6 +96,11 @@ final class StorageBackend implements IBackend {
 	}
 
 	public function get(string $path) {
+		return $this->call(fn () => $this->open($path));
+	}
+
+	/** @return resource */
+	private function open(string $path) {
 		if ($this->sftpReads) {
 			$fh = SftpReadStream::open($this->storage, $this->abs($path));
 			if (is_resource($fh)) {
@@ -97,7 +116,40 @@ final class StorageBackend implements IBackend {
 		return $fh;
 	}
 
+	/** Over SFTP several at a time (SftpReadStream::readMany()); elsewhere one after the other. */
+	public function getMany(array $paths): \Generator {
+		foreach (array_chunk($paths, 8 * SftpReadStream::BATCH) as $chunk) {
+			$fast = null;
+			if ($this->sftpReads) {
+				$abs = array_map(fn (string $p): string => $this->abs($p), $chunk);
+				$fast = $this->call(fn () => SftpReadStream::readMany($this->storage, $abs));
+				$fast = $fast === null ? null : array_combine($chunk, array_map(fn (string $a): ?string => $fast[$a] ?? null, $abs));
+			}
+			foreach ($chunk as $path) {
+				$data = $fast[$path] ?? null;
+				if ($data === null) {
+					// not read in the batch (or no batches here): the usual way, which also
+					// reports a missing file as such
+					$fh = $this->get($path);
+					try {
+						$data = stream_get_contents($fh);
+					} finally {
+						fclose($fh);
+					}
+					if ($data === false) {
+						throw new BackendException('Read failed for ' . $path);
+					}
+				}
+				yield $path => $data;
+			}
+		}
+	}
+
 	public function getRange(string $path, int $offset, int $length): string {
+		return $this->call(fn () => $this->readRange($path, $offset, $length));
+	}
+
+	private function readRange(string $path, int $offset, int $length): string {
 		$fh = $this->get($path);
 		try {
 			if (fseek($fh, $offset) !== 0) {
@@ -120,23 +172,40 @@ final class StorageBackend implements IBackend {
 		}
 	}
 
+	/** Whether the storage accepts the connection settings (files_external's own check). */
+	public function canConnect(): bool {
+		try {
+			return !method_exists($this->storage, 'test') || $this->storage->test();
+		} catch (\Throwable) {
+			return false;
+		}
+	}
+
 	public function exists(string $path): bool {
-		return $this->storage->file_exists($this->abs($path));
+		$abs = $this->abs($path);
+		return $this->call(fn () => $this->storage->file_exists($abs), fn (bool $found) => !$found);
 	}
 
 	public function list(string $prefix): array {
-		$result = [];
-		$this->listInto($this->abs($prefix), $result);
+		$abs = $this->abs($prefix);
+		$result = $this->call(function () use ($abs): array {
+			$result = [];
+			$this->listInto($abs, $result);
+			return $result;
+		}, fn (array $found) => $found === []);
 		sort($result);
 		$cut = $this->base === '' ? 0 : strlen($this->base) + 1;
 		return array_map(fn ($p) => substr($p, $cut), $result);
 	}
 
 	public function delete(string $path): void {
+		$this->idleCheck();
 		$this->storage->unlink($this->abs($path));
 	}
 
 	public function move(string $from, string $to): void {
+		// not repeated on a new connection: the server may have done it before the connection died
+		$this->idleCheck();
 		$target = $this->abs($to);
 		$this->mkdirs(dirname($target));
 		if (!$this->storage->rename($this->abs($from), $target)) {
@@ -146,6 +215,11 @@ final class StorageBackend implements IBackend {
 
 	public function listFiles(string $dir): array {
 		$abs = $this->abs($dir);
+		return $this->call(fn () => $this->filesIn($dir, $abs), fn (array $found) => $found === []);
+	}
+
+	/** @return list<string> */
+	private function filesIn(string $dir, string $abs): array {
 		if (!$this->storage->is_dir($abs)) {
 			return []; // not created yet
 		}
@@ -164,6 +238,94 @@ final class StorageBackend implements IBackend {
 		closedir($dh);
 		sort($result);
 		return $result;
+	}
+
+	/**
+	 * Run $op; when it throws, or $failed says its result may come from a dead connection, and
+	 * the SFTP connection turns out to be dead, run it once more on a new connection.
+	 *
+	 * @template T
+	 * @param \Closure():T $op
+	 * @param (\Closure(T):bool)|null $failed
+	 * @return T
+	 */
+	private function call(\Closure $op, ?\Closure $failed = null): mixed {
+		$this->idleCheck();
+		try {
+			$result = $op();
+		} catch (\Throwable $e) {
+			if (!$this->reopenIfDead()) {
+				throw $e;
+			}
+			return $op();
+		}
+		if ($failed !== null && $failed($result) && $this->reopenIfDead()) {
+			return $op();
+		}
+		return $result;
+	}
+
+	/**
+	 * A Hetzner Storage Box drops an SFTP connection that carried a lot of data and then stayed
+	 * quiet for a few minutes, while phpseclib still takes it for open; files_external never
+	 * builds a new one, and every request on it fails as if the file were missing. So after
+	 * such a pause the connection is checked (one round trip) before it is used again.
+	 */
+	private function idleCheck(): void {
+		$now = microtime(true);
+		if ($this->reconnect !== null && $this->sftpReads && $now - $this->lastUsed >= self::IDLE_CHECK
+			&& $this->alive(true) === false) {
+			$this->reopen();
+		}
+		$this->lastUsed = microtime(true);
+	}
+
+	private function reopenIfDead(): bool {
+		if ($this->reconnect === null || !$this->sftpReads || $this->alive(false) !== false) {
+			return false;
+		}
+		$this->reopen();
+		return true;
+	}
+
+	/**
+	 * Whether the storage's SFTP connection is alive; null when it cannot tell.
+	 * $ask: send a request instead of trusting what phpseclib saw last.
+	 */
+	private function alive(bool $ask): ?bool {
+		try {
+			if (!is_callable([$this->storage, 'getConnection'])) {
+				return null;
+			}
+			$sftp = $this->storage->getConnection();
+			if (!is_object($sftp) || !is_callable([$sftp, 'isConnected'])) {
+				return null;
+			}
+			if (!$sftp->isConnected()) {
+				return false;
+			}
+			if (!$ask || !is_callable([$sftp, 'stat'])) {
+				return true;
+			}
+			if (is_callable([$sftp, 'clearStatCache'])) {
+				$sftp->clearStatCache(); // or stat() answers from memory
+			}
+			$sftp->stat('.');
+			return (bool)$sftp->isConnected();
+		} catch (\Throwable) {
+			return false;
+		}
+	}
+
+	private function reopen(): void {
+		/** @var \Closure():IStorage $reconnect */
+		$reconnect = $this->reconnect;
+		$this->storage = $reconnect();
+		$this->reconnects++;
+		$this->lastUsed = microtime(true);
+		if (function_exists('OCP\Log\logger')) {
+			\OCP\Log\logger('ng_backup')->info('The SFTP connection to the backup location was lost; reconnected');
+		}
 	}
 
 	private function listInto(string $dir, array &$result): void {

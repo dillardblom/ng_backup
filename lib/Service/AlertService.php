@@ -104,7 +104,7 @@ final class AlertService {
 		}
 		$this->appConfig->setValueString(Application::APP_ID, $key, date('Y-m-d'));
 		$this->notifyAdmins('backup_stale', 'stale-' . $target->getId() . '-' . date('Y-m-d'),
-			['target' => $target->getName(), 'since' => $last ? date('Y-m-d H:i', $lastTime) : 'never']);
+			['target' => $target->getName(), 'since' => $last ? date('Y-m-d H:i', $lastTime) : '']);
 	}
 
 	private function notifyAdmins(string $subject, string $objectId, array $params): void {

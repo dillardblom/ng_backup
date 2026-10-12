@@ -161,6 +161,38 @@ final class BackupRun {
 	}
 
 	/**
+	 * Progress of the files phase as a fraction (at most 0.99 until it is done), or null without an
+	 * estimate. Bytes of a large file that is still being read count too.
+	 *
+	 * @return array{fraction: float, approximate: bool}|null
+	 */
+	public static function progress(array $state): ?array {
+		$estimate = $state['estimate'] ?? null;
+		if (($state['phase'] ?? null) !== 'files' || !is_array($estimate) || ($estimate['bytes'] ?? 0) <= 0) {
+			return null;
+		}
+		$done = (int)($state['stats']['bytes'] ?? 0) + (int)($state['cur']['offset'] ?? 0);
+		return ['fraction' => min(0.99, $done / (int)$estimate['bytes']), 'approximate' => (bool)($estimate['approximate'] ?? true)];
+	}
+
+	/**
+	 * progress() of a run, while it is in its files phase.
+	 *
+	 * @return array{fraction: float, approximate: bool}|null
+	 */
+	public static function progressOf(\OCA\NgBackup\Db\Run $run): ?array {
+		if ($run->getStatus() !== \OCA\NgBackup\Db\Run::RUNNING || $run->getPhase() !== 'files') {
+			return null;
+		}
+		try {
+			$state = json_decode($run->getState(), true, 512, JSON_THROW_ON_ERROR);
+		} catch (\JsonException) {
+			return null;
+		}
+		return is_array($state['files'] ?? null) ? self::progress($state['files']) : null;
+	}
+
+	/**
 	 * A file or directory that could not be read: it is missing from this snapshot. Remembered (first
 	 * 1000, deduplicated across steps) so the run can report it instead of silently succeeding.
 	 */

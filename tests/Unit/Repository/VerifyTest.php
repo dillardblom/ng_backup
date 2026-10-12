@@ -78,6 +78,107 @@ class VerifyTest extends TestCase {
 		$this->assertSame(['db/does-not-exist'], $result['missing']);
 	}
 
+	public function testVerifyReportsHowFarItIs(): void {
+		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'));
+		$s = $repo->backupDirectory($this->src);
+		$seen = [];
+
+		$open = $this->open();
+		$open->listPacksAbove = 0;
+		$open->verify($s['snapshot'], heartbeat: function (array $p) use (&$seen): void {
+			$seen[] = $p;
+		});
+
+		$phases = array_values(array_unique(array_column($seen, 'phase')));
+		$this->assertSame(['index', 'packs', 'files'], $phases);
+		$this->assertSame(['phase' => 'packs', 'done' => 256, 'total' => 256], $seen[array_key_last(array_filter($seen, fn ($p) => $p['phase'] === 'packs'))]);
+		$last = end($seen);
+		$this->assertSame(2, $last['done']);
+		$this->assertNull($last['total'], 'this snapshot has no file count in its metadata (a backup run records one)');
+	}
+
+	/** Lists the pack folders however few packs there are. */
+	private static function listing(Repository $repo): Repository {
+		$repo->listPacksAbove = 0;
+		return $repo;
+	}
+
+	public function testWithNoMorePacksThanFoldersEveryPackIsCheckedInstead(): void {
+		// fewer requests; on FTP each takes a data connection, of which a server may have few
+		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'));
+		$s = $repo->backupDirectory($this->src);
+		$counting = new ListingBackend($this->backend);
+
+		$result = Repository::openWithKey($counting, $this->keys, null, null)->verify($s['snapshot']);
+
+		$this->assertSame([], $result['missing']);
+		$this->assertSame(0, $counting->packListings);
+		$this->assertGreaterThan(0, $counting->packExists);
+	}
+
+	public function testVerifyListsPackFoldersInsteadOfCheckingEveryPack(): void {
+		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'));
+		$s = $repo->backupDirectory($this->src);
+		$counting = new ListingBackend($this->backend);
+
+		$result = self::listing(Repository::openWithKey($counting, $this->keys, null, null))->verify($s['snapshot']);
+
+		$this->assertSame([], $result['missing']);
+		$this->assertSame(0, $counting->packExists);
+	}
+
+	public function testAPackFolderThatCannotBeListedIsCheckedPackByPack(): void {
+		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'));
+		$s = $repo->backupDirectory($this->src);
+		$counting = new ListingBackend($this->backend, unlistable: true);
+
+		$result = self::listing(Repository::openWithKey($counting, $this->keys, null, null))->verify($s['snapshot']);
+
+		$this->assertSame([], $result['missing']);
+		$this->assertGreaterThan(0, $counting->packExists);
+	}
+
+	public function testAnEmptyFolderListingIsNoProofThatItsPacksAreGone(): void {
+		// A storage also reports an empty folder when it could not look (is_dir() false).
+		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'));
+		$s = $repo->backupDirectory($this->src);
+		$counting = new ListingBackend($this->backend, emptyListings: true);
+
+		$result = self::listing(Repository::openWithKey($counting, $this->keys, null, null))->verify($s['snapshot']);
+
+		$this->assertSame([], $result['missing']);
+		$this->assertGreaterThan(0, $counting->packExists);
+	}
+
+	public function testAPackMissingFromAFolderThatIsNotEmptyIsReportedWithoutAskingForIt(): void {
+		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'));
+		$s = $repo->backupDirectory($this->src);
+		$packs = $this->backend->list('packs');
+		// Another file in the same folder keeps its listing non-empty.
+		$this->backend->put(dirname($packs[0]) . '/0000other', fopen('data://text/plain,x', 'r'));
+		foreach ($packs as $pack) {
+			$this->backend->delete($pack);
+		}
+		$counting = new ListingBackend($this->backend);
+
+		$result = self::listing(Repository::openWithKey($counting, $this->keys, null, null))->verify($s['snapshot']);
+
+		$this->assertNotSame([], $result['missing']);
+		$this->assertSame(0, $counting->packExists);
+	}
+
+	public function testAPackMissingFromAnEmptyFolderIsReportedToo(): void {
+		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'));
+		$s = $repo->backupDirectory($this->src);
+		foreach ($this->backend->list('packs') as $pack) {
+			$this->backend->delete($pack);
+		}
+
+		$result = self::listing(Repository::openWithKey(new ListingBackend($this->backend), $this->keys, null, null))->verify($s['snapshot']);
+
+		$this->assertNotSame([], $result['missing']);
+	}
+
 	public function testDeepVerifyDetectsATamperedPack(): void {
 		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'));
 		$s = $repo->backupDirectory($this->src);
@@ -131,6 +232,8 @@ class VerifyTest extends TestCase {
 
 /** Delegates to a real backend, but reading a pack throws for the first $failures reads. */
 final class FlakyRangeBackend implements IBackend {
+	use \OCA\NgBackup\Backend\GetsOneByOne;
+
 	public function __construct(
 		private IBackend $inner,
 		private int $failures,
@@ -174,6 +277,65 @@ final class FlakyRangeBackend implements IBackend {
 	}
 
 	public function listFiles(string $dir): array {
+		return $this->inner->listFiles($dir);
+	}
+
+	public function delete(string $path): void {
+		$this->inner->delete($path);
+	}
+}
+
+/** Delegates to a real backend; counts exists() on packs, and can refuse to list pack folders. */
+final class ListingBackend implements IBackend {
+	use \OCA\NgBackup\Backend\GetsOneByOne;
+
+	public int $packExists = 0;
+	public int $packListings = 0;
+
+	public function __construct(
+		private IBackend $inner,
+		private bool $unlistable = false,
+		private bool $emptyListings = false,
+	) {
+	}
+
+	public function put(string $path, $stream): void {
+		$this->inner->put($path, $stream);
+	}
+
+	public function get(string $path) {
+		return $this->inner->get($path);
+	}
+
+	public function getRange(string $path, int $offset, int $length): string {
+		return $this->inner->getRange($path, $offset, $length);
+	}
+
+	public function exists(string $path): bool {
+		if (str_starts_with($path, 'packs/')) {
+			$this->packExists++;
+		}
+		return $this->inner->exists($path);
+	}
+
+	public function move(string $from, string $to): void {
+		$this->inner->move($from, $to);
+	}
+
+	public function list(string $prefix): array {
+		return $this->inner->list($prefix);
+	}
+
+	public function listFiles(string $dir): array {
+		if (str_starts_with($dir, 'packs/')) {
+			$this->packListings++;
+		}
+		if ($this->unlistable && str_starts_with($dir, 'packs/')) {
+			throw new BackendException('Cannot list ' . $dir);
+		}
+		if ($this->emptyListings && str_starts_with($dir, 'packs/')) {
+			return [];
+		}
 		return $this->inner->listFiles($dir);
 	}
 

@@ -28,6 +28,8 @@ final class BlobIndex {
 	/** @var list<\Closure():void>|null cache writes held back by holdCache(), or null when writing directly */
 	private ?array $heldCacheWrites = null;
 	private string $repositoryId = '';
+	/** Index files written to the cache per database transaction while loading. */
+	private const CACHE_LOT = 256;
 	/** @var int index files downloaded by the last load() (for tests and diagnostics) */
 	public int $downloaded = 0;
 
@@ -87,44 +89,72 @@ final class BlobIndex {
 	 * and only the index files that are not cached yet are downloaded. Cached packs that no
 	 * longer exist on the backend are dropped from the cache.
 	 */
-	public function load(bool $verify = false): void {
+	public function load(bool $verify = false, ?callable $progress = null): void {
 		$this->blobs = [];
 		$cached = $verify ? [] : ($this->cache?->all($this->repositoryId) ?? []);
 		$present = [];
 		$this->downloaded = 0;
+		$order = []; // pack ids in listing order: where a blob is in two packs, the last listed wins
+		$fetch = [];
 		foreach ($this->backend->listFiles('index') as $path) {
 			$packId = basename($path);
 			$present[$packId] = true;
-			if (isset($cached[$packId])) {
-				$entries = $cached[$packId];
-			} else {
-				$fh = $this->backend->get($path);
-				$entries = json_decode($this->cipher->decryptString((string)stream_get_contents($fh), 'index:' . $packId), true, 512, JSON_THROW_ON_ERROR);
-				fclose($fh);
-				$this->downloaded++;
-				$this->cache?->put($this->repositoryId, $packId, $entries);
-			}
-			foreach ($entries as $e) {
-				$this->blobs[$e['id']] = [$packId, $e['offset'], $e['length'], $e['raw'], $e['flags']];
+			$order[] = $packId;
+			if (!isset($cached[$packId])) {
+				$fetch[] = $path;
 			}
 		}
-		if ($verify && $this->cache !== null) {
-			// Refresh the cache from what was just verified.
-			$this->cache->remove($this->repositoryId, array_keys($this->cache->all($this->repositoryId)));
-			foreach ($this->packs() as $packId => $_) {
-				$entries = [];
-				foreach ($this->blobs as $id => [$pack, $offset, $length, $raw, $flags]) {
-					if ($pack === $packId) {
-						$entries[] = ['id' => $id, 'offset' => $offset, 'length' => $length, 'raw' => $raw, 'flags' => $flags];
-					}
+		// The rest is downloaded several at a time where the location allows it: on a large
+		// repository these are tens of thousands of small files. getMany() keeps their order, so
+		// the cached packs listed before each one are added first.
+		$next = 0;
+		$total = count($fetch);
+		$toCache = []; // written to the cache a few hundred at a time, each lot in one transaction
+		foreach ($this->backend->getMany($fetch) as $path => $data) {
+			$packId = basename($path);
+			$entries = json_decode($this->cipher->decryptString($data, 'index:' . $packId), true, 512, JSON_THROW_ON_ERROR);
+			$this->downloaded++;
+			if ($this->cache !== null) {
+				$toCache[$packId] = $entries;
+				// a check writes the whole cache afresh at the end
+				if (!$verify && count($toCache) >= self::CACHE_LOT) {
+					$this->cache->putMany($this->repositoryId, $toCache);
+					$toCache = [];
 				}
-				$this->cache->put($this->repositoryId, $packId, $entries);
 			}
+			for (; $next < count($order) && $order[$next] !== $packId; $next++) {
+				$this->add($order[$next], $cached[$order[$next]] ?? []);
+			}
+			$this->add($packId, $entries);
+			$next++;
+			if ($progress !== null) {
+				$progress($this->downloaded, $total);
+			}
+		}
+		for (; $next < count($order); $next++) {
+			$this->add($order[$next], $cached[$order[$next]] ?? []);
+		}
+		if ($verify && $this->cache !== null) {
+			// Refresh the cache from what was just verified, as the index files list it: a blob in
+			// two packs is in both rows, so that removing one of the packs leaves the other right.
+			// In one transaction: one row at a time took more than 6 minutes on a 1 TB repository
+			// (27,547 packs), long enough for the location to drop the connection.
+			$this->cache->replaceAll($this->repositoryId, $toCache);
 			return;
+		}
+		if ($toCache !== []) {
+			$this->cache?->putMany($this->repositoryId, $toCache);
 		}
 		$stale = array_keys(array_diff_key($cached, $present));
 		if ($stale !== []) {
 			$this->cache?->remove($this->repositoryId, $stale);
+		}
+	}
+
+	/** @param list<array{id:string, offset:int, length:int, raw:int, flags:int}> $entries */
+	private function add(string $packId, array $entries): void {
+		foreach ($entries as $e) {
+			$this->blobs[$e['id']] = [$packId, $e['offset'], $e['length'], $e['raw'], $e['flags']];
 		}
 	}
 
@@ -179,6 +209,15 @@ final class BlobIndex {
 				unset($this->blobs[$id]);
 			}
 		}
+	}
+
+	/** Number of packs that hold blobs of the index. */
+	public function packCount(): int {
+		$packs = [];
+		foreach ($this->blobs as [$pack]) {
+			$packs[$pack] = true;
+		}
+		return count($packs);
 	}
 
 	/** Bytes of all blobs in the index (encrypted size, i.e. what is stored in packs). */

@@ -7,7 +7,7 @@ installations and hosted Nextcloud. (Choosing SMB as a storage backend is the on
 see "Storage backend experiences" below — that requirement comes from files_external, not from
 ng_backup, and applies to any Nextcloud app that writes to an SMB share.)
 
-**Status: beta (0.9.4).** Tested thoroughly, usable alongside your current backup, but not yet a
+**Status: beta (0.9.5).** Tested thoroughly, usable alongside your current backup, but not yet a
 drop-in replacement for it. See "Known limitations" below, `PLAN.md` for the design and
 `docs/HOWTO.md` for a step-by-step guide from setup to a tested restore.
 
@@ -193,7 +193,7 @@ On the backlog; none of these block the beta or 1.0.0, but know them before you 
 |---|---|
 | `backup:key:init`, `backup:key:kit`, `backup:key:confirm` | create the key, recovery kit, confirmation |
 | `backup:key:slots`, `backup:key:slot:add/replace/remove` | passphrase slots |
-| `backup:target:backends/add/list/remove/append-only` | backup locations |
+| `backup:target:backends/add/edit/list/remove/append-only` | backup locations |
 | `backup:run`, `backup:status`, `backup:list` | back up, status, restore points |
 | `backup:browse`, `backup:restore` | browse and restore |
 | `backup:retention`, `backup:prune`, `backup:trash`, `backup:trash:restore` | retention, cleanup, trash |

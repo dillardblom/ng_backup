@@ -395,7 +395,7 @@
   </file>
   <file src="lib/Service/BackupService.php">
     <InvalidOperand>
-      <code><![CDATA[$deadline - microtime(true) + 120]]></code>
+      <code><![CDATA[$deadline - microtime(true) + 600]]></code>
     </InvalidOperand>
     <UndefinedClass>
       <code><![CDATA[\OC]]></code>
@@ -474,12 +474,6 @@
     </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/TargetService.php">
-    <InvalidReturnStatement>
-      <code><![CDATA[$this->factory()->describeBackends()]]></code>
-    </InvalidReturnStatement>
-    <InvalidReturnType>
-      <code><![CDATA[list<array{id:string, name:string, auth:list<string>, parameters:array}>]]></code>
-    </InvalidReturnType>
     <UndefinedDocblockClass>
       <code><![CDATA[Server::get(\OCA\Files_External\Service\BackendService::class)]]></code>
     </UndefinedDocblockClass>

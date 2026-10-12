@@ -7,6 +7,68 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
+## [0.9.5-beta.6] - 2026-10-12
+
+Bugfix release for SFTP locations and large repositories. Tested on a production instance with a
+1 TB repository on a Hetzner Storage Box over SFTP: a check in 5.5 minutes, a deep check of all
+316,529 blobs (815 GiB) in 11 hours, and an incremental backup in under 8 minutes.
+
+### Added
+- Progress of a running backup in the web interface and `occ backup:status`, e.g.
+  "running (files) 68%". The total is the size of the previous snapshot; for a first backup it
+  is estimated from Nextcloud's file cache (users' files, versions and trash) and shown as
+  "~68%".
+- Edit a backup location (web interface and `occ backup:target:edit`): change the password, host,
+  folder, connection type or name without losing its history. Before this the only option was a
+  new location, which starts an empty repository and, with a retention lock at the provider,
+  keeps paying for the old one. The new settings are only saved when they lead to the same
+  repository; stored passwords are never sent to the browser, and an empty password field keeps
+  the stored one. Administrators are notified of the change.
+- `occ backup:verify` reports how far it is every 30 seconds, and `occ backup:status` shows the
+  progress of a running check and how the last check of each location ended. On a large
+  repository a check takes hours, a deep one days.
+
+### Changed
+- Checking and opening a large repository over SFTP is much faster: the index files (one per
+  pack, 27,547 for 1 TB) are downloaded 32 at a time instead of one after the other, 114 instead
+  of 6 files per second to a Hetzner Storage Box (about 4 minutes instead of 77 for 1 TB). A check
+  of a repository with more than 256 packs also lists the pack folders (256 requests) instead of
+  asking for every pack.
+- App store listing: the author's e-mail address is shown.
+- App store listing: the homepage link points to the GitHub repository instead of back to the
+  app store page itself.
+- The notification for a location without a successful backup read "No successful backup to …
+  since never" when there had never been one; it now reads "No successful backup to … yet".
+
+### Fixed
+- 0.9.4 could not open a repository at the root of an SFTP location (empty path): its faster
+  SFTP reads sent their first request before phpseclib had opened the SFTP channel, which only
+  happens on the first SFTP call after login. Every backup then failed with "No repository at
+  this location". The channel is now opened first.
+- A check (`occ backup:verify`) did not renew its hold on the location while it downloaded the
+  index; on a large repository that takes longer than the hold lasts, so a weekly cleanup could
+  have started during the check.
+- A long first backup could end as failed although its snapshot was complete: when its final
+  step took longer than the step's lease (150 s with `occ backup:run`), the background job took
+  the run over, finished it a second time and failed on the snapshot it had already recorded,
+  overwriting the result. The lease now lasts at least 15 minutes, a step writes the run only if
+  no other process wrote it since the step loaded it (in one database statement), and recording
+  a snapshot that is already recorded is no longer an error.
+- `occ backup:verify` on a large repository failed with "SFTP connection failed while opening
+  snapshots/…" or "Not found: snapshots/…". A Hetzner Storage Box drops an SFTP connection that
+  carried a lot of data (some 40 MB) and then stayed quiet for a few minutes, and the check went
+  quiet after downloading the index: it refreshed the local index cache, first in 29 minutes (a
+  pass over all blobs for every pack: 27,547 packs, 400,000 blobs for 1 TB), then still in more
+  than 6 minutes (a database transaction per pack on PostgreSQL). Nextcloud's SFTP storage keeps
+  using a dropped connection, on which every file looks missing. Now:
+  - an SFTP connection that was not used for a minute is checked first, and one that turns out
+    to be dead after a failed request is replaced, once per request; uploads, moves and deletes
+    are only checked first, never repeated;
+  - the index cache is written in one transaction (27,547 packs in 11 seconds on a test server,
+    against about a minute row by row);
+  - after a check the cache holds the index files as they are: before, a blob that was in two
+    packs was only cached for one of them.
+
 ## [0.9.4-beta.5] - 2026-10-09
 
 Bugfix release: faster restores.
@@ -154,6 +216,7 @@ and not implemented yet.
 - See the "Storage backend experiences" section of the README for provider-specific quirks found
   so far (e.g. Hetzner Storage Box sub-accounts).
 
+[0.9.5-beta.6]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.5-beta.6
 [0.9.4-beta.5]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.4-beta.5
 [0.9.3-beta.4]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.3-beta.4
 [0.9.2-beta.3]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.2-beta.3

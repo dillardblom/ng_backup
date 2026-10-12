@@ -18,6 +18,8 @@ return [
 		['name' => 'AdminApi#untrash', 'url' => '/api/targets/{targetId}/trash/{snapshotId}', 'verb' => 'POST'],
 		['name' => 'AdminApi#backends', 'url' => '/api/backends', 'verb' => 'GET'],
 		['name' => 'AdminApi#addTarget', 'url' => '/api/targets', 'verb' => 'POST'],
+		['name' => 'AdminApi#targetSettings', 'url' => '/api/targets/{id}/settings', 'verb' => 'GET'],
+		['name' => 'AdminApi#updateTarget', 'url' => '/api/targets/{id}', 'verb' => 'PUT'],
 		['name' => 'AdminApi#removeTarget', 'url' => '/api/targets/{id}', 'verb' => 'DELETE'],
 		['name' => 'AdminApi#testTarget', 'url' => '/api/targets/{id}/test', 'verb' => 'POST'],
 		['name' => 'AdminApi#setTargetLimit', 'url' => '/api/targets/{id}/limit', 'verb' => 'PUT'],

@@ -9,15 +9,15 @@ directory to S3, SFTP, WebDAV, FTP, SMB or a local path, with restore of files a
 single users (via user_migration) and of the whole server onto a fresh installation. Tested
 thoroughly and usable alongside your current backup, but not yet a drop-in replacement for it.
 See the README for known limitations and the recovery kit before relying on it.]]></description>
-    <version>0.9.4</version>
+    <version>0.9.5</version>
     <licence>agpl</licence>
-    <author>Dillard Blom</author>
+    <author mail="dillard.blom@ensembia.com">Dillard Blom</author>
     <namespace>NgBackup</namespace>
     <documentation>
         <admin>https://github.com/dillardblom/ng_backup/blob/main/docs/HOWTO.md</admin>
     </documentation>
     <category>tools</category>
-    <website>https://apps.nextcloud.com/apps/ng_backup</website>
+    <website>https://github.com/dillardblom/ng_backup</website>
     <bugs>https://github.com/dillardblom/ng_backup/issues</bugs>
     <repository type="git">https://github.com/dillardblom/ng_backup</repository>
     <screenshot>https://raw.githubusercontent.com/dillardblom/ng_backup/main/screenshots/1-backups.png</screenshot>
@@ -37,6 +37,7 @@ See the README for known limitations and the recovery kit before relying on it.]
         <command>OCA\NgBackup\Command\KeyConfirm</command>
         <command>OCA\NgBackup\Command\TargetBackends</command>
         <command>OCA\NgBackup\Command\TargetAdd</command>
+        <command>OCA\NgBackup\Command\TargetEdit</command>
         <command>OCA\NgBackup\Command\TargetList</command>
         <command>OCA\NgBackup\Command\TargetRemove</command>
         <command>OCA\NgBackup\Command\RunBackup</command>
