@@ -7,6 +7,13 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
+## [Unreleased]
+
+### Added
+- The list of backup runs (web interface and `occ backup:status`) shows the total size of each
+  backup next to what it uploaded: an incremental backup of 1 TB that uploads 800 MB now shows
+  both. `occ backup:status` shows sizes in GiB where that reads better than MiB.
+
 ## [0.9.5-beta.6] - 2026-10-12
 
 Bugfix release for SFTP locations and large repositories. Tested on a production instance with a

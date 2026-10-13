@@ -40,6 +40,7 @@
 						<th>{{ t('ng_backup', 'Restore point') }}</th>
 						<th>{{ t('ng_backup', 'Status') }}</th>
 						<th>{{ t('ng_backup', 'Files') }}</th>
+						<th :title="t('ng_backup', 'Total size of the files in this backup, unchanged files included')">{{ t('ng_backup', 'Size') }}</th>
 						<th>{{ t('ng_backup', 'Uploaded') }}</th>
 					</tr>
 				</thead>
@@ -51,6 +52,7 @@
 						<td>{{ run.snapshot ? new Date(run.snapshot.createdAt * 1000).toLocaleString() + (run.snapshot.label ? ' – ' + run.snapshot.label : '') : '' }}</td>
 						<td :class="'ngb-' + run.status">{{ run.status }}{{ run.status === 'running' ? ' (' + run.phase + percent(run) + ')' : '' }}{{ run.error ? ': ' + run.error : '' }}</td>
 						<td>{{ run.stats?.files?.files ?? run.stats?.restored ?? '' }}</td>
+						<td>{{ run.stats?.files ? formatSize(run.stats.files.bytes) : '' }}</td>
 						<td>{{ run.stats?.files ? formatSize(run.stats.files.uploaded) : '' }}</td>
 					</tr>
 				</tbody>
