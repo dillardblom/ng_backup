@@ -7,6 +7,35 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
+## [0.9.6-beta.7] - 2026-10-14
+
+Bugfix release for SMB locations, with `occ backup:cancel` to stop a backup that does not get
+anywhere. Tested on a production instance: a first full backup of 151,021 files (807 GiB) to OVH
+S3 completed, and a backup to a Hetzner Storage Box over SMB that had slowed to 12 GiB in 35
+hours ran at about 5.6 MiB/s after the update, while the S3 backup was still reading.
+
+### Added
+- The list of backup runs (web interface and `occ backup:status`) shows the total size of each
+  backup next to what it uploaded: an incremental backup of 1 TB that uploads 800 MB now shows
+  both. `occ backup:status` shows sizes in GiB where that reads better than MiB.
+- `occ backup:cancel <run>` stops a running backup; `occ backup:status` shows the run numbers.
+  No new step of the run starts, the step in progress finishes (usually within a minute), then
+  the process working on the run (`occ backup:run` or cron) stops. What it already stored is
+  removed by the next cleanup. A backup started by an earlier version is stopped as well: after
+  two minutes it is marked cancelled while it works, and its process stops at the end of the
+  step.
+
+### Fixed
+- Backups to SMB locations, and to other slow locations with many packs, slowed to a crawl: each
+  30-second step opened the location again, and reading the list of index files took longer
+  than the step itself. Each step then stored a single 4 MiB pack, which made the list longer
+  still. A first full backup of 0.8 TB to a Hetzner Storage Box over SMB managed 12 GiB in 35
+  hours. `occ backup:run` and system cron now open the location once per run, opening no longer
+  counts towards the step's time, and SMB folders are listed in one request instead of one per
+  file. A backup to an SMB location that is not getting anywhere keeps running in its old
+  process after the update: update first, then stop it with `occ backup:cancel <run>` and start
+  it again. The new backup reuses the packs the old one stored.
+
 ## [0.9.5-beta.6] - 2026-10-12
 
 Bugfix release for SFTP locations and large repositories. Tested on a production instance with a
@@ -216,6 +245,7 @@ and not implemented yet.
 - See the "Storage backend experiences" section of the README for provider-specific quirks found
   so far (e.g. Hetzner Storage Box sub-accounts).
 
+[0.9.6-beta.7]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.6-beta.7
 [0.9.5-beta.6]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.5-beta.6
 [0.9.4-beta.5]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.4-beta.5
 [0.9.3-beta.4]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.3-beta.4

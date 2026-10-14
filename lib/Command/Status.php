@@ -48,10 +48,11 @@ final class Status extends Command {
 			$s = json_decode($r->getStats() ?? '{}', true)['files'] ?? [];
 			$rows[] = [$r->getId(), $names[$r->getTargetId()] ?? '#' . $r->getTargetId(), $r->getKind(), $r->getStatus() . ($r->getStatus() === 'running' ? ' (' . $r->getPhase() . self::percent($r) . ')' : ''),
 				date('Y-m-d H:i', $r->getStartedAt()), $r->getFinishedAt() ? gmdate('H:i:s', $r->getFinishedAt() - $r->getStartedAt()) : '',
-				$s['files'] ?? '', isset($s['uploaded']) ? sprintf('%.1f MiB', $s['uploaded'] / 1048576) : '', mb_strimwidth((string)$r->getError(), 0, 50, '…')];
+				$s['files'] ?? '', isset($s['bytes']) ? self::size((int)$s['bytes']) : '',
+				isset($s['uploaded']) ? self::size((int)$s['uploaded']) : '', mb_strimwidth((string)$r->getError(), 0, 50, '…')];
 		}
 		if ($rows !== []) {
-			(new Table($output))->setHeaders(['run', 'location', 'kind', 'status', 'started', 'took', 'files', 'uploaded', 'error'])->setRows($rows)->render();
+			(new Table($output))->setHeaders(['run', 'location', 'kind', 'status', 'started', 'took', 'files', 'size', 'uploaded', 'error'])->setRows($rows)->render();
 		}
 		foreach ($this->verify->progress() as $targetId => $state) {
 			$output->writeln(sprintf('Verify of %s on %s: %s', mb_strimwidth((string)($state['what'] ?? ''), 0, 40, '…'),
@@ -61,6 +62,17 @@ final class Status extends Command {
 	}
 
 	/** " 68%", or " ~68%" when estimated from the file cache; empty without an estimate */
+	private static function size(int $bytes): string {
+		$b = (float)$bytes;
+		foreach (['B', 'KiB', 'MiB', 'GiB'] as $u) {
+			if ($b < 1024) {
+				return $u === 'B' ? "$bytes B" : sprintf('%.1f %s', $b, $u);
+			}
+			$b /= 1024.0;
+		}
+		return sprintf('%.1f TiB', $b);
+	}
+
 	private static function percent(\OCA\NgBackup\Db\Run $r): string {
 		$p = \OCA\NgBackup\Job\BackupRun::progressOf($r);
 		return $p === null ? '' : sprintf(' %s%d%%', $p['approximate'] ? '~' : '', (int)floor($p['fraction'] * 100.0));
