@@ -58,12 +58,22 @@
 				</tbody>
 			</table>
 		</div>
+		<p v-if="allRuns || status.olderRuns" class="ngb-muted">
+			<template v-if="allRuns">
+				{{ t('ng_backup', 'All runs.') }}
+				<NcButton variant="tertiary" @click="emit('show-all-runs', false)">{{ n('ng_backup', 'Only the last day', 'Only the last %n days', status.recentDays) }}</NcButton>
+			</template>
+			<template v-else>
+				{{ n('ng_backup', 'Runs of the last day.', 'Runs of the last %n days.', status.recentDays) }}
+				<NcButton variant="tertiary" @click="emit('show-all-runs', true)">{{ n('ng_backup', 'Show %n older run', 'Show %n older runs', status.olderRuns) }}</NcButton>
+			</template>
+		</p>
 	</NcSettingsSection>
 </template>
 
 <script setup>
 import { ref, watch } from 'vue'
-import { t } from '@nextcloud/l10n'
+import { n, t } from '@nextcloud/l10n'
 import NcButton from '@nextcloud/vue/components/NcButton'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import NcSettingsSection from '@nextcloud/vue/components/NcSettingsSection'
@@ -73,8 +83,8 @@ import { formatSize } from '../format.js'
 import { confirmPassword } from '@nextcloud/password-confirmation'
 import { reactive } from 'vue'
 
-const props = defineProps({ status: { type: Object, required: true } })
-const emit = defineEmits(['changed'])
+const props = defineProps({ status: { type: Object, required: true }, allRuns: { type: Boolean, default: false } })
+const emit = defineEmits(['changed', 'show-all-runs'])
 const schedule = ref(props.status.schedule)
 const error = ref('')
 watch(() => props.status.schedule, (s) => { schedule.value = s })

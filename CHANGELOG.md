@@ -7,6 +7,26 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
+## [Unreleased]
+
+### Changed
+- The list of backup runs (web interface and `occ backup:status`) shows the runs of the last 7
+  days, those still running, and at least the 5 newest; a failed run stays visible for that week.
+  `occ backup:status --all` and "Show older runs" in the web interface list all of them.
+- `occ backup:status` and `occ backup:verify` show durations of a day or more with the days
+  ("1d 12:10:13" instead of "12:10:13").
+
+### Fixed
+- Checking a backup on an S3 location (`occ backup:verify`) took hours on a large repository:
+  the index files were downloaded one at a time, at about two a second. They are now downloaded
+  16 at a time: on a production instance (27,585 index files, 1 TB) the check went from about
+  4 hours to 3.5 minutes.
+- Writing the snapshot at the end of a long backup to S3 took a quarter of an hour without any
+  progress shown: it read back the file list of every step one at a time. These reads are now
+  done 16 at a time on S3 (96 reads: 82 seconds before, 2 now), blobs that follow each other in
+  a pack are read at once on every location, the snapshot is written in a step of its own, and
+  the run shows "commit" while it does so.
+
 ## [0.9.6-beta.7] - 2026-10-14
 
 Bugfix release for SMB locations, with `occ backup:cancel` to stop a backup that does not get

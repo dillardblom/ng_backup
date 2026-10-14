@@ -73,6 +73,40 @@ final class RunMapper extends QBMapper {
 		return $this->findEntities($qb);
 	}
 
+	/**
+	 * The runs to list, newest first: those started at or after $since, those still running, and
+	 * at least the newest $atLeast, so the list is never empty after a quiet week. All runs when
+	 * $since is null.
+	 *
+	 * @return list<Run>
+	 */
+	public function findShown(?int $since, int $atLeast = 5): array {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('*')->from($this->getTableName())->orderBy('id', 'DESC');
+		if ($since === null) {
+			return $this->findEntities($qb);
+		}
+		$qb->where($qb->expr()->orX(
+			$qb->expr()->gte('started_at', $qb->createNamedParameter($since, IQueryBuilder::PARAM_INT)),
+			$qb->expr()->eq('status', $qb->createNamedParameter(Run::RUNNING)),
+		));
+		$runs = [];
+		foreach ([...$this->findEntities($qb), ...$this->findRecent($atLeast)] as $r) {
+			$runs[$r->getId()] = $r;
+		}
+		krsort($runs);
+		return array_values($runs);
+	}
+
+	public function countAll(): int {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select($qb->func()->count('*', 'n'))->from($this->getTableName());
+		$result = $qb->executeQuery();
+		$n = (int)$result->fetchOne();
+		$result->closeCursor();
+		return $n;
+	}
+
 	/** @return list<Run> runs of $kind started at or after $since, newest first */
 	public function startedSince(int $targetId, string $kind, int $since): array {
 		$qb = $this->db->getQueryBuilder();

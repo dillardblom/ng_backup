@@ -7,7 +7,7 @@ declare(strict_types=1);
 
 namespace OCA\NgBackup\Backend;
 
-/** IBackend::getMany() for a backend where reading files one after the other costs nothing extra. */
+/** IBackend::getMany() and getRanges() for a backend where reading one after the other costs nothing extra. */
 trait GetsOneByOne {
 	/**
 	 * @param list<string> $paths
@@ -25,6 +25,16 @@ trait GetsOneByOne {
 				throw new BackendException('Read failed for ' . $path);
 			}
 			yield $path => $data;
+		}
+	}
+
+	/**
+	 * @param list<array{0:string, 1:int, 2:int}> $ranges
+	 * @return \Generator<int, string>
+	 */
+	public function getRanges(array $ranges): \Generator {
+		foreach ($ranges as $i => [$path, $offset, $length]) {
+			yield $i => $this->getRange($path, $offset, $length);
 		}
 	}
 }

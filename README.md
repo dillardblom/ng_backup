@@ -194,7 +194,7 @@ On the backlog; none of these block the beta or 1.0.0, but know them before you 
 | `backup:key:init`, `backup:key:kit`, `backup:key:confirm` | create the key, recovery kit, confirmation |
 | `backup:key:slots`, `backup:key:slot:add/replace/remove` | passphrase slots |
 | `backup:target:backends/add/edit/list/remove/append-only` | backup locations |
-| `backup:run`, `backup:status`, `backup:list` | back up, status, restore points |
+| `backup:run`, `backup:status`, `backup:list` | back up, status (runs of the last 7 days; `--all` for all), restore points |
 | `backup:cancel <run>` | stop a running backup |
 | `backup:browse`, `backup:restore` | browse and restore |
 | `backup:retention`, `backup:prune`, `backup:trash`, `backup:trash:restore` | retention, cleanup, trash |

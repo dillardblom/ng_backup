@@ -30,6 +30,8 @@ final class Repository {
 	private const FLAG_DEFLATE = 1;
 	/** Reads per blob in a deep verify before it is reported as unreadable (not corrupted). */
 	private const VERIFY_READ_ATTEMPTS = 3;
+	/** Largest read that loadBlobs() makes of blobs that follow each other in a pack. */
+	private const MERGED_READ_MAX = 16 * 1048576;
 
 	private StreamCipher $cipher;
 	private BlobIndex $index;
@@ -288,8 +290,8 @@ final class Repository {
 	 */
 	public function readLines(array $blobIds): \Generator {
 		$carry = '';
-		foreach ($blobIds as $id) {
-			$data = $carry . $this->loadBlob($id);
+		foreach ($this->loadBlobs($blobIds) as $blob) {
+			$data = $carry . $blob;
 			$lines = explode("\n", $data);
 			$carry = array_pop($lines);
 			yield from $lines;
@@ -709,6 +711,50 @@ final class Repository {
 		$stats['uploaded'] = ($stats['uploaded'] ?? 0) + $packs->add($id, $this->cipher->encryptString($payload, 'blob:' . $id), strlen($data), $flags);
 		$stats['newBlobs'] = ($stats['newBlobs'] ?? 0) + 1;
 		return $id;
+	}
+
+	/**
+	 * Blobs spread over many packs (the tree segments of a run, one per step), through
+	 * IBackend::getRanges(): on a remote location one at a time is a round trip each, which for
+	 * a long run made writing its snapshot take a quarter of an hour. Blobs that follow each
+	 * other in a pack are read as one range.
+	 *
+	 * @param list<string> $ids
+	 * @return \Generator<int, string> verified blob contents, in order
+	 */
+	private function loadBlobs(array $ids): \Generator {
+		/** @var list<array{0:string, 1:int, 2:int}> $ranges [path, offset, length] of each read */
+		$ranges = [];
+		/** @var list<list<array{0:string, 1:int, 2:int}>> $parts per read: [blob id, offset in the read, length] */
+		$parts = [];
+		// the read being extended
+		$curPath = null;
+		$curOffset = 0;
+		$curLength = 0;
+		$curParts = [];
+		foreach ($ids as $id) {
+			[$pack, $offset, $length] = $this->index->get($id);
+			$path = 'packs/' . substr($pack, 0, 2) . '/' . $pack;
+			if ($curPath === $path && $curOffset + $curLength === $offset && $curLength + $length <= self::MERGED_READ_MAX) {
+				$curParts[] = [$id, $curLength, $length];
+				$curLength += $length;
+				continue;
+			}
+			if ($curPath !== null) {
+				$ranges[] = [$curPath, $curOffset, $curLength];
+				$parts[] = $curParts;
+			}
+			[$curPath, $curOffset, $curLength, $curParts] = [$path, $offset, $length, [[$id, 0, $length]]];
+		}
+		if ($curPath !== null) {
+			$ranges[] = [$curPath, $curOffset, $curLength];
+			$parts[] = $curParts;
+		}
+		foreach ($this->backend->getRanges($ranges) as $i => $data) {
+			foreach ($parts[$i] as [$id, $at, $length]) {
+				yield $this->decodeBlob($id, substr($data, $at, $length));
+			}
+		}
 	}
 
 	private function loadBlob(string $id): string {

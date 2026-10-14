@@ -14,9 +14,13 @@ use OCA\NgBackup\Service\VerifyService;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\Table;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 final class Status extends Command {
+	/** Runs of the last days that are listed by default (failed ones stay visible that long). */
+	public const RECENT_DAYS = 7;
+
 	public function __construct(
 		private KeyService $keys,
 		private TargetService $targets,
@@ -27,7 +31,8 @@ final class Status extends Command {
 	}
 
 	protected function configure(): void {
-		$this->setName('backup:status')->setDescription('Show the backup key, locations and recent runs');
+		$this->setName('backup:status')->setDescription('Show the backup key, locations and recent runs')
+			->addOption('all', null, InputOption::VALUE_NONE, 'List all runs, not only those of the last ' . self::RECENT_DAYS . ' days');
 	}
 
 	protected function execute(InputInterface $input, OutputInterface $output): int {
@@ -44,15 +49,21 @@ final class Status extends Command {
 		}
 		$output->writeln('Locations: ' . ($names === [] ? 'none' : implode(', ', $names)));
 		$rows = [];
-		foreach ($this->runs->findRecent(10) as $r) {
+		$all = (bool)$input->getOption('all');
+		$shown = $this->runs->findShown($all ? null : time() - self::RECENT_DAYS * 86400);
+		foreach ($shown as $r) {
 			$s = json_decode($r->getStats() ?? '{}', true)['files'] ?? [];
 			$rows[] = [$r->getId(), $names[$r->getTargetId()] ?? '#' . $r->getTargetId(), $r->getKind(), $r->getStatus() . ($r->getStatus() === 'running' ? ' (' . $r->getPhase() . self::percent($r) . ')' : ''),
-				date('Y-m-d H:i', $r->getStartedAt()), $r->getFinishedAt() ? gmdate('H:i:s', $r->getFinishedAt() - $r->getStartedAt()) : '',
+				date('Y-m-d H:i', $r->getStartedAt()), $r->getFinishedAt() ? \OCA\NgBackup\Format::duration($r->getFinishedAt() - $r->getStartedAt()) : '',
 				$s['files'] ?? '', isset($s['bytes']) ? self::size((int)$s['bytes']) : '',
 				isset($s['uploaded']) ? self::size((int)$s['uploaded']) : '', mb_strimwidth((string)$r->getError(), 0, 50, '…')];
 		}
 		if ($rows !== []) {
 			(new Table($output))->setHeaders(['run', 'location', 'kind', 'status', 'started', 'took', 'files', 'size', 'uploaded', 'error'])->setRows($rows)->render();
+		}
+		$older = $all ? 0 : $this->runs->countAll() - count($shown);
+		if ($older > 0) {
+			$output->writeln(sprintf('%d older run%s not shown (--all)', $older, $older === 1 ? '' : 's'));
 		}
 		foreach ($this->verify->progress() as $targetId => $state) {
 			$output->writeln(sprintf('Verify of %s on %s: %s', mb_strimwidth((string)($state['what'] ?? ''), 0, 40, '…'),

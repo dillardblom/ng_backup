@@ -19,6 +19,13 @@ final class StorageBackend implements IBackend {
 	private bool $atomicPut;
 	/** SFTP: read through SftpReadStream, which keeps several requests in flight. */
 	private bool $sftpReads;
+	/** S3: many small reads go straight to the storage's S3 client, several at a time. */
+	private bool $s3Reads;
+	/** S3 requests in flight at once for getMany() and getRanges(). */
+	public const S3_CONCURRENCY = 16;
+	/** Most ranges, and bytes, getRanges() holds in memory at once. */
+	private const RANGES_LOT = 64;
+	private const RANGES_LOT_BYTES = 64 * 1048576;
 	/** Seconds without a request after which an SFTP connection is checked before it is used. */
 	public const IDLE_CHECK = 60;
 	private float $lastUsed;
@@ -40,6 +47,7 @@ final class StorageBackend implements IBackend {
 		self::validate($this->base, true);
 		$this->atomicPut = $storage->instanceOfStorage(\OCA\Files_External\Lib\Storage\AmazonS3::class);
 		$this->sftpReads = $storage->instanceOfStorage(\OCA\Files_External\Lib\Storage\SFTP::class);
+		$this->s3Reads = $storage instanceof \OCA\Files_External\Lib\Storage\AmazonS3;
 		if ($createBase && $this->base !== '') {
 			$this->mkdirs($this->base);
 		}
@@ -116,11 +124,19 @@ final class StorageBackend implements IBackend {
 		return $fh;
 	}
 
-	/** Over SFTP several at a time (SftpReadStream::readMany()); elsewhere one after the other. */
+	/**
+	 * Over SFTP and S3 several at a time (SftpReadStream::readMany(), s3Fetch()); elsewhere one
+	 * after the other.
+	 */
 	public function getMany(array $paths): \Generator {
-		foreach (array_chunk($paths, 8 * SftpReadStream::BATCH) as $chunk) {
+		$size = $this->s3Reads ? 16 * self::S3_CONCURRENCY : 8 * SftpReadStream::BATCH;
+		foreach (array_chunk($paths, $size) as $chunk) {
 			$fast = null;
-			if ($this->sftpReads) {
+			if ($this->s3Reads) {
+				$this->idleCheck();
+				$fast = $this->s3Fetch(array_map(fn (string $p): array => [$p, null], $chunk));
+				$fast = $fast === null ? null : array_combine($chunk, array_map(fn (int $i): ?string => $fast[$i] ?? null, array_keys($chunk)));
+			} elseif ($this->sftpReads) {
 				$abs = array_map(fn (string $p): string => $this->abs($p), $chunk);
 				$fast = $this->call(fn () => SftpReadStream::readMany($this->storage, $abs));
 				$fast = $fast === null ? null : array_combine($chunk, array_map(fn (string $a): ?string => $fast[$a] ?? null, $abs));
@@ -142,6 +158,88 @@ final class StorageBackend implements IBackend {
 				}
 				yield $path => $data;
 			}
+		}
+	}
+
+	/** Over S3 several at a time (s3Fetch()); elsewhere one after the other. */
+	public function getRanges(array $ranges): \Generator {
+		$lot = [];
+		$bytes = 0;
+		foreach ($ranges as $i => $range) {
+			if ($lot !== [] && (count($lot) >= self::RANGES_LOT || $bytes + $range[2] > self::RANGES_LOT_BYTES)) {
+				yield from $this->rangesLot($lot);
+				$lot = [];
+				$bytes = 0;
+			}
+			$lot[$i] = $range;
+			$bytes += $range[2];
+		}
+		if ($lot !== []) {
+			yield from $this->rangesLot($lot);
+		}
+	}
+
+	/**
+	 * @param array<int, array{0:string, 1:int, 2:int}> $lot
+	 * @return \Generator<int, string>
+	 */
+	private function rangesLot(array $lot): \Generator {
+		$fast = null;
+		if ($this->s3Reads) {
+			$this->idleCheck();
+			$fast = $this->s3Fetch(array_map(fn (array $r): array => [$r[0], $r[1] . '-' . ($r[1] + $r[2] - 1)], $lot));
+		}
+		foreach ($lot as $i => [$path, $offset, $length]) {
+			$data = $fast[$i] ?? null;
+			// not read in the batch, or not all of it: the usual way, which also reports why
+			yield $i => ($data !== null && strlen($data) === $length) ? $data : $this->getRange($path, $offset, $length);
+		}
+	}
+
+	/**
+	 * Read objects (or byte ranges of them, "first-last") straight through the S3 client of
+	 * files_external's S3 storage, S3_CONCURRENCY at a time. Its own reads open a new HTTPS
+	 * connection per object, after a HEAD request: one after the other that is about two reads a
+	 * second, which made checking the index of a large repository take hours. What fails here
+	 * is left out of the result, for the caller to read the usual way (which reports the error).
+	 *
+	 * @param array<int, array{0:string, 1:?string}> $requests [path, range or null] by key
+	 * @return array<int, string>|null contents by key; null when the storage is not as expected
+	 * @psalm-suppress UndefinedClass the AWS SDK comes with Nextcloud, not with this app
+	 */
+	private function s3Fetch(array $requests): ?array {
+		try {
+			/** @psalm-suppress UndefinedMethod, UndefinedThisPropertyFetch */
+			[$client, $bucket, $sse] = (function (): array {
+				$sse = method_exists($this, 'getServerSideEncryptionParameters') ? $this->getServerSideEncryptionParameters()
+					: (method_exists($this, 'getSSECParameters') ? $this->getSSECParameters() : []);
+				return [$this->getConnection(), $this->getBucket(), $sse];
+			})->call($this->storage);
+			if (!$client instanceof \Aws\S3\S3Client || !is_string($bucket)) {
+				return null;
+			}
+			$results = [];
+			$keys = array_keys($requests); // the pool numbers results 0, 1, ...: mapped back below
+			$commands = (function () use ($requests, $client, $bucket, $sse): \Generator {
+				foreach (array_values($requests) as $n => [$path, $range]) {
+					$args = ['Bucket' => $bucket, 'Key' => trim($this->abs($path), '/')] + $sse;
+					if ($range !== null) {
+						$args['Range'] = 'bytes=' . $range;
+					}
+					yield $n => $client->getCommand('GetObject', $args);
+				}
+			})();
+			(new \Aws\CommandPool($client, $commands, [
+				'concurrency' => self::S3_CONCURRENCY,
+				'fulfilled' => function (mixed $result, int $n) use (&$results, $keys): void {
+					$results[$keys[$n]] = (string)$result['Body'];
+				},
+				'rejected' => static function (): void {
+				},
+			]))->promise()->wait();
+			return $results;
+		} catch (\Throwable) {
+			return null;
 		}
 	}
 

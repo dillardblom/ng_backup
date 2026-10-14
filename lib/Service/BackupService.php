@@ -225,6 +225,9 @@ final class BackupService {
 			} else {
 				$state['files']['estimate'] ??= $this->estimateBytes($run, $state['files']);
 				$state['files'] = BackupRun::step($repo, $state['files'], $deadline);
+				if (in_array($state['files']['phase'], ['finish', 'commit'], true)) {
+					$run->setPhase('commit'); // all files read: writing and recording the snapshot
+				}
 				if ($state['files']['phase'] === 'commit') {
 					// Catalog write under the catalog lock, from a repository opened inside it: a per-user
 					// export or restore may have written the catalog since this step opened $repo.

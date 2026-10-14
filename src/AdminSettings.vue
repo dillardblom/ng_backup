@@ -22,7 +22,7 @@
 			</template>
 			<template v-else-if="status.key.everConfirmed">
 				<template v-if="status.targets.length">
-					<Backups :status="status" @changed="refresh" />
+					<Backups :status="status" :all-runs="allRuns" @changed="refresh" @show-all-runs="showAllRuns" />
 					<RestoreBrowser :status="status" @changed="refresh" />
 				</template>
 				<NcNoteCard v-else type="info">{{ t('ng_backup', 'Add a backup location under "Settings" first.') }}</NcNoteCard>
@@ -46,14 +46,20 @@ import Locations from './components/Locations.vue'
 import RestoreBrowser from './components/RestoreBrowser.vue'
 
 const status = ref(null)
+const allRuns = ref(false) // runs older than the last days too
 const error = ref('')
 const tab = ref('settings')
 let tabInitialized = false
 let timer = null
 
+function showAllRuns(all) {
+	allRuns.value = all
+	refresh()
+}
+
 async function refresh() {
 	try {
-		status.value = await api.status()
+		status.value = await api.status(allRuns.value)
 		error.value = ''
 		// Default to the daily-use tab once the key is set up; stay on Settings otherwise.
 		// Only decided on first load, so switching tabs ourselves isn't undone by polling.

@@ -140,21 +140,21 @@ final class BackupRun {
 			$state['parentPos'] = $parent->position();
 			$state['stats'] = $stats;
 			if ($finishedWalk) {
+				// The snapshot is written in a step of its own, with its own time: after a long
+				// run it reads back thousands of segments, and the run reports that it got here.
 				$state['phase'] = 'finish';
 			}
+			return $state;
 		}
 
 		if ($state['phase'] === 'finish') {
-			$segments = $state['segments'];
+			// Every segment ends with a newline, so they read as one stream: fetched together,
+			// several at a time where the location allows it.
 			$repo->putSnapshot($state['snapshot'],
 				['time' => $state['started'], 'parent' => $state['parent'], 'label' => $state['label'],
 					'roots' => array_keys($state['roots']), 'stats' => $state['stats'],
 					'warnings' => self::warnings($state)] + $state['meta'],
-				(function () use ($repo, $segments) {
-					foreach ($segments as $blobs) {
-						yield from $repo->readLines($blobs);
-					}
-				})());
+				$repo->readLines(array_values(array_merge(...$state['segments']))));
 			$state['phase'] = 'commit';
 		}
 		return $state;

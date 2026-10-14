@@ -16,7 +16,7 @@ async function call(method, path, data) {
 }
 
 export default {
-	status: () => call('get', '/status'),
+	status: (allRuns = false) => call('get', '/status', allRuns ? { allRuns: true } : undefined),
 	initKey: (passphrase, deleteDelayDays, label) => call('post', '/key', { passphrase, deleteDelayDays, label }),
 	addSlot: (passphrase, label) => call('post', '/key/slots', { passphrase, label }),
 	replaceSlot: (slot, passphrase, label) => call('put', `/key/slots/${slot}`, { passphrase, label }),

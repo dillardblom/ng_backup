@@ -35,6 +35,17 @@ interface IBackend {
 	/** @return string bytes [$offset, $offset + $length) of the object (used to fetch single blobs from a pack) */
 	public function getRange(string $path, int $offset, int $length): string;
 
+	/**
+	 * Many byte ranges, in the order given (blobs spread over many packs, such as the tree
+	 * segments of a backup). A backend where every request costs a round trip can fetch them
+	 * several at a time.
+	 *
+	 * @param list<array{0:string, 1:int, 2:int}> $ranges [path, offset, length] each
+	 * @return \Generator<int, string> contents by position in $ranges
+	 * @throws BackendException for a range that cannot be read
+	 */
+	public function getRanges(array $ranges): \Generator;
+
 	public function exists(string $path): bool;
 
 	/**
