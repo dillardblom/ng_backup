@@ -14,6 +14,7 @@ use OCA\NgBackup\Db\Snapshot;
 use OCA\NgBackup\Db\SnapshotMapper;
 use OCA\NgBackup\Db\Target;
 use OCA\NgBackup\Job\BackupRun;
+use OCA\NgBackup\Repository\Repository;
 use OCA\NgBackup\Repository\RepositoryException;
 use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\App\IAppManager;
@@ -34,6 +35,9 @@ use Psr\Log\LoggerInterface;
 final class BackupService {
 	public const KIND_FULL = 'full';
 
+	/** @var \WeakMap<Repository, string> the location settings each kept repository was opened with */
+	private \WeakMap $openedWith;
+
 	public function __construct(
 		private TargetService $targets,
 		private KeyService $keys,
@@ -47,6 +51,9 @@ final class BackupService {
 		private AlertService $alerts,
 		private LeaseService $leases,
 	) {
+		/** @var \WeakMap<Repository, string> $opened */
+		$opened = new \WeakMap();
+		$this->openedWith = $opened;
 	}
 
 	public function start(Target $target, string $label = ''): Run {
@@ -144,13 +151,22 @@ final class BackupService {
 	/**
 	 * Do one step of a run until $deadline. Safe to call concurrently: a second caller finds the
 	 * run locked and returns immediately.
+	 *
+	 * @param Repository|null $repo the location's repository, opened by an earlier step of this run
+	 *                              in this process (see runToCompletion()); set when this step opens it
 	 */
-	public function step(Run $run, float $deadline): Run {
+	public function step(Run $run, float $deadline, ?Repository &$repo = null): Run {
 		// Leases expire on their own: a step killed by a time limit or OOM blocks nothing for long.
 		// A step can run well past its deadline (the commit of a large snapshot writes its tree and
 		// index), so the lease holds at least 15 minutes; should it still expire and another process
 		// take the run over, the checks below keep the two from overwriting each other.
 		$ttl = (int)min(3600, max(900, $deadline - microtime(true) + 600));
+		// No new step once a cancel has begun: it waits for the step in progress, if any.
+		try {
+			$this->leases->release($this->leases->acquire(self::cancelKey($run->getId()), LeaseService::SHARED, 60));
+		} catch (LockedException) {
+			return $run;
+		}
 		try {
 			$runLease = $this->leases->acquire('run/' . $run->getId(), LeaseService::EXCLUSIVE, $ttl);
 		} catch (LockedException) {
@@ -164,6 +180,7 @@ final class BackupService {
 			return $run;
 		}
 		$loadedAt = null;
+		$savedBefore = $run->getUpdatedAt();
 		try {
 			$run = $this->runs->find($run->getId()); // fresh state after acquiring the lock
 			if ($run->getStatus() !== Run::RUNNING || $run->getKind() !== self::KIND_FULL) {
@@ -171,7 +188,19 @@ final class BackupService {
 			}
 			$loadedAt = $run->getUpdatedAt();
 			$target = $this->targets->get((string)$run->getTargetId());
-			$repo = $this->targets->repository($target);
+			// Reopen when another process took a step since ours (its packs are not in our copy of
+			// the index) or the location was edited (password, folder, size limit).
+			$settings = json_encode([$target->getBackend(), $target->getAuth(), $target->getOptions(),
+				$target->getBasePath(), $target->getRepositoryId(), $target->getMaxBytes()], JSON_THROW_ON_ERROR);
+			if ($repo === null || $loadedAt !== $savedBefore || ($this->openedWith[$repo] ?? null) !== $settings) {
+				// Opening reads the index listing, which takes minutes on a slow location with many
+				// packs: that time does not count, or each step would store one blob and stop.
+				$opening = microtime(true);
+				$repo = null;
+				$repo = $this->targets->repository($target);
+				$this->openedWith[$repo] = $settings;
+				$deadline += microtime(true) - $opening;
+			}
 			$state = json_decode($run->getState(), true, 512, JSON_THROW_ON_ERROR);
 
 			if ($run->getPhase() === 'db') {
@@ -234,8 +263,14 @@ final class BackupService {
 			$run->setStats(json_encode(['db' => $state['dbStats'] ?? null, 'files' => $state['files']['stats']], JSON_THROW_ON_ERROR));
 			// Another process may have taken the run over after this step's lease expired: then its
 			// writes stand and this step's are dropped.
-			return $this->runs->updateIfUnchanged($run, $loadedAt) ?? $this->runs->find($run->getId());
+			$saved = $this->runs->updateIfUnchanged($run, $loadedAt);
+			if ($saved === null) {
+				$repo = null; // the run is another process's now: its packs are not in our index
+				return $this->runs->find($run->getId());
+			}
+			return $saved;
 		} catch (\Throwable $e) {
+			$repo = null; // may hold blobs of a half-written pack: the next step opens it afresh
 			if ($loadedAt === null) {
 				// The run could not even be loaded: there is nothing fresh to mark as failed, and
 				// the caller's copy may be stale.
@@ -266,14 +301,16 @@ final class BackupService {
 
 	/** Run to completion in this process (occ, system cron), reporting progress. */
 	public function runToCompletion(Run $run, ?callable $progress = null, float $stepSeconds = 30): Run {
+		$repo = null; // opened once, by the first step, and kept for the next ones
 		while ($run->getStatus() === Run::RUNNING) {
 			$before = $run->getUpdatedAt();
-			$run = $this->step($run, microtime(true) + $stepSeconds);
+			$run = $this->step($run, microtime(true) + $stepSeconds, $repo);
 			if ($run->getStatus() === Run::RUNNING && $run->getUpdatedAt() === $before) {
 				// Step was not possible (another process holds the run, or a crashed step's lease has
 				// not expired yet): wait instead of spinning.
 				sleep(5);
 				$run = $this->runs->find($run->getId());
+				$repo = null; // another process may have stored packs in the meantime
 			}
 			if ($progress !== null) {
 				$progress($run);
@@ -282,11 +319,70 @@ final class BackupService {
 		return $run;
 	}
 
-	public function cancel(Run $run): Run {
-		$run->setStatus(Run::CANCELLED);
-		$run->setFinishedAt(time());
-		$run->setUpdatedAt(time());
-		return $this->runs->update($run);
+	/**
+	 * Stop a running backup. First no new step may start, then this waits (up to $wait seconds)
+	 * for the step in progress, so a step that is recording the snapshot finishes first. A process
+	 * running the backup then finds it cancelled and stops. The packs it stored stay until the
+	 * next cleanup.
+	 *
+	 * A process of an earlier version does not hold back its next step and may never leave a gap:
+	 * after $wait the run is marked cancelled while it works, unless it is recording the snapshot.
+	 * Its step then fails to save and the process stops.
+	 */
+	public function cancel(Run $run, int $wait = 120): Run {
+		$id = $run->getId();
+		$until = time() + $wait;
+		$hold = null;
+		for ($try = 0; $hold === null; $try++) {
+			try {
+				$hold = $this->leases->acquire(self::cancelKey($id), LeaseService::EXCLUSIVE, $wait + 300);
+			} catch (LockedException) {
+				if ($try >= 20) {
+					throw new \RuntimeException("Run $id is being cancelled already");
+				}
+				usleep(100000); // a step checking whether it may start
+			}
+		}
+		try {
+			$lease = null;
+			while ($lease === null && time() < $until) {
+				try {
+					$lease = $this->leases->acquire('run/' . $id, LeaseService::EXCLUSIVE, 60);
+				} catch (LockedException) {
+					sleep(2);
+				}
+			}
+			try {
+				for ($try = 0; $try < 10; $try++) {
+					$run = $this->runs->find($id);
+					if ($run->getStatus() !== Run::RUNNING) {
+						return $run;
+					}
+					$state = json_decode($run->getState(), true) ?: [];
+					if ($lease === null && ($state['files']['phase'] ?? '') === 'commit') {
+						throw new \RuntimeException("Run $id is recording its snapshot; try again in a minute");
+					}
+					$loadedAt = $run->getUpdatedAt();
+					$run->setStatus(Run::CANCELLED);
+					$run->setFinishedAt(time());
+					if (($cancelled = $this->runs->updateIfUnchanged($run, $loadedAt)) !== null) {
+						return $cancelled;
+					}
+					usleep(200000); // a step of another process saved just now
+				}
+				throw new \RuntimeException("Run $id keeps changing; try again");
+			} finally {
+				if ($lease !== null) {
+					$this->leases->release($lease);
+				}
+			}
+		} finally {
+			$this->leases->release($hold);
+		}
+	}
+
+	private static function cancelKey(int $runId): string {
+		return 'run/' . $runId . '/cancel';
 	}
 
 	private function recordSnapshot(Run $run, array $files): void {

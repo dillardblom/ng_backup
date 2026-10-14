@@ -41,6 +41,7 @@ See the README for known limitations and the recovery kit before relying on it.]
         <command>OCA\NgBackup\Command\TargetList</command>
         <command>OCA\NgBackup\Command\TargetRemove</command>
         <command>OCA\NgBackup\Command\RunBackup</command>
+        <command>OCA\NgBackup\Command\CancelRun</command>
         <command>OCA\NgBackup\Command\Status</command>
         <command>OCA\NgBackup\Command\ListSnapshots</command>
         <command>OCA\NgBackup\Command\Browse</command>

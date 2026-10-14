@@ -10,6 +10,8 @@ use OCA\NgBackup\Tests\Unit\TempDirTrait;
 use OCP\Files\Storage\IStorage;
 use PHPUnit\Framework\TestCase;
 
+require_once __DIR__ . '/../../stubs/SmbStorage.php';
+
 /** On a remote storage every is_dir() is a round trip: listing index/ must not cost one per pack. */
 class StorageBackendListTest extends TestCase {
 	use TempDirTrait;
@@ -53,5 +55,59 @@ class StorageBackendListTest extends TestCase {
 		$storage->method('opendir')->willReturn(false);
 		$this->expectException(BackendException::class);
 		(new StorageBackend($storage, 'repo'))->listFiles('catalog');
+	}
+	public function testSmbFoldersAreListedInOneRequest(): void {
+		$calls = new \ArrayObject();
+		$share = new class($calls) {
+			public function __construct(private \ArrayObject $calls) {
+			}
+
+			public function dir(string $path): array {
+				$this->calls[] = "dir $path";
+				return array_map(fn (string $n) => new class($n, $this->calls) {
+					public function __construct(private string $n, private \ArrayObject $calls) {
+					}
+
+					public function getName(): string {
+						return $this->n;
+					}
+
+					public function isHidden(): bool {
+						$this->calls[] = "attributes {$this->n}";
+						return $this->n === 'desktop.ini';
+					}
+				}, ['b1', 'a2', '.hidden', 'desktop.ini', 'c3.part-0123abcd']);
+			}
+		};
+		$storage = $this->getMockBuilder(\OCA\Files_External\Lib\Storage\SMB::class)->disableOriginalConstructor()->getMock();
+		(fn () => $this->share = $share)->call($storage);
+		$storage->method('instanceOfStorage')->willReturn(false);
+		$storage->method('is_dir')->willReturn(true);
+		$storage->expects($this->never())->method('opendir');
+
+		$this->assertSame(['index/a2', 'index/b1'], (new StorageBackend($storage, 'repo'))->listFiles('index'));
+		$this->assertSame(['dir repo/index', 'attributes desktop.ini', 'attributes c3.part-0123abcd'], $calls->getArrayCopy(),
+			'only names a repository does not use cost a request');
+	}
+
+	public function testSmbWithAccessControlListsIsListedTheUsualWay(): void {
+		$dir = $this->tempDir();
+		touch("$dir/a1");
+		$storage = $this->getMockBuilder(\OCA\Files_External\Lib\Storage\SMB::class)->disableOriginalConstructor()->getMock();
+		(fn () => $this->checkAcl = true)->call($storage);
+		$storage->method('instanceOfStorage')->willReturn(false);
+		$storage->method('is_dir')->willReturn(true);
+		$storage->expects($this->once())->method('opendir')->willReturnCallback(fn () => opendir($dir));
+		$this->assertSame(['index/a1'], (new StorageBackend($storage, 'repo'))->listFiles('index'));
+	}
+
+	public function testSmbFallsBackToTheUsualListing(): void {
+		$dir = $this->tempDir();
+		touch("$dir/a1");
+		$storage = $this->getMockBuilder(\OCA\Files_External\Lib\Storage\SMB::class)->disableOriginalConstructor()->getMock(); // no share
+		$storage->method('instanceOfStorage')->willReturn(false);
+		$storage->method('is_dir')->willReturn(true);
+		$storage->method('opendir')->willReturnCallback(fn () => opendir($dir));
+		$this->assertSame(['index/a1'], (new StorageBackend($storage, 'repo'))->listFiles('index'));
 	}
 }

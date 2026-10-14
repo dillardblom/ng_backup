@@ -223,12 +223,23 @@ final class StorageBackend implements IBackend {
 		if (!$this->storage->is_dir($abs)) {
 			return []; // not created yet
 		}
+		$cut = $this->base === '' ? 0 : strlen($this->base) + 1;
+		$names = $this->smbNames($abs);
+		if ($names !== null) {
+			$result = [];
+			foreach ($names as $name) {
+				if (!self::isTemporary($name)) {
+					$result[] = substr($abs . '/' . $name, $cut);
+				}
+			}
+			sort($result);
+			return $result;
+		}
 		$dh = $this->storage->opendir($abs);
 		if ($dh === false) {
 			// An existing folder read as empty would look like a new repository.
 			throw new BackendException('Cannot list ' . $dir);
 		}
-		$cut = $this->base === '' ? 0 : strlen($this->base) + 1;
 		$result = [];
 		while (($name = readdir($dh)) !== false) {
 			if ($name !== '.' && $name !== '..' && !self::isTemporary($name)) {
@@ -238,6 +249,46 @@ final class StorageBackend implements IBackend {
 		closedir($dh);
 		sort($result);
 		return $result;
+	}
+
+	/**
+	 * The names in an SMB folder, read in one listing; null for other storages, with access
+	 * control lists on, or when the storage's internals are not as expected. The SMB storage's
+	 * opendir() asks the server for the attributes of each entry to leave out hidden ones: with
+	 * thousands of index files that took minutes. Hidden entries are still left out: names
+	 * starting with a dot, and, after asking, any name a repository does not use (letters,
+	 * digits, - and _), such as desktop.ini or Thumbs.db. The repository's own files have such
+	 * names: they are not checked one by one, which was the cost.
+	 *
+	 * @return list<string>|null
+	 */
+	private function smbNames(string $abs): ?array {
+		if (!$this->storage instanceof \OCA\Files_External\Lib\Storage\SMB) {
+			return null;
+		}
+		try {
+			/** @var list<string>|null */
+			return (function (string $path): ?array {
+				/** @psalm-suppress UndefinedThisPropertyFetch */
+				if ($this->checkAcl) {
+					return null;
+				}
+				$names = [];
+				/** @psalm-suppress UndefinedThisPropertyFetch, UndefinedMethod */
+				foreach ($this->share->dir(ltrim($this->buildPath($path), '/')) as $info) {
+					$name = (string)$info->getName();
+					/** @psalm-suppress UndefinedThisPropertyFetch */
+					if (!$this->showHidden && (str_starts_with($name, '.')
+						|| (preg_match('/^[A-Za-z0-9_-]+$/', $name) !== 1 && $info->isHidden()))) {
+						continue;
+					}
+					$names[] = $name;
+				}
+				return $names;
+			})->call($this->storage, $abs);
+		} catch (\Throwable) {
+			return null; // another SMB storage version, or an error: the usual way reports it
+		}
 	}
 
 	/**

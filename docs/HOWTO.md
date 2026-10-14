@@ -50,6 +50,14 @@ occ backup:target:list
 occ backup:status
 ```
 
+A backup that hangs or takes far too long can be stopped. `backup:status` shows the run number;
+the command waits until the step in progress is finished, then the process working on the run
+stops, and the next cleanup removes what it stored:
+
+```
+occ backup:cancel 7
+```
+
 Changed password, new host name, or moved the repository? Edit the location instead of adding a
 new one, so its history stays (in the web interface: **Edit** next to the location). The new
 settings must lead to the same repository; options you do not pass keep their value:
