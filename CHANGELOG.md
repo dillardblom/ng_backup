@@ -7,7 +7,12 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
-## [Unreleased]
+## [0.9.6-beta.7] - 2026-10-14
+
+Bugfix release for SMB locations, with `occ backup:cancel` to stop a backup that does not get
+anywhere. Tested on a production instance: a first full backup of 151,021 files (807 GiB) to OVH
+S3 completed, and a backup to a Hetzner Storage Box over SMB that had slowed to 12 GiB in 35
+hours ran at about 5.6 MiB/s after the update, while the S3 backup was still reading.
 
 ### Added
 - The list of backup runs (web interface and `occ backup:status`) shows the total size of each
@@ -240,6 +245,7 @@ and not implemented yet.
 - See the "Storage backend experiences" section of the README for provider-specific quirks found
   so far (e.g. Hetzner Storage Box sub-accounts).
 
+[0.9.6-beta.7]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.6-beta.7
 [0.9.5-beta.6]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.5-beta.6
 [0.9.4-beta.5]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.4-beta.5
 [0.9.3-beta.4]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.3-beta.4
