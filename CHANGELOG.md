@@ -14,6 +14,10 @@ instead carried by the app description, the git tag, the release, and this file.
   which location, setup and size you used, and how it went.
 
 ### Changed
+- New passphrases must be at least 16 characters (was 12). The location stores the key
+  encrypted with each passphrase, so the passphrase is what really protects the backups.
+  Existing passphrases keep working. The README and the how-to now say so, and why the
+  recovery kit must still be kept off the server.
 - Dates and times in the web interface follow the locale in the user's Nextcloud settings instead
   of the browser's language, so a 24-hour locale shows 16:00 rather than 4:00 PM.
 - The list of backup runs (web interface and `occ backup:status`) shows the runs of the last 7

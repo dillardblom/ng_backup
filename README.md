@@ -51,9 +51,19 @@ All backups of an installation are encrypted with one master key.
 - The **server** keeps the master key, encrypted with the instance secret, so scheduled backups
   and restores work without anyone typing a passphrase. Any administrator can restore from the
   web interface. Consequence: whoever fully controls the server can read the backups; whoever
-  only gets hold of the backup location cannot.
-- For a **restore on a new server** (disaster recovery) you need the **recovery kit** and **one
-  passphrase**. The kit contains the master key, encrypted separately with each passphrase.
+  only gets hold of the backup location cannot, as long as the passphrases are strong (see below).
+- The **location holds the key too**, by design (like restic and Borg in repokey mode): its
+  `config` file contains the master key, encrypted separately with each passphrase (Argon2id),
+  the same as in the recovery kit. Without a passphrase it is of no use, but whoever can read the
+  location can try passphrases offline. **Your passphrase is therefore the actual key**: it must
+  be at least 16 characters; five or more random words are a good choice.
+- The **recovery kit** is your own copy of that encrypted key. Still keep it off the server and
+  off the location: an attacker who gets write access to the location can damage or delete its
+  `config` file on purpose, and without the kit that makes every backup there unreadable.
+- For a **restore on a new server** (disaster recovery) you currently need the **recovery kit**
+  and **one passphrase**.
+- Planned: an option to not store the key on the location at all. Then the kit is the only copy,
+  and losing it means losing every backup; that option will come with an explicit warning.
 - Up to **three passphrases** ("slots") can open the key, so one person leaving or dying does not
   lock the company out. A suggested setup:
 

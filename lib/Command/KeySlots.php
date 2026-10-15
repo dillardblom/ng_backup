@@ -88,7 +88,7 @@ HELP;
 			return rtrim((string)@file_get_contents($file), "\r\n");
 		}
 		$h = $this->getHelper('question');
-		$p = (string)$h->ask($input, $output, (new Question('Passphrase (min. 12 characters): '))->setHidden(true)->setHiddenFallback(false));
+		$p = (string)$h->ask($input, $output, (new Question('Passphrase (min. ' . \OCA\NgBackup\Service\KeyService::MIN_PASSPHRASE . ' characters): '))->setHidden(true)->setHiddenFallback(false));
 		if ($p !== (string)$h->ask($input, $output, (new Question('Repeat: '))->setHidden(true)->setHiddenFallback(false))) {
 			throw new \InvalidArgumentException('The passphrases do not match');
 		}

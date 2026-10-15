@@ -50,7 +50,7 @@ HELP);
 			$pass = rtrim((string)@file_get_contents($file), "\r\n");
 		} else {
 			$helper = $this->getHelper('question');
-			$q = (new Question('Passphrase (min. 12 characters): '))->setHidden(true)->setHiddenFallback(false);
+			$q = (new Question('Passphrase (min. ' . \OCA\NgBackup\Service\KeyService::MIN_PASSPHRASE . ' characters): '))->setHidden(true)->setHiddenFallback(false);
 			$pass = (string)$helper->ask($input, $output, $q);
 			$again = (string)$helper->ask($input, $output, (new Question('Repeat passphrase: '))->setHidden(true)->setHiddenFallback(false));
 			if ($pass !== $again) {
