@@ -172,6 +172,11 @@ Contributions welcome via PR — add what you ran into with your own provider.
 
 On the backlog; none of these block the beta or 1.0.0, but know them before you rely on it:
 
+- **Only the data directory is backed up.** Object storage as primary storage (`objectstore` in
+  `config.php`) is not supported: a backup refuses to start there. Folders mounted through the
+  External storage app are not in the data directory and are **not included**, without a warning.
+  Back them up separately. On the roadmap: reading files through Nextcloud's storage layer, which
+  covers both, with external mounts optional per mount (`PLAN.md` section 3.4).
 - **Very large instances** (well over 1 TB, millions of files): the blob index, cleanup, browsing a
   snapshot in the web interface and per-user export manifests are held in memory. Expect high
   memory use there; reports from such instances are very welcome.
