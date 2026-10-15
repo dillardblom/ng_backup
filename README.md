@@ -23,6 +23,10 @@ License: AGPL-3.0-or-later.
   leaves the server, and streamed straight to the location: no local copy, no double disk space.
   Unchanged files are not read again; only new data is uploaded.
 - The database is dumped through Nextcloud's own connection, inside one consistent transaction.
+- A backup runs in short steps from Nextcloud's background jobs, and every step saves where it
+  got to. A restart of the server or the containers does not lose the run: it continues at the
+  next background job run. Tested on a production Nextcloud AIO instance: a 1 TB full backup over
+  SMB carried on through the nightly AIO update, which restarts every container.
 - Restores go through Nextcloud, so overwritten files keep their old content as a version and
   removed files go to the trash.
 
