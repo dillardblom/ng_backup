@@ -377,6 +377,29 @@ in README "Known limitations":
 11. `backup:restore:full` in onderhoudsmodus en hervatbaar maken; nu: opnieuw draaien met `--force`.
 12. Config/rename op FTP/SMB-servers die geen rename over een bestaand bestand toestaan.
 
+**Plan richting 1.0.0 en 1.1.0 (besluit 2026-10-15/16):**
+- **1.0.0-rc.1:** wat nu op `polish` staat (snelle S3-verify en snapshot-commit, kortere runlijst,
+  duur met dagen, job bij elke cron-run, deflate-test, feedbackformulier, datums in de locale van
+  de gebruiker, wachtwoordzin min. 16 tekens). Geen nieuwe functies meer.
+- **Vóór 1.0.0 (verplicht):** volledige restore met kit op een tweede server (PVE02), alleen lezend
+  of op een kopie van de locatie; plus een user-restore. Zonder geslaagde test geen 1.0.0.
+- **1.1.0:**
+  1. `backup:key:import` zonder kit: de sleutel-slots van de locatie (`config`) lezen, met de kit
+     als reserve als `config` ontbreekt of niet opent. Vergt een andere volgorde van
+     `target:add` en sleutelimport (het gevoeligste pad), daarom niet in rc1. Daarna de
+     DR-test op PVE02 herhalen zonder kit.
+  2. Instelling "zware achtergrondjobs pauzeren tijdens een backup" (standaard aan, uit te zetten):
+     Memories, files_antivirus BackgroundScanner, Recognize, Preview Generator, fulltextsearch.
+     Via de reservering/last_run van die jobs (geen apps uitzetten), crashbestendig, maximaal
+     ~6 uur achter elkaar, zichtbaar in UI en log. Op nc01 met de hand getest tijdens SMB-run 10.
+  3. Snelheid: lezen en uploaden laten overlappen, meerdere bestanden tegelijk lezen, eventueel
+     een eigen worker (`occ background-job:worker`). Gemeten op nc01: 55% wachten op de schijf,
+     33% op de SMB-upload, ~7% CPU. Vergt extra PHP-processen; botst mogelijk met uitgangspunt 1.
+- **Later (geen versie):** optie om de sleutel niet op de locatie op te slaan (kit is dan de enige
+  kopie; uitdrukkelijke waarschuwing). Primaire object storage en External-storage-koppelingen
+  meenemen via de opslaglaag (§3.4; nu niet ondersteund, zie README "Known limitations").
+- **Open:** of de bevestigingscode van de kit dubbelop is (nog niet over besloten).
+
 Doorgeschoven naar **v1.3.0** (fase 3, niet meer fase 2): in-place volledige restore
 (eigen restore-modus i.p.v. onderhoudsmodus) en zelfbediening voor gebruikers (eigen bestanden
 terugzetten vanuit de Files-app).
