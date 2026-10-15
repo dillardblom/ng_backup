@@ -66,6 +66,20 @@ class RepositoryTest extends TestCase {
 		$this->assertSame(1, $r2['newBlobs']);
 	}
 
+	public function testCompressedDataSkipsDeflateAndOtherDataIsStillCompressed(): void {
+		$repo = Repository::init($this->backend, 'pw');
+		$text = str_repeat("a line of a log file, much like the one before\n", 30000); // ~1.4 MiB
+		$noise = random_bytes(1048576); // like a photo: deflate saves nothing
+		$stats = [];
+		$textId = $repo->storeData($text, $stats);
+		$textUploaded = $stats['uploaded'];
+		$noiseId = $repo->storeData($noise, $stats);
+		$repo->flushPacks();
+		$this->assertLessThan(strlen($text) / 10, $textUploaded);
+		$this->assertLessThan(strlen($noise) + 1024, $stats['uploaded'] - $textUploaded);
+		$this->assertSame($text . $noise, implode('', iterator_to_array(Repository::open($this->backend, 'pw')->readBlobs([$textId, $noiseId]), false)));
+	}
+
 	public function testPartialRestore(): void {
 		$repo = Repository::init($this->backend, 'pw');
 		$r = $repo->backupDirectory($this->src);

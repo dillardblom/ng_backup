@@ -34,7 +34,11 @@ final class BackupJob extends TimedJob {
 		private LoggerInterface $logger,
 	) {
 		parent::__construct($time);
-		$this->setInterval(300);
+		// Well below the usual 5-minute cron interval: the last run is stamped a moment after cron
+		// starts, so with 300 the next cron run came a few seconds too early and the job ran only
+		// every other time, idle for 6 of every 10 minutes during a backup. When nothing runs, the
+		// job only does a few cheap database checks.
+		$this->setInterval(60);
 		$this->setTimeSensitivity(IJob::TIME_SENSITIVE);
 	}
 

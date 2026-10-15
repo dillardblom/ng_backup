@@ -21,6 +21,12 @@ instead carried by the app description, the git tag, the release, and this file.
   ("1d 12:10:13" instead of "12:10:13").
 
 ### Fixed
+- With system cron, a running backup moved forward only every other cron run: Nextcloud
+  skipped the background job when cron came a few seconds before its 5-minute interval was
+  over, so a backup was idle 6 of every 10 minutes. The job now runs at every cron run.
+- Photos, video and other compressed data are no longer deflated only to throw the result away:
+  a quick test on three small slices of each block skips it. Compressing was the slowest part of
+  a backup (about 24 MiB/s).
 - Checking a backup on an S3 location (`occ backup:verify`) took hours on a large repository:
   the index files were downloaded one at a time, at about two a second. They are now downloaded
   16 at a time: on a production instance (27,585 index files, 1 TB) the check went from about
