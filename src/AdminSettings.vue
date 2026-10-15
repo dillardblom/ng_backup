@@ -6,6 +6,10 @@
 	<div class="ng-backup">
 		<NcSettingsSection :name="t('ng_backup', 'NG Backup')"
 			:description="t('ng_backup', 'Encrypted, incremental backups of this Nextcloud (database, configuration and data). Backup locations are never mounted and are not visible in Files.')">
+			<p class="ngb-feedback">
+				{{ t('ng_backup', 'NG Backup is in beta. We would like to hear how it works for you, also when everything went fine.') }}
+				<a :href="feedbackUrl" target="_blank" rel="noopener noreferrer">{{ t('ng_backup', 'Share your experience ↗') }}</a>
+			</p>
 			<NcLoadingIcon v-if="!status" :size="32" />
 			<NcNoteCard v-if="error" type="error">{{ error }}</NcNoteCard>
 		</NcSettingsSection>
@@ -44,6 +48,9 @@ import Backups from './components/Backups.vue'
 import KeySetup from './components/KeySetup.vue'
 import Locations from './components/Locations.vue'
 import RestoreBrowser from './components/RestoreBrowser.vue'
+
+// Opens the experience report form in .github/ISSUE_TEMPLATE
+const feedbackUrl = 'https://github.com/dillardblom/ng_backup/issues/new?template=experience.yml'
 
 const status = ref(null)
 const allRuns = ref(false) // runs older than the last days too
@@ -84,6 +91,14 @@ onBeforeUnmount(() => clearTimeout(timer))
 <style scoped>
 .ng-backup :deep(.settings-section) {
 	max-width: 900px;
+}
+.ngb-feedback {
+	color: var(--color-text-maxcontrast);
+	margin-bottom: 12px;
+}
+.ngb-feedback a {
+	color: var(--color-primary-element);
+	text-decoration: underline;
 }
 .ngb-tabs {
 	display: flex;

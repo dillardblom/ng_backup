@@ -9,6 +9,10 @@ instead carried by the app description, the git tag, the release, and this file.
 
 ## [Unreleased]
 
+### Added
+- The admin page asks for feedback, with a link to a short "Experience report" form on GitHub:
+  which location, setup and size you used, and how it went.
+
 ### Changed
 - The list of backup runs (web interface and `occ backup:status`) shows the runs of the last 7
   days, those still running, and at least the 5 newest; a failed run stays visible for that week.
