@@ -52,7 +52,7 @@ import NcSettingsSection from '@nextcloud/vue/components/NcSettingsSection'
 import { confirmPassword } from '@nextcloud/password-confirmation'
 import '@nextcloud/password-confirmation/style.css'
 import api from '../api.js'
-import { formatSize } from '../format.js'
+import { formatDateTime, formatSize } from '../format.js'
 
 const props = defineProps({ status: { type: Object, required: true } })
 const emit = defineEmits(['changed'])
@@ -74,7 +74,7 @@ const modes = [
 	{ id: 'replace', label: t('ng_backup', 'Into the original place, overwrite and move files that are not in the backup to the trash') },
 ]
 
-const snapshotLabel = (s) => new Date(s.createdAt * 1000).toLocaleString() + (s.label ? ' – ' + s.label : '')
+const snapshotLabel = (s) => formatDateTime(s.createdAt) + (s.label ? ' – ' + s.label : '')
 const join = (name) => path.value + '/' + name
 const restorable = (p) => /^data\/[^/]+\/files(\/.*)?$/.test(p)
 const crumbs = computed(() => {

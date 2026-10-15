@@ -14,6 +14,8 @@ instead carried by the app description, the git tag, the release, and this file.
   which location, setup and size you used, and how it went.
 
 ### Changed
+- Dates and times in the web interface follow the locale in the user's Nextcloud settings instead
+  of the browser's language, so a 24-hour locale shows 16:00 rather than 4:00 PM.
 - The list of backup runs (web interface and `occ backup:status`) shows the runs of the last 7
   days, those still running, and at least the 5 newest; a failed run stays visible for that week.
   `occ backup:status --all` and "Show older runs" in the web interface list all of them.

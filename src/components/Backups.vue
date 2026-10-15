@@ -22,8 +22,8 @@
 				<p class="ngb-muted">{{ t('ng_backup', 'Removed restore points can be brought back until they are deleted permanently.') }}</p>
 				<ul>
 					<li v-for="item in trash[target.id]" :key="item.id">
-						{{ item.time ? new Date(item.time).toLocaleString() : item.id }}{{ item.label ? ' – ' + item.label : '' }}
-						<span class="ngb-muted">{{ t('ng_backup', 'removed by {by}, deleted after {date}', { by: item.by, date: new Date(item.deleteAfter * 1000).toLocaleDateString() }) }}</span>
+						{{ item.time ? formatDateTime(item.time) : item.id }}{{ item.label ? ' – ' + item.label : '' }}
+						<span class="ngb-muted">{{ t('ng_backup', 'removed by {by}, deleted after {date}', { by: item.by, date: formatDate(item.deleteAfter) }) }}</span>
 						<NcButton variant="tertiary" @click="untrash(target, item)">{{ t('ng_backup', 'Restore') }}</NcButton>
 					</li>
 				</ul>
@@ -46,10 +46,10 @@
 				</thead>
 				<tbody>
 					<tr v-for="run in status.runs" :key="run.id" :title="run.error || ''">
-						<td>{{ new Date(run.startedAt * 1000).toLocaleString() }}</td>
+						<td>{{ formatDateTime(run.startedAt) }}</td>
 						<td>{{ targetName(run.targetId) }}</td>
 						<td>{{ run.kind }}</td>
-						<td>{{ run.snapshot ? new Date(run.snapshot.createdAt * 1000).toLocaleString() + (run.snapshot.label ? ' – ' + run.snapshot.label : '') : '' }}</td>
+						<td>{{ run.snapshot ? formatDateTime(run.snapshot.createdAt) + (run.snapshot.label ? ' – ' + run.snapshot.label : '') : '' }}</td>
 						<td :class="'ngb-' + run.status">{{ run.status }}{{ run.status === 'running' ? ' (' + run.phase + percent(run) + ')' : '' }}{{ run.error ? ': ' + run.error : '' }}</td>
 						<td>{{ run.stats?.files?.files ?? run.stats?.restored ?? '' }}</td>
 						<td>{{ run.stats?.files ? formatSize(run.stats.files.bytes) : '' }}</td>
@@ -79,7 +79,7 @@ import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import NcSettingsSection from '@nextcloud/vue/components/NcSettingsSection'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
 import api from '../api.js'
-import { formatSize } from '../format.js'
+import { formatDateTime, formatDate, formatSize } from '../format.js'
 import { confirmPassword } from '@nextcloud/password-confirmation'
 import { reactive } from 'vue'
 

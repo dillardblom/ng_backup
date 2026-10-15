@@ -35,7 +35,7 @@
 					<tr v-for="slot in status.key.slots" :key="slot.slot">
 						<td>{{ t('ng_backup', 'Slot {n}', { n: slot.slot }) }}</td>
 						<td><strong>{{ slot.label }}</strong></td>
-						<td class="ngb-muted">{{ slot.created ? new Date(slot.created * 1000).toLocaleDateString() : '' }}</td>
+						<td class="ngb-muted">{{ slot.created ? formatDate(slot.created) : '' }}</td>
 						<td class="ngb-actions">
 							<NcButton variant="tertiary" @click="openSlotForm(slot)">{{ t('ng_backup', 'New passphrase') }}</NcButton>
 							<NcButton v-if="status.key.slots.length > 1" variant="tertiary" @click="removeSlot(slot)">{{ t('ng_backup', 'Remove') }}</NcButton>
@@ -69,7 +69,7 @@
 				<NcButton variant="primary" :disabled="!downloaded || !accepted || code.length < 8 || busy" @click="confirm">{{ status.confirmationPhrase }}</NcButton>
 			</div>
 			<p v-else>
-				{{ t('ng_backup', 'Recovery kit confirmed by {user} on {date}.', { user: status.key.confirmation.uid, date: new Date(status.key.confirmation.time * 1000).toLocaleString() }) }}
+				{{ t('ng_backup', 'Recovery kit confirmed by {user} on {date}.', { user: status.key.confirmation.uid, date: formatDateTime(status.key.confirmation.time) }) }}
 				<NcButton variant="tertiary" @click="downloadKit">{{ t('ng_backup', 'Download the kit again') }}</NcButton>
 				<span class="ngb-muted">{{ t('ng_backup', 'Requires your password; all administrators are notified.') }}</span>
 			</p>
@@ -90,6 +90,7 @@ import NcPasswordField from '@nextcloud/vue/components/NcPasswordField'
 import NcSettingsSection from '@nextcloud/vue/components/NcSettingsSection'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
 import api from '../api.js'
+import { formatDateTime, formatDate } from '../format.js'
 
 const props = defineProps({ status: { type: Object, required: true } })
 const emit = defineEmits(['changed'])
