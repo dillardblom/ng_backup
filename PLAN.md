@@ -430,6 +430,10 @@ in README "Known limitations":
       terwijl OpenSSH `sftp` 16,6 MiB/s haalt. De SFTP-stream van files_external (phpseclib) wacht na
       elk klein blok op antwoord. Oplossing: pack-ranges bij SFTP met phpseclib's eigen `get()`
       (veel verzoeken tegelijk) lezen in plaats van via de stream, zoals bij S3. 1 TB duurt nu ~2 weken.
+  14. **Uploaden over een lange lijn**: backup naar OVH S3 Warschau vanaf Canada (RTT 114 ms) haalt
+      ~1 MiB/s met één pack tegelijk; `aws s3 cp` (multipart, parallel) 6 MiB/s. Meerdere packs tegelijk
+      uploaden of S3 multipart. Minder dringend dan 13 (restore).
+  15. DR-document: in het Docker-voorbeeld "je containernaam" (`docker ps`) i.p.v. `nextcloud`.
   **Daarna verplicht:** een tweede volledige restore op een verse VM, alleen met de HOWTO en de
   nieuwe opties, zonder handwerk. Pas als die in één keer slaagt: 1.0.0.
 
