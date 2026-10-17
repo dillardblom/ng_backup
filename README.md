@@ -7,8 +7,8 @@ installations and hosted Nextcloud. (Choosing SMB as a storage backend is the on
 see "Storage backend experiences" below — that requirement comes from files_external, not from
 ng_backup, and applies to any Nextcloud app that writes to an SMB share.)
 
-**Status: beta (0.9.6).** Tested thoroughly, usable alongside your current backup, but not yet a
-drop-in replacement for it. See "Known limitations" below, `PLAN.md` for the design and
+**Status: release candidate for 1.0.0 (1.0.0-rc.1, app version 0.9.7).** Tested thoroughly, usable
+alongside your current backup, but not yet a drop-in replacement for it. See "Known limitations" below, `PLAN.md` for the design and
 `docs/HOWTO.md` for a step-by-step guide from setup to a tested restore.
 
 License: AGPL-3.0-or-later.
@@ -23,6 +23,10 @@ License: AGPL-3.0-or-later.
   leaves the server, and streamed straight to the location: no local copy, no double disk space.
   Unchanged files are not read again; only new data is uploaded.
 - The database is dumped through Nextcloud's own connection, inside one consistent transaction.
+- A backup runs in short steps from Nextcloud's background jobs, and every step saves where it
+  got to. A restart of the server or the containers does not lose the run: it continues at the
+  next background job run. Tested on a production Nextcloud AIO instance: a 1 TB full backup over
+  SMB carried on through the nightly AIO update, which restarts every container.
 - Restores go through Nextcloud, so overwritten files keep their old content as a version and
   removed files go to the trash.
 
@@ -47,9 +51,19 @@ All backups of an installation are encrypted with one master key.
 - The **server** keeps the master key, encrypted with the instance secret, so scheduled backups
   and restores work without anyone typing a passphrase. Any administrator can restore from the
   web interface. Consequence: whoever fully controls the server can read the backups; whoever
-  only gets hold of the backup location cannot.
-- For a **restore on a new server** (disaster recovery) you need the **recovery kit** and **one
-  passphrase**. The kit contains the master key, encrypted separately with each passphrase.
+  only gets hold of the backup location cannot, as long as the passphrases are strong (see below).
+- The **location holds the key too**, by design (like restic and Borg in repokey mode): its
+  `config` file contains the master key, encrypted separately with each passphrase (Argon2id),
+  the same as in the recovery kit. Without a passphrase it is of no use, but whoever can read the
+  location can try passphrases offline. **Your passphrase is therefore the actual key**: it must
+  be at least 16 characters; five or more random words are a good choice.
+- The **recovery kit** is your own copy of that encrypted key. Still keep it off the server and
+  off the location: an attacker who gets write access to the location can damage or delete its
+  `config` file on purpose, and without the kit that makes every backup there unreadable.
+- For a **restore on a new server** (disaster recovery) you currently need the **recovery kit**
+  and **one passphrase**.
+- Planned: an option to not store the key on the location at all. Then the kit is the only copy,
+  and losing it means losing every backup; that option will come with an explicit warning.
 - Up to **three passphrases** ("slots") can open the key, so one person leaving or dying does not
   lock the company out. A suggested setup:
 
@@ -168,6 +182,11 @@ Contributions welcome via PR — add what you ran into with your own provider.
 
 On the backlog; none of these block the beta or 1.0.0, but know them before you rely on it:
 
+- **Only the data directory is backed up.** Object storage as primary storage (`objectstore` in
+  `config.php`) is not supported: a backup refuses to start there. Folders mounted through the
+  External storage app are not in the data directory and are **not included**, without a warning.
+  Back them up separately. On the roadmap: reading files through Nextcloud's storage layer, which
+  covers both, with external mounts optional per mount (`PLAN.md` section 3.4).
 - **Very large instances** (well over 1 TB, millions of files): the blob index, cleanup, browsing a
   snapshot in the web interface and per-user export manifests are held in memory. Expect high
   memory use there; reports from such instances are very welcome.
@@ -194,7 +213,7 @@ On the backlog; none of these block the beta or 1.0.0, but know them before you 
 | `backup:key:init`, `backup:key:kit`, `backup:key:confirm` | create the key, recovery kit, confirmation |
 | `backup:key:slots`, `backup:key:slot:add/replace/remove` | passphrase slots |
 | `backup:target:backends/add/edit/list/remove/append-only` | backup locations |
-| `backup:run`, `backup:status`, `backup:list` | back up, status, restore points |
+| `backup:run`, `backup:status`, `backup:list` | back up, status (runs of the last 7 days; `--all` for all), restore points |
 | `backup:cancel <run>` | stop a running backup |
 | `backup:browse`, `backup:restore` | browse and restore |
 | `backup:retention`, `backup:prune`, `backup:trash`, `backup:trash:restore` | retention, cleanup, trash |

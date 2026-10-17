@@ -38,6 +38,11 @@ final class PackReaderGuard implements IBackend {
 		return $this->inner->getRange($path, $offset, $length);
 	}
 
+	public function getRanges(array $ranges): \Generator {
+		$this->reader->close();
+		return $this->inner->getRanges($ranges);
+	}
+
 	public function exists(string $path): bool {
 		$this->reader->close();
 		return $this->inner->exists($path);

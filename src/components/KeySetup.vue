@@ -8,13 +8,13 @@
 		<!-- 1. Create the key -->
 		<form v-if="!status.key.initialized" class="ngb-form" @submit.prevent="createKey">
 			<NcTextField v-model="label" :label="t('ng_backup', 'Who keeps this passphrase (e.g. Safe, CTO)')" />
-			<NcPasswordField v-model="pass1" :label="t('ng_backup', 'Passphrase (at least 12 characters)')" autocomplete="new-password" />
+			<NcPasswordField v-model="pass1" :label="t('ng_backup', 'Passphrase (at least 16 characters)')" autocomplete="new-password" />
 			<NcPasswordField v-model="pass2" :label="t('ng_backup', 'Repeat passphrase')" autocomplete="new-password"
 				:error="pass2 !== '' && pass1 !== pass2" :helper-text="pass2 !== '' && pass1 !== pass2 ? t('ng_backup', 'The passphrases do not match') : ''" />
 			<NcTextField v-model="delay" type="number" min="1" max="365"
 				:label="t('ng_backup', 'Days a removed backup stays in the trash before it is really deleted')"
 				:helper-text="t('ng_backup', 'Protects against a malicious or mistaken cleanup. Cannot be changed later.')" />
-			<NcButton type="submit" variant="primary" :disabled="busy || pass1.length < 12 || pass1 !== pass2 || !(delay >= 1 && delay <= 365)">
+			<NcButton type="submit" variant="primary" :disabled="busy || pass1.length < 16 || pass1 !== pass2 || !(delay >= 1 && delay <= 365)">
 				{{ t('ng_backup', 'Create backup key') }}
 			</NcButton>
 		</form>
@@ -35,7 +35,7 @@
 					<tr v-for="slot in status.key.slots" :key="slot.slot">
 						<td>{{ t('ng_backup', 'Slot {n}', { n: slot.slot }) }}</td>
 						<td><strong>{{ slot.label }}</strong></td>
-						<td class="ngb-muted">{{ slot.created ? new Date(slot.created * 1000).toLocaleDateString() : '' }}</td>
+						<td class="ngb-muted">{{ slot.created ? formatDate(slot.created) : '' }}</td>
 						<td class="ngb-actions">
 							<NcButton variant="tertiary" @click="openSlotForm(slot)">{{ t('ng_backup', 'New passphrase') }}</NcButton>
 							<NcButton v-if="status.key.slots.length > 1" variant="tertiary" @click="removeSlot(slot)">{{ t('ng_backup', 'Remove') }}</NcButton>
@@ -46,10 +46,10 @@
 			<NcButton v-if="!slotForm && status.key.slots.length < status.key.maxSlots" @click="openSlotForm(null)">{{ t('ng_backup', 'Add passphrase') }}</NcButton>
 			<form v-if="slotForm" class="ngb-form" @submit.prevent="saveSlot">
 				<NcTextField v-model="slotForm.label" :label="t('ng_backup', 'Who keeps this passphrase')" />
-				<NcPasswordField v-model="slotForm.pass1" :label="t('ng_backup', 'Passphrase (at least 12 characters)')" autocomplete="new-password" />
+				<NcPasswordField v-model="slotForm.pass1" :label="t('ng_backup', 'Passphrase (at least 16 characters)')" autocomplete="new-password" />
 				<NcPasswordField v-model="slotForm.pass2" :label="t('ng_backup', 'Repeat passphrase')" autocomplete="new-password" :error="slotForm.pass2 !== '' && slotForm.pass1 !== slotForm.pass2" />
 				<div class="ngb-row">
-					<NcButton type="submit" variant="primary" :disabled="busy || slotForm.pass1.length < 12 || slotForm.pass1 !== slotForm.pass2">{{ t('ng_backup', 'Save') }}</NcButton>
+					<NcButton type="submit" variant="primary" :disabled="busy || slotForm.pass1.length < 16 || slotForm.pass1 !== slotForm.pass2">{{ t('ng_backup', 'Save') }}</NcButton>
 					<NcButton @click="slotForm = null">{{ t('ng_backup', 'Cancel') }}</NcButton>
 				</div>
 			</form>
@@ -69,7 +69,7 @@
 				<NcButton variant="primary" :disabled="!downloaded || !accepted || code.length < 8 || busy" @click="confirm">{{ status.confirmationPhrase }}</NcButton>
 			</div>
 			<p v-else>
-				{{ t('ng_backup', 'Recovery kit confirmed by {user} on {date}.', { user: status.key.confirmation.uid, date: new Date(status.key.confirmation.time * 1000).toLocaleString() }) }}
+				{{ t('ng_backup', 'Recovery kit confirmed by {user} on {date}.', { user: status.key.confirmation.uid, date: formatDateTime(status.key.confirmation.time) }) }}
 				<NcButton variant="tertiary" @click="downloadKit">{{ t('ng_backup', 'Download the kit again') }}</NcButton>
 				<span class="ngb-muted">{{ t('ng_backup', 'Requires your password; all administrators are notified.') }}</span>
 			</p>
@@ -90,6 +90,7 @@ import NcPasswordField from '@nextcloud/vue/components/NcPasswordField'
 import NcSettingsSection from '@nextcloud/vue/components/NcSettingsSection'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
 import api from '../api.js'
+import { formatDateTime, formatDate } from '../format.js'
 
 const props = defineProps({ status: { type: Object, required: true } })
 const emit = defineEmits(['changed'])

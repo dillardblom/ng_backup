@@ -4,12 +4,12 @@
     <id>ng_backup</id>
     <name>NG Backup</name>
     <summary>Encrypted, incremental backups of your Nextcloud with restore from the web interface</summary>
-    <description><![CDATA[Beta: scheduled, encrypted, incremental backups of the database, config and data
+    <description><![CDATA[Release candidate for 1.0.0: scheduled, encrypted, incremental backups of the database, config and data
 directory to S3, SFTP, WebDAV, FTP, SMB or a local path, with restore of files and folders, of
 single users (via user_migration) and of the whole server onto a fresh installation. Tested
 thoroughly and usable alongside your current backup, but not yet a drop-in replacement for it.
 See the README for known limitations and the recovery kit before relying on it.]]></description>
-    <version>0.9.6</version>
+    <version>0.9.7</version>
     <licence>agpl</licence>
     <author mail="dillard.blom@ensembia.com">Dillard Blom</author>
     <namespace>NgBackup</namespace>

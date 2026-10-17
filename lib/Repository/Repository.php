@@ -28,8 +28,14 @@ final class Repository {
 	public const FORMAT = 1;
 	public const BLOB_SIZE = 4 * 1048576;
 	private const FLAG_DEFLATE = 1;
+	/** Blobs from this size on get a quick compression test before the full compression. */
+	private const DEFLATE_PROBE_FROM = 256 * 1024;
+	/** Bytes of each of the three slices (start, middle, end) in that test. */
+	private const DEFLATE_PROBE_SLICE = 32 * 1024;
 	/** Reads per blob in a deep verify before it is reported as unreadable (not corrupted). */
 	private const VERIFY_READ_ATTEMPTS = 3;
+	/** Largest read that loadBlobs() makes of blobs that follow each other in a pack. */
+	private const MERGED_READ_MAX = 16 * 1048576;
 
 	private StreamCipher $cipher;
 	private BlobIndex $index;
@@ -288,8 +294,8 @@ final class Repository {
 	 */
 	public function readLines(array $blobIds): \Generator {
 		$carry = '';
-		foreach ($blobIds as $id) {
-			$data = $carry . $this->loadBlob($id);
+		foreach ($this->loadBlobs($blobIds) as $blob) {
+			$data = $carry . $blob;
 			$lines = explode("\n", $data);
 			$carry = array_pop($lines);
 			yield from $lines;
@@ -701,7 +707,7 @@ final class Repository {
 		}
 		$flags = 0;
 		$payload = $data;
-		$deflated = gzdeflate($data, 6);
+		$deflated = self::worthDeflating($data) ? gzdeflate($data, 6) : false;
 		if ($deflated !== false && strlen($deflated) < strlen($data) * 0.95) {
 			$payload = $deflated;
 			$flags |= self::FLAG_DEFLATE;
@@ -709,6 +715,67 @@ final class Repository {
 		$stats['uploaded'] = ($stats['uploaded'] ?? 0) + $packs->add($id, $this->cipher->encryptString($payload, 'blob:' . $id), strlen($data), $flags);
 		$stats['newBlobs'] = ($stats['newBlobs'] ?? 0) + 1;
 		return $id;
+	}
+
+	/**
+	 * Photos, video and archives are compressed already: deflating them takes most of a backup's
+	 * CPU time (about 24 MiB/s) only to be thrown away, as it saves less than the 5% that keeps
+	 * it. A fast deflate of three small slices tells first; below 10% savings there, the full
+	 * deflate is skipped.
+	 */
+	private static function worthDeflating(string $data): bool {
+		$n = strlen($data);
+		if ($n < self::DEFLATE_PROBE_FROM) {
+			return true;
+		}
+		$k = self::DEFLATE_PROBE_SLICE;
+		$probe = substr($data, 0, $k) . substr($data, intdiv($n - $k, 2), $k) . substr($data, $n - $k);
+		$deflated = gzdeflate($probe, 1);
+		return $deflated !== false && strlen($deflated) * 10 < strlen($probe) * 9;
+	}
+
+	/**
+	 * Blobs spread over many packs (the tree segments of a run, one per step), through
+	 * IBackend::getRanges(): on a remote location one at a time is a round trip each, which for
+	 * a long run made writing its snapshot take a quarter of an hour. Blobs that follow each
+	 * other in a pack are read as one range.
+	 *
+	 * @param list<string> $ids
+	 * @return \Generator<int, string> verified blob contents, in order
+	 */
+	private function loadBlobs(array $ids): \Generator {
+		/** @var list<array{0:string, 1:int, 2:int}> $ranges [path, offset, length] of each read */
+		$ranges = [];
+		/** @var list<list<array{0:string, 1:int, 2:int}>> $parts per read: [blob id, offset in the read, length] */
+		$parts = [];
+		// the read being extended
+		$curPath = null;
+		$curOffset = 0;
+		$curLength = 0;
+		$curParts = [];
+		foreach ($ids as $id) {
+			[$pack, $offset, $length] = $this->index->get($id);
+			$path = 'packs/' . substr($pack, 0, 2) . '/' . $pack;
+			if ($curPath === $path && $curOffset + $curLength === $offset && $curLength + $length <= self::MERGED_READ_MAX) {
+				$curParts[] = [$id, $curLength, $length];
+				$curLength += $length;
+				continue;
+			}
+			if ($curPath !== null) {
+				$ranges[] = [$curPath, $curOffset, $curLength];
+				$parts[] = $curParts;
+			}
+			[$curPath, $curOffset, $curLength, $curParts] = [$path, $offset, $length, [[$id, 0, $length]]];
+		}
+		if ($curPath !== null) {
+			$ranges[] = [$curPath, $curOffset, $curLength];
+			$parts[] = $curParts;
+		}
+		foreach ($this->backend->getRanges($ranges) as $i => $data) {
+			foreach ($parts[$i] as [$id, $at, $length]) {
+				yield $this->decodeBlob($id, substr($data, $at, $length));
+			}
+		}
 	}
 
 	private function loadBlob(string $id): string {

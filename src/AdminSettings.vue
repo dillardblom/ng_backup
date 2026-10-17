@@ -6,6 +6,10 @@
 	<div class="ng-backup">
 		<NcSettingsSection :name="t('ng_backup', 'NG Backup')"
 			:description="t('ng_backup', 'Encrypted, incremental backups of this Nextcloud (database, configuration and data). Backup locations are never mounted and are not visible in Files.')">
+			<p class="ngb-feedback">
+				{{ t('ng_backup', 'NG Backup is in beta. We would like to hear how it works for you, also when everything went fine.') }}
+				<a :href="feedbackUrl" target="_blank" rel="noopener noreferrer">{{ t('ng_backup', 'Share your experience ↗') }}</a>
+			</p>
 			<NcLoadingIcon v-if="!status" :size="32" />
 			<NcNoteCard v-if="error" type="error">{{ error }}</NcNoteCard>
 		</NcSettingsSection>
@@ -22,7 +26,7 @@
 			</template>
 			<template v-else-if="status.key.everConfirmed">
 				<template v-if="status.targets.length">
-					<Backups :status="status" @changed="refresh" />
+					<Backups :status="status" :all-runs="allRuns" @changed="refresh" @show-all-runs="showAllRuns" />
 					<RestoreBrowser :status="status" @changed="refresh" />
 				</template>
 				<NcNoteCard v-else type="info">{{ t('ng_backup', 'Add a backup location under "Settings" first.') }}</NcNoteCard>
@@ -45,15 +49,24 @@ import KeySetup from './components/KeySetup.vue'
 import Locations from './components/Locations.vue'
 import RestoreBrowser from './components/RestoreBrowser.vue'
 
+// Opens the experience report form in .github/ISSUE_TEMPLATE
+const feedbackUrl = 'https://github.com/dillardblom/ng_backup/issues/new?template=experience.yml'
+
 const status = ref(null)
+const allRuns = ref(false) // runs older than the last days too
 const error = ref('')
 const tab = ref('settings')
 let tabInitialized = false
 let timer = null
 
+function showAllRuns(all) {
+	allRuns.value = all
+	refresh()
+}
+
 async function refresh() {
 	try {
-		status.value = await api.status()
+		status.value = await api.status(allRuns.value)
 		error.value = ''
 		// Default to the daily-use tab once the key is set up; stay on Settings otherwise.
 		// Only decided on first load, so switching tabs ourselves isn't undone by polling.
@@ -78,6 +91,14 @@ onBeforeUnmount(() => clearTimeout(timer))
 <style scoped>
 .ng-backup :deep(.settings-section) {
 	max-width: 900px;
+}
+.ngb-feedback {
+	color: var(--color-text-maxcontrast);
+	margin-bottom: 12px;
+}
+.ngb-feedback a {
+	color: var(--color-primary-element);
+	text-decoration: underline;
 }
 .ngb-tabs {
 	display: flex;

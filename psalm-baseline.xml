@@ -218,16 +218,11 @@
     </PropertyNotSetInConstructor>
   </file>
   <file src="lib/Job/BackupRun.php">
-    <ArgumentTypeCoercion>
-      <code><![CDATA[$blobs]]></code>
-    </ArgumentTypeCoercion>
     <MissingParamType>
       <code><![CDATA[$fh]]></code>
     </MissingParamType>
     <PossiblyUndefinedArrayOffset>
       <code><![CDATA[$mtime]]></code>
-      <code><![CDATA[$state['phase']]]></code>
-      <code><![CDATA[$state['stats']]]></code>
     </PossiblyUndefinedArrayOffset>
   </file>
   <file src="lib/Job/ParentCursor.php">

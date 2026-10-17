@@ -31,6 +31,11 @@ final class KeyService {
 	private const KEY_KIT_VERSION = 'recovery_kit_version';
 	private const KEY_KIT_CODE = 'recovery_kit_code';
 	public const DEFAULT_DELETE_DELAY = 7;
+	/**
+	 * The location holds the passphrase-wrapped key too, so whoever can read it can try
+	 * passphrases offline: the passphrase is what really protects the backups.
+	 */
+	public const MIN_PASSPHRASE = 16;
 
 	private ?KeyRing $cached = null;
 
@@ -56,9 +61,7 @@ final class KeyService {
 		if ($this->isInitialized()) {
 			throw new \RuntimeException('A backup key already exists');
 		}
-		if (strlen($passphrase) < 12) {
-			throw new \InvalidArgumentException('The passphrase must be at least 12 characters');
-		}
+		self::checkPassphrase($passphrase);
 		$keys = KeyRing::generate();
 		$this->appConfig->setValueString(Application::APP_ID, self::KEY_MASTER,
 			$this->crypto->encrypt(base64_encode($keys->exportMasterKey())), true, true);
@@ -234,8 +237,8 @@ final class KeyService {
 	}
 
 	private static function checkPassphrase(string $passphrase): void {
-		if (strlen($passphrase) < 12) {
-			throw new \InvalidArgumentException('The passphrase must be at least 12 characters');
+		if (strlen($passphrase) < self::MIN_PASSPHRASE) {
+			throw new \InvalidArgumentException('The passphrase must be at least ' . self::MIN_PASSPHRASE . ' characters');
 		}
 	}
 

@@ -64,7 +64,7 @@ final class VerifyService {
 				$age < 120 ? $age . ' s' : intdiv($age, 60) . ' min',
 				$age > 600 ? ' (no progress for a while: the process may have stopped)' : '');
 		}
-		$took = gmdate('H:i:s', max(0, (int)($s['finished'] ?? 0) - (int)($s['started'] ?? 0)));
+		$took = \OCA\NgBackup\Format::duration((int)($s['finished'] ?? 0) - (int)($s['started'] ?? 0));
 		return match ($s['status'] ?? '') {
 			'ok' => sprintf('%s OK on %s (took %s): %s files, %s blobs%s', $kind, date('Y-m-d H:i', (int)$s['finished']), $took,
 				number_format((int)($s['files'] ?? 0)), number_format((int)($s['blobs'] ?? 0)), $deep ? ', ' . $size((int)($s['bytes'] ?? 0)) . ' decrypted' : ''),

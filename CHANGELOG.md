@@ -7,6 +7,49 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
+## [Unreleased]
+
+## [1.0.0-rc.1] - 2026-10-17
+
+Release candidate for 1.0.0; the app version is 0.9.7. Only bug fixes until 1.0.0. Tested on a
+production instance (about 1 TB, 150,000 files): full and incremental backups and a verify on
+SFTP and SMB (Hetzner Storage Box) and S3 (OVH), a deep verify on SFTP, and partial restores from
+SMB and S3 checked against checksums.
+
+### Added
+- The admin page asks for feedback, with a link to a short "Experience report" form on GitHub:
+  which location, setup and size you used, and how it went.
+
+### Changed
+- New passphrases must be at least 16 characters (was 12). The location stores the key
+  encrypted with each passphrase, so the passphrase is what really protects the backups.
+  Existing passphrases keep working. The README and the how-to now say so, and why the
+  recovery kit must still be kept off the server.
+- Dates and times in the web interface follow the locale in the user's Nextcloud settings instead
+  of the browser's language, so a 24-hour locale shows 16:00 rather than 4:00 PM.
+- The list of backup runs (web interface and `occ backup:status`) shows the runs of the last 7
+  days, those still running, and at least the 5 newest; a failed run stays visible for that week.
+  `occ backup:status --all` and "Show older runs" in the web interface list all of them.
+- `occ backup:status` and `occ backup:verify` show durations of a day or more with the days
+  ("1d 12:10:13" instead of "12:10:13").
+
+### Fixed
+- With system cron, a running backup moved forward only every other cron run: Nextcloud
+  skipped the background job when cron came a few seconds before its 5-minute interval was
+  over, so a backup was idle 6 of every 10 minutes. The job now runs at every cron run.
+- Photos, video and other compressed data are no longer deflated only to throw the result away:
+  a quick test on three small slices of each block skips it. Compressing was the slowest part of
+  a backup (about 24 MiB/s).
+- Checking a backup on an S3 location (`occ backup:verify`) took hours on a large repository:
+  the index files were downloaded one at a time, at about two a second. They are now downloaded
+  16 at a time: on a production instance (27,585 index files, 1 TB) the check went from about
+  4 hours to 3.5 minutes.
+- Writing the snapshot at the end of a long backup to S3 took a quarter of an hour without any
+  progress shown: it read back the file list of every step one at a time. These reads are now
+  done 16 at a time on S3 (96 reads: 82 seconds before, 2 now), blobs that follow each other in
+  a pack are read at once on every location, the snapshot is written in a step of its own, and
+  the run shows "commit" while it does so.
+
 ## [0.9.6-beta.7] - 2026-10-14
 
 Bugfix release for SMB locations, with `occ backup:cancel` to stop a backup that does not get
@@ -245,6 +288,7 @@ and not implemented yet.
 - See the "Storage backend experiences" section of the README for provider-specific quirks found
   so far (e.g. Hetzner Storage Box sub-accounts).
 
+[1.0.0-rc.1]: https://github.com/dillardblom/ng_backup/releases/tag/v1.0.0-rc.1
 [0.9.6-beta.7]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.6-beta.7
 [0.9.5-beta.6]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.5-beta.6
 [0.9.4-beta.5]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.4-beta.5

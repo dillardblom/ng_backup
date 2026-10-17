@@ -1,0 +1,56 @@
+name: Experience report
+description: Tell us how NG Backup works for you, also when everything went fine.
+title: "Experience: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying NG Backup! Reports of what works are just as useful as bug reports:
+        they tell us which setups are tested. Please leave out host names, user names and keys.
+  - type: dropdown
+    id: location
+    attributes:
+      label: Backup location
+      multiple: true
+      options:
+        - S3 / S3-compatible
+        - SFTP
+        - WebDAV
+        - SMB/CIFS
+        - FTP
+        - Swift
+        - Local path (disk, NFS mount, ...)
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: Storage provider (optional)
+      placeholder: e.g. Hetzner Storage Box, OVH, Backblaze B2, own NAS
+  - type: input
+    id: setup
+    attributes:
+      label: Nextcloud version and setup
+      placeholder: e.g. 32.0.1, AIO / Docker / bare metal, PostgreSQL / MariaDB
+  - type: input
+    id: size
+    attributes:
+      label: Rough size of the backup
+      placeholder: e.g. 50 GB, 200,000 files
+  - type: checkboxes
+    id: tried
+    attributes:
+      label: What did you try?
+      options:
+        - label: Full backup
+        - label: Incremental backup
+        - label: Verify
+        - label: Restore of files or folders
+        - label: Full restore on another server
+  - type: textarea
+    id: notes
+    attributes:
+      label: How did it go?
+      description: What worked, what was unclear, slow or broken.
+    validations:
+      required: true

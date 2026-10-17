@@ -12,13 +12,16 @@ occ backup:key:kit --output=/var/tmp/ng_backup-kit.json
 occ backup:key:confirm -u <your-admin-uid> --code=<code shown> --confirm="Yes, I confirm"
 ```
 
-- The passphrase protects the backup. Keep it somewhere other than this server.
+- The passphrase protects the backup: the location stores the key encrypted with it, so whoever
+  can read the location can try to guess it. Use at least 16 characters (five or more random
+  words work well) and keep it somewhere other than this server.
 - Optional: extra passphrases for other people with `occ backup:key:slot:add --label="..."`.
   Any one passphrase is enough to restore. Removing a slot later does not revoke access for someone
   who kept an old kit and that passphrase (see "Known limitations" in the README).
 - The recovery kit (`/var/tmp/ng_backup-kit.json` above) is also required for disaster recovery. The web
   user writes it there; then move it off the server as root, next to the passphrase, and delete the
-  copy in `/var/tmp`. Without the kit and a passphrase, the backup cannot be read.
+  copy in `/var/tmp`. The location holds the same encrypted key, but keep the kit anyway: if
+  someone damages or deletes the key on the location, the kit is the only way back in.
 
 ## 2. Add a backup location
 

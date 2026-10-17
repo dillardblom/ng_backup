@@ -51,14 +51,16 @@ final class AdminApiController extends Controller {
 		parent::__construct(Application::APP_ID, $request);
 	}
 
-	public function status(): JSONResponse {
+	/** @param bool $allRuns all runs instead of those of the last days (Status::RECENT_DAYS) */
+	public function status(bool $allRuns = false): JSONResponse {
 		$targets = [];
 		foreach ($this->targets->list() as $t) {
 			$targets[] = ['id' => $t->getId(), 'name' => $t->getName(), 'backend' => $t->getBackend(), 'path' => $t->getBasePath(),
 				'repositoryId' => $t->getRepositoryId(), 'createdAt' => $t->getCreatedAt(), 'appendOnly' => (bool)$t->getAppendOnly(),
 				'maxBytes' => $t->getMaxBytes(), 'storedBytes' => $this->alerts->lastStoredBytes($t)];
 		}
-		$runs = array_map(fn (Run $r) => $this->runJson($r), $this->runs->findRecent(15));
+		$shown = $this->runs->findShown($allRuns ? null : time() - \OCA\NgBackup\Command\Status::RECENT_DAYS * 86400);
+		$runs = array_map(fn (Run $r) => $this->runJson($r), $shown);
 		return new JSONResponse([
 			'key' => ['initialized' => $this->keys->isInitialized(), 'fingerprint' => $this->keys->fingerprint(),
 				'confirmation' => $this->keys->recoveryKitConfirmation(), 'everConfirmed' => $this->keys->isInitialized() && $this->keys->everConfirmed(),
@@ -68,6 +70,8 @@ final class AdminApiController extends Controller {
 			'confirmationPhrase' => KeyConfirm::CONFIRMATION,
 			'targets' => $targets,
 			'runs' => $runs,
+			'olderRuns' => $allRuns ? 0 : $this->runs->countAll() - count($shown),
+			'recentDays' => \OCA\NgBackup\Command\Status::RECENT_DAYS,
 			'schedule' => $this->appConfig->getValueString(Application::APP_ID, 'schedule_time', ''),
 		]);
 	}
