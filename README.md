@@ -7,8 +7,8 @@ installations and hosted Nextcloud. (Choosing SMB as a storage backend is the on
 see "Storage backend experiences" below — that requirement comes from files_external, not from
 ng_backup, and applies to any Nextcloud app that writes to an SMB share.)
 
-**Status: beta (0.9.6).** Tested thoroughly, usable alongside your current backup, but not yet a
-drop-in replacement for it. See "Known limitations" below, `PLAN.md` for the design and
+**Status: release candidate for 1.0.0 (1.0.0-rc.1, app version 0.9.7).** Tested thoroughly, usable
+alongside your current backup, but not yet a drop-in replacement for it. See "Known limitations" below, `PLAN.md` for the design and
 `docs/HOWTO.md` for a step-by-step guide from setup to a tested restore.
 
 License: AGPL-3.0-or-later.

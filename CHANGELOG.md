@@ -9,6 +9,13 @@ instead carried by the app description, the git tag, the release, and this file.
 
 ## [Unreleased]
 
+## [1.0.0-rc.1] - 2026-10-17
+
+Release candidate for 1.0.0; the app version is 0.9.7. Only bug fixes until 1.0.0. Tested on a
+production instance (about 1 TB, 150,000 files): full and incremental backups and a verify on
+SFTP and SMB (Hetzner Storage Box) and S3 (OVH), a deep verify on SFTP, and partial restores from
+SMB and S3 checked against checksums.
+
 ### Added
 - The admin page asks for feedback, with a link to a short "Experience report" form on GitHub:
   which location, setup and size you used, and how it went.
@@ -281,6 +288,7 @@ and not implemented yet.
 - See the "Storage backend experiences" section of the README for provider-specific quirks found
   so far (e.g. Hetzner Storage Box sub-accounts).
 
+[1.0.0-rc.1]: https://github.com/dillardblom/ng_backup/releases/tag/v1.0.0-rc.1
 [0.9.6-beta.7]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.6-beta.7
 [0.9.5-beta.6]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.5-beta.6
 [0.9.4-beta.5]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.4-beta.5
