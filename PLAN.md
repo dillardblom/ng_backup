@@ -424,7 +424,12 @@ in README "Known limitations":
       `oc_mail_mailboxes` en PostgreSQL weigert (fk_61a7e87f59a77cdc). Iedereen met Mail loopt hier
       vast. Oplossing: in de juiste volgorde terugzetten (afhankelijkheden eerst), of de controle
       tijdelijk uitzetten en na afloop terugzetten en controleren. In de test: 15 FK's (alle van
-      Mail) tijdelijk verwijderd en na de restore teruggezet.
+      Mail) tijdelijk verwijderd en na de restore teruggezet: alle 15 geldig op de teruggezette
+      data, dus "uitzetten, terugzetten, achteraf controleren" werkt.
+  13. **SFTP-restore over een lange lijn is traag**: 0,75 MiB/s vanaf Hetzner naar Canada (RTT 122 ms),
+      terwijl OpenSSH `sftp` 16,6 MiB/s haalt. De SFTP-stream van files_external (phpseclib) wacht na
+      elk klein blok op antwoord. Oplossing: pack-ranges bij SFTP met phpseclib's eigen `get()`
+      (veel verzoeken tegelijk) lezen in plaats van via de stream, zoals bij S3. 1 TB duurt nu ~2 weken.
   **Daarna verplicht:** een tweede volledige restore op een verse VM, alleen met de HOWTO en de
   nieuwe opties, zonder handwerk. Pas als die in één keer slaagt: 1.0.0.
 
