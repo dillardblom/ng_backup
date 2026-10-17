@@ -395,6 +395,28 @@ in README "Known limitations":
   3. Snelheid: lezen en uploaden laten overlappen, meerdere bestanden tegelijk lezen, eventueel
      een eigen worker (`occ background-job:worker`). Gemeten op nc01: 55% wachten op de schijf,
      33% op de SMB-upload, ~7% CPU. Vergt extra PHP-processen; botst mogelijk met uitgangspunt 1.
+- **Bevindingen DR-test op PVE02 (2026-10-17, snapshot van nc01, 1 TB, AIO → gewone NC 34 met
+  PostgreSQL 18)** — voor **1.0.0-rc.2**:
+  1. Tabellen van apps die bij de backup **niet aanstonden** (restanten: Deck, ONLYOFFICE,
+     AppAPI, een archief-app) blokkeren de restore met één tabelnaam per poging. Standaard
+     overslaan met één waarschuwing per app; optie om ze toch terug te zetten.
+  2. Alle ontbrekende apps en tabellen **vooraf in één lijst**, per app benoemd (nu één per poging,
+     ook voor uitgeschakelde standaard-apps zoals `admin_audit`).
+  3. `--skip-missing-apps`; `nextcloud-aio` standaard overslaan (bestaat buiten AIO niet), zodat
+     AIO → gewone Nextcloud werkt.
+  4. `--install-apps`: ontbrekende apps uit de app store installeren.
+  5. Apps buiten de app store (eigen builds, `side_menu`, `nextcloud-aio`): documenteren; later
+     eventueel `custom_apps` meenemen in de backup.
+  6. Tabellen van een app die wél aanstond maar die hun tabel later zelf maakt (Memories:
+     `memories_planet_geometry`) netjes afhandelen.
+  7. `backup:target:add` zonder sleutel verwijst naar `key:init`; als er al een repository staat,
+     moet het naar `key:import <kit>` wijzen.
+  8. `backup:target:add` toont geen voortgang bij het ophalen van de index (27.582 bestanden).
+  9. `backup:target:remove` laat de index-cache van die locatie in de database staan; opruimen,
+     ook bestaande wezen.
+  **Daarna verplicht:** een tweede volledige restore op een verse VM, alleen met de HOWTO en de
+  nieuwe opties, zonder handwerk. Pas als die in één keer slaagt: 1.0.0.
+
 - **Later (geen versie):** optie om de sleutel niet op de locatie op te slaan (kit is dan de enige
   kopie; uitdrukkelijke waarschuwing). Primaire object storage en External-storage-koppelingen
   meenemen via de opslaglaag (§3.4; nu niet ondersteund, zie README "Known limitations").
