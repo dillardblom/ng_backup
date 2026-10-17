@@ -9,7 +9,8 @@ ng_backup, and applies to any Nextcloud app that writes to an SMB share.)
 
 **Status: release candidate for 1.0.0 (1.0.0-rc.1, app version 0.9.7).** Tested thoroughly, usable
 alongside your current backup, but not yet a drop-in replacement for it. See "Known limitations" below, `PLAN.md` for the design and
-`docs/HOWTO.md` for a step-by-step guide from setup to a tested restore.
+`docs/HOWTO.md` for a step-by-step guide from setup to a tested restore. Server lost? See
+`docs/DISASTER-RECOVERY.md`.
 
 License: AGPL-3.0-or-later. Developed and sponsored by [Ensembia](https://www.ensembia.com).
 Need help restoring a backup after a crash? Ensembia offers paid restore assistance:

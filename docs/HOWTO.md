@@ -136,6 +136,8 @@ occ backup:user:restore offsite users/<uid>/<exportId> --mode=as-backup
 
 ## 7. Disaster recovery: restore the whole server
 
+Server lost? Follow the step-by-step [DISASTER-RECOVERY.md](DISASTER-RECOVERY.md).
+
 Use a fresh Nextcloud installation of the same major version, with NG Backup installed and
 the same location available. For a test, use a **copy** of the location: two servers writing to one
 location break each other's catalog.
