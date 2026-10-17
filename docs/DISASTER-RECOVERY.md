@@ -26,15 +26,31 @@ Switch that off:
 
     occ background:cron
 
-As long as no cron is set up, nothing runs. If your setup has a cron service or container (Docker,
-All-in-One), stop it until step 9. This keeps the new server quiet (no mail syncs, no
-notifications, no backups) until it is ready.
+As long as no cron is set up, nothing runs. Check that none is:
+
+- Regular server: `sudo crontab -u www-data -l`. If it shows a line with `cron.php`, remove it
+  for now with `sudo crontab -u www-data -e` (put it back in step 9).
+- Docker Compose with a cron service: `docker compose stop cron`.
+- Nextcloud All-in-One: cron runs inside the Nextcloud container; leave it. It does no harm here:
+  the restore keeps NG Backup's own settings of the new server, so it does not start backups.
+
+This keeps the new server quiet (no mail syncs, no notifications, no backups) until it is ready.
 
 **3. Install NG Backup** (the same version or newer) and enable it.
 
-**4. Import the backup key.** Copy the kit to the new server, readable for the web server user
-(for example `scp ng_backup-kit.json newserver:/tmp/` and `chown www-data /tmp/ng_backup-kit.json`).
-Then import it; you type the passphrase yourself:
+**4. Import the backup key.** Copy the kit to the new server so the web server user can read it.
+
+From your own computer:
+
+    scp ng_backup-kit.json root@newserver:/tmp/
+
+Then on the server, one of:
+
+    chown www-data /tmp/ng_backup-kit.json                                    # regular server
+    docker cp /tmp/ng_backup-kit.json nextcloud:/tmp/ && \
+      docker exec nextcloud chown www-data /tmp/ng_backup-kit.json            # Docker
+
+Import it; you type the passphrase yourself:
 
     occ backup:key:import /tmp/ng_backup-kit.json
 
@@ -45,9 +61,13 @@ backup (the index is read first) and shows nothing until it is done.
 
     occ backup:target:add offsite sftp -a password::password -o host=... -o user=... -o password=... -o root=... --path=...
 
-If it says "No backup key yet", go back to step 4. Do **not** run `backup:key:init`: that makes a
-brand new key, and your backups were encrypted with the old one. NG Backup then refuses the
-location ("created with a different key") and you still need the kit.
+If it says "No backup key yet", the key is not imported. Run step 4:
+
+    occ backup:key:import /tmp/ng_backup-kit.json
+
+Do **not** run `backup:key:init`, even though the message suggests it: that makes a brand new key,
+and your backups were encrypted with the old one. NG Backup then refuses the location ("created
+with a different key").
 
 **6. List the restore points** and pick one, normally the newest:
 
