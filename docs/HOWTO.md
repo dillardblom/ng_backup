@@ -153,6 +153,10 @@ starts; `--force` skips both (also needed to rerun it after it stopped halfway).
 Afterwards, check that users, files and the database are complete, and run a backup of the restored
 server. The restored installation keeps its own app configuration and secret.
 
+Stuck? [Ensembia](https://www.ensembia.com), the developer of NG Backup, offers paid help with
+restoring a backup after a crash. You keep your passphrase to yourself: it is never needed by
+anyone helping you.
+
 ## 8. Retention
 
 ```

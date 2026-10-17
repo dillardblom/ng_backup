@@ -12,6 +12,8 @@ alongside your current backup, but not yet a drop-in replacement for it. See "Kn
 `docs/HOWTO.md` for a step-by-step guide from setup to a tested restore.
 
 License: AGPL-3.0-or-later. Developed and sponsored by [Ensembia](https://www.ensembia.com).
+Need help restoring a backup after a crash? Ensembia offers paid restore assistance:
+[www.ensembia.com](https://www.ensembia.com).
 
 ## How it works
 

@@ -39,7 +39,8 @@ All-in-One and hosted Nextcloud.
 Read "Known limitations" in the README before you rely on it, and test a restore. Feedback is very
 welcome: use the "Share your experience" link on the admin page.
 
-Developed and sponsored by [Ensembia](https://www.ensembia.com).]]></description>
+Developed and sponsored by [Ensembia](https://www.ensembia.com), which also offers paid help with
+restoring a backup after a crash.]]></description>
     <version>0.9.7</version>
     <licence>agpl</licence>
     <author mail="dillard.blom@ensembia.com">Dillard Blom</author>
