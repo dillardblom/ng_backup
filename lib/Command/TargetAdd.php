@@ -44,7 +44,10 @@ HELP);
 
 	protected function execute(InputInterface $input, OutputInterface $output): int {
 		if (!$this->keys->isInitialized()) {
-			$output->writeln('<error>No backup key yet: run occ backup:key:init first.</error>');
+			$output->writeln('<error>No backup key yet.</error>');
+			$output->writeln('Restoring from a location that already has backups (disaster recovery)? Import the key from the recovery kit first:');
+			$output->writeln('  occ backup:key:import /path/to/ng_backup-kit.json');
+			$output->writeln('Only for a new location without backups: create a new key with occ backup:key:init. A new key cannot read existing backups.');
 			return 1;
 		}
 		$options = [];
@@ -60,6 +63,9 @@ HELP);
 			$output->writeln('<error>--auth is required (see occ backup:target:backends)</error>');
 			return 1;
 		}
+		// Adopting an existing repository reads its whole index first, which takes a while on a
+		// large backup or a slow line; say so instead of looking stuck.
+		$output->writeln('Connecting to the location; with existing backups this reads their index first and can take a while ...');
 		try {
 			$r = $this->targets->add($input->getArgument('name'), $input->getArgument('backend'), $input->getOption('auth'), $options, (string)$input->getOption('path'));
 		} catch (\Throwable $e) {

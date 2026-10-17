@@ -430,6 +430,9 @@ in README "Known limitations":
       terwijl OpenSSH `sftp` 16,6 MiB/s haalt. De SFTP-stream van files_external (phpseclib) wacht na
       elk klein blok op antwoord. Oplossing: pack-ranges bij SFTP met phpseclib's eigen `get()`
       (veel verzoeken tegelijk) lezen in plaats van via de stream, zoals bij S3. 1 TB duurt nu ~2 weken.
+      Na meten: de grootste oorzaak was het netwerk (cubic, zie 14): met BBR gaat de restore van 0,75
+      naar 2,3 MiB/s, een hele pack lezen 4-5 MiB/s. Meer verzoeken in één stream (DEPTH 16/32) gaf geen
+      duidelijke winst. Verder komen vraagt meerdere verbindingen tegelijk: naar **1.1.0**.
   14. **Uploaden over een lange lijn**: backup naar OVH S3 Warschau vanaf Canada (RTT 114 ms) haalt
       ~1 MiB/s met één pack tegelijk; `aws s3 cp` (multipart, parallel) 6 MiB/s. Meerdere packs tegelijk
       uploaden of S3 multipart. Minder dringend dan 13 (restore).

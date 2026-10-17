@@ -153,10 +153,6 @@
     </PossiblyFalseArgument>
   </file>
   <file src="lib/Db/DbDumper.php">
-    <InvalidArrayOffset>
-      <code><![CDATA[$info['sha256']]]></code>
-      <code><![CDATA[$manifest['sequences']]]></code>
-    </InvalidArrayOffset>
     <MissingClosureReturnType>
       <code><![CDATA[fn ($c) => $end[array_search($c, $columns, true)]]]></code>
       <code><![CDATA[fn ($c) => $q($c)]]></code>
@@ -189,6 +185,10 @@
       <code><![CDATA[$this->db]]></code>
       <code><![CDATA[$this->db]]></code>
       <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
       <code><![CDATA[TransactionIsolationLevel]]></code>
       <code><![CDATA[\Doctrine\DBAL\ParameterType]]></code>
       <code><![CDATA[\Doctrine\DBAL\ParameterType]]></code>
@@ -196,6 +196,10 @@
       <code><![CDATA[\Doctrine\DBAL\Platforms\PostgreSQLPlatform]]></code>
       <code><![CDATA[\Doctrine\DBAL\Platforms\PostgreSQLPlatform]]></code>
       <code><![CDATA[\Doctrine\DBAL\Platforms\PostgreSQLPlatform]]></code>
+      <code><![CDATA[\Doctrine\DBAL\Platforms\PostgreSQLPlatform]]></code>
+      <code><![CDATA[\Doctrine\DBAL\Schema\Table]]></code>
+      <code><![CDATA[\Doctrine\DBAL\Schema\Table]]></code>
+      <code><![CDATA[\Doctrine\DBAL\Schema\Table]]></code>
       <code><![CDATA[\Doctrine\DBAL\Schema\Table]]></code>
       <code><![CDATA[\Doctrine\DBAL\Schema\Table]]></code>
       <code><![CDATA[\Doctrine\DBAL\Schema\Table]]></code>
@@ -437,6 +441,7 @@
       <code><![CDATA[$backupConfig[$key]]]></code>
     </EmptyArrayAccess>
     <UndefinedInterfaceMethod>
+      <code><![CDATA[getInner]]></code>
       <code><![CDATA[getInner]]></code>
     </UndefinedInterfaceMethod>
     <UnresolvableInclude>

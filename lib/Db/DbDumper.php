@@ -23,8 +23,12 @@ use OCA\NgBackup\Repository\Repository;
  *   sets, so a single big SELECT would not stream).
  * - Each table becomes its own blob stream of JSON lines: a header line, then one JSON array per
  *   row. A table that did not change produces the same blobs and costs nothing in the next run.
- * - The schema itself is not dumped: it comes from Nextcloud's migrations on the instance that is
- *   restored into (same Nextcloud and app versions). The dump records those versions.
+ * - The structure of each table (columns, types, primary key, indexes) is recorded in the manifest,
+ *   so a restore can create a table that does not exist on the new instance, for example one left
+ *   behind by an app that was removed long ago. Tables that exist keep the structure the new
+ *   instance's migrations gave them.
+ * - Foreign keys are not checked while rows are loaded (tables are restored in name order, not in
+ *   dependency order), and are checked again before the restore commits.
  *
  * Phase 0 uses the Doctrine connection behind IDBConnection (private API) for schema
  * introspection; to be replaced by information_schema queries or a public API.
@@ -108,7 +112,7 @@ final class DbDumper {
 						break;
 					}
 					$state['result'][$table] = ['blobs' => array_merge(...$state['segments']), 'rows' => $state['rows'],
-						'bytes' => $state['bytes'], 'sha256' => hash_final($hash)];
+						'bytes' => $state['bytes'], 'sha256' => hash_final($hash), 'schema' => self::structure($schema)];
 					$state = array_merge($state, ['i' => $state['i'] + 1, 'after' => null, 'segments' => [], 'rows' => 0, 'bytes' => 0, 'hash' => null]);
 					if (microtime(true) >= $deadline && $state['i'] < count($state['tables'])) {
 						break;
@@ -137,18 +141,33 @@ final class DbDumper {
 	 * Replace the contents of every table in the dump. Tables that exist but are not in the dump
 	 * are left alone (e.g. a newer app); the caller decides whether that is acceptable.
 	 *
-	 * @param array{tables: array<string, array{blobs: list<string>, rows: int}>} $manifest
+	 * @param array{tables: array<string, array{blobs: list<string>, rows: int, sha256: string, schema?: array}>, sequences?: array} $manifest
 	 */
-	public function restore(Repository $repo, array $manifest, ?array &$report = null, ?callable $heartbeat = null): int {
-		$sm = $this->db->createSchemaManager();
-		$existing = array_flip($sm->listTableNames());
+	public function restore(Repository $repo, array $manifest, ?array &$report = null, ?callable $heartbeat = null, bool $skipMissing = false): int {
+		$report = ['skipped' => [], 'restored' => [], 'created' => [], 'missing' => []];
+		$missing = $this->missingTables($manifest);
+		$unknown = array_values(array_filter($missing, fn (string $t) => !isset($manifest['tables'][$t]['schema'])));
+		if ($unknown !== [] && !$skipMissing) {
+			throw new \RuntimeException(self::describeMissing($unknown, $this->prefix));
+		}
+		// Tables the backup knows the structure of are created first (DDL is not transactional
+		// everywhere); tables it does not know are left out, as asked.
+		foreach ($missing as $table) {
+			if (isset($manifest['tables'][$table]['schema'])) {
+				$this->db->createSchemaManager()->createTable(self::tableFromStructure($table, $manifest['tables'][$table]['schema']));
+				$report['created'][] = $table;
+			} else {
+				$report['missing'][] = $table;
+			}
+		}
 		$total = 0;
-		$report = ['skipped' => [], 'restored' => []];
+		$foreignKeys = [];
 		$this->db->beginTransaction();
 		try {
+			$foreignKeys = $this->suspendForeignKeys();
 			foreach ($manifest['tables'] as $table => $info) {
-				if (!isset($existing[$table])) {
-					throw new \RuntimeException("Table $table from the backup does not exist here (different app versions?)");
+				if (in_array($table, $report['missing'], true)) {
+					continue;
 				}
 				// Unchanged since the backup: leave it alone (much faster than delete + insert).
 				$live = $this->checksum($table);
@@ -193,12 +212,128 @@ final class DbDumper {
 				$report['restored'][] = $table;
 			}
 			$this->restoreSequences($manifest['sequences'] ?? []);
+			$this->resumeForeignKeys($foreignKeys);
 			$this->db->commit();
 		} catch (\Throwable $e) {
 			$this->db->rollBack();
+			// PostgreSQL rolls the dropped foreign keys back with the transaction; MySQL's session
+			// switch must be turned on again by hand.
+			if (in_array('SET FOREIGN_KEY_CHECKS = 1', $foreignKeys, true)) {
+				$this->db->executeStatement('SET FOREIGN_KEY_CHECKS = 1');
+			}
 			throw $e;
 		}
 		return $total;
+	}
+
+	/**
+	 * Tables in the dump that do not exist on this instance.
+	 *
+	 * @return list<string>
+	 */
+	public function missingTables(array $manifest): array {
+		$existing = array_flip($this->db->createSchemaManager()->listTableNames());
+		return array_values(array_filter(array_keys($manifest['tables']), fn (string $t) => !isset($existing[$t])));
+	}
+
+	/** One message for all missing tables of an older backup, grouped by the app they probably belong to. */
+	public static function describeMissing(array $tables, string $prefix): string {
+		$groups = [];
+		foreach ($tables as $t) {
+			$name = substr($t, strlen($prefix));
+			$groups[explode('_', $name, 2)[0]][] = $t;
+		}
+		$lines = [];
+		foreach ($groups as $app => $list) {
+			$lines[] = '- ' . $app . ': ' . implode(', ', $list);
+		}
+		return "These tables from the backup do not exist here, and this backup does not record their structure (made before 1.0.0-rc.2):\n"
+			. implode("\n", $lines)
+			. "\nInstall the apps they belong to (often apps that were removed or switched off long ago) and run the restore again, or leave these tables out with --skip-missing-tables.";
+	}
+
+	/**
+	 * Portable description of a table: enough to create it again, also on another database type.
+	 *
+	 * @return array{columns: list<array<string, mixed>>, pk: list<string>, indexes: list<array{name: string, columns: list<string>, unique: bool}>}
+	 */
+	private static function structure(\Doctrine\DBAL\Schema\Table $table): array {
+		$columns = [];
+		foreach ($table->getColumns() as $c) {
+			$columns[] = ['name' => $c->getName(), 'type' => \Doctrine\DBAL\Types\Type::lookupName($c->getType()),
+				'length' => $c->getLength(), 'precision' => $c->getPrecision(), 'scale' => $c->getScale(),
+				'unsigned' => $c->getUnsigned(), 'fixed' => $c->getFixed(), 'notnull' => $c->getNotnull(),
+				'default' => $c->getDefault(), 'autoincrement' => $c->getAutoincrement()];
+		}
+		$indexes = [];
+		foreach ($table->getIndexes() as $i) {
+			if (!$i->isPrimary()) {
+				$indexes[] = ['name' => $i->getName(), 'columns' => array_values($i->getColumns()), 'unique' => $i->isUnique()];
+			}
+		}
+		return ['columns' => $columns, 'pk' => array_values($table->getPrimaryKey()?->getColumns() ?? []), 'indexes' => $indexes];
+	}
+
+	private static function tableFromStructure(string $name, array $structure): \Doctrine\DBAL\Schema\Table {
+		$table = new \Doctrine\DBAL\Schema\Table($name);
+		foreach ($structure['columns'] as $c) {
+			$table->addColumn($c['name'], $c['type'], array_filter([
+				'length' => $c['length'], 'precision' => $c['precision'], 'scale' => $c['scale'],
+				'unsigned' => $c['unsigned'], 'fixed' => $c['fixed'], 'notnull' => $c['notnull'],
+				'default' => $c['default'], 'autoincrement' => $c['autoincrement'],
+			], fn ($v) => $v !== null));
+		}
+		if ($structure['pk'] !== []) {
+			$table->setPrimaryKey($structure['pk']);
+		}
+		foreach ($structure['indexes'] as $i) {
+			$i['unique'] ? $table->addUniqueIndex($i['columns'], $i['name']) : $table->addIndex($i['columns'], $i['name']);
+		}
+		return $table;
+	}
+
+	/**
+	 * Stop checking foreign keys while rows are loaded in name order. PostgreSQL has no session
+	 * switch for this without superuser rights, so its foreign keys of Nextcloud tables are dropped
+	 * here and added back (and so checked) by resumeForeignKeys(), inside the same transaction.
+	 *
+	 * @return list<string> statements that restore the foreign keys
+	 */
+	private function suspendForeignKeys(): array {
+		$platform = $this->db->getDatabasePlatform();
+		if ($platform instanceof \Doctrine\DBAL\Platforms\PostgreSQLPlatform) {
+			$rows = $this->db->fetchAllAssociative(
+				"SELECT conrelid::regclass::text AS tbl, conname, pg_get_constraintdef(oid) AS def
+				 FROM pg_constraint WHERE contype = 'f' AND connamespace = current_schema()::regnamespace");
+			$restore = [];
+			foreach ($rows as $r) {
+				if (!str_starts_with(trim($r['tbl'], '"'), $this->prefix)) {
+					continue;
+				}
+				$this->db->executeStatement(sprintf('ALTER TABLE %s DROP CONSTRAINT %s', $r['tbl'], $this->db->quoteIdentifier($r['conname'])));
+				$restore[] = sprintf('ALTER TABLE %s ADD CONSTRAINT %s %s', $r['tbl'], $this->db->quoteIdentifier($r['conname']), $r['def']);
+			}
+			return $restore;
+		}
+		if ($platform instanceof \Doctrine\DBAL\Platforms\AbstractMySQLPlatform) {
+			$this->db->executeStatement('SET FOREIGN_KEY_CHECKS = 0');
+			return ['SET FOREIGN_KEY_CHECKS = 1'];
+		}
+		if ($platform instanceof \Doctrine\DBAL\Platforms\SqlitePlatform) {
+			$this->db->executeStatement('PRAGMA defer_foreign_keys = ON'); // checked at commit
+		}
+		return [];
+	}
+
+	/** Add the foreign keys back; a row that breaks one fails the restore here, before it commits. */
+	private function resumeForeignKeys(array $statements): void {
+		foreach ($statements as $sql) {
+			try {
+				$this->db->executeStatement($sql);
+			} catch (\Throwable $e) {
+				throw new \RuntimeException('The restored data breaks a foreign key (' . $sql . '): ' . $e->getMessage(), 0, $e);
+			}
+		}
 	}
 
 	/** Same checksum as dump(): sha256 over the row lines in primary-key order. */

@@ -259,6 +259,11 @@ final class TargetService {
 	/** Remove the target from NG Backup. The backups on the target itself are not touched. */
 	public function remove(Target $target): void {
 		$this->mapper->delete($target);
+		// The cached index of its repository is only of use while a location points at it
+		$repositoryId = $target->getRepositoryId();
+		if ($repositoryId !== null && !array_filter($this->list(), fn (Target $t) => $t->getRepositoryId() === $repositoryId)) {
+			$this->indexCache->forget($repositoryId);
+		}
 	}
 
 	public function backend(Target $target): IBackend {
