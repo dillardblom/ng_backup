@@ -420,6 +420,11 @@ in README "Known limitations":
   11. **Tabelstructuur meedumpen** (kolommen, typen, indexen, primary key), zodat de restore een
       ontbrekende tabel zelf aanmaakt met de gegevens erin. Lost restanten van oude apps op zonder
       ze over te slaan; een later opnieuw geïnstalleerde app vindt zijn oude gegevens terug.
+  12. **Foreign keys**: de restore zet tabellen op alfabet terug; `oc_mail_accounts` verwijst naar
+      `oc_mail_mailboxes` en PostgreSQL weigert (fk_61a7e87f59a77cdc). Iedereen met Mail loopt hier
+      vast. Oplossing: in de juiste volgorde terugzetten (afhankelijkheden eerst), of de controle
+      tijdelijk uitzetten en na afloop terugzetten en controleren. In de test: 15 FK's (alle van
+      Mail) tijdelijk verwijderd en na de restore teruggezet.
   **Daarna verplicht:** een tweede volledige restore op een verse VM, alleen met de HOWTO en de
   nieuwe opties, zonder handwerk. Pas als die in één keer slaagt: 1.0.0.
 
