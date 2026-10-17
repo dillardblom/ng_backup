@@ -21,25 +21,33 @@ can only import it from a kit. Keep the kit off the server, next to the passphra
 **1. Install a fresh Nextcloud** of the same major version. Create an admin account. Do not add
 users or files.
 
-**2. Do not start background jobs yet.** Set the mode to cron but do not run cron yet:
+**2. Do not let background jobs run yet.** A new Nextcloud runs them on page visits (AJAX).
+Switch that off:
 
     occ background:cron
 
-This keeps the new server quiet (no mail syncs, no notifications, no backups) until it is ready.
+As long as no cron is set up, nothing runs. If your setup has a cron service or container (Docker,
+All-in-One), stop it until step 9. This keeps the new server quiet (no mail syncs, no
+notifications, no backups) until it is ready.
 
 **3. Install NG Backup** (the same version or newer) and enable it.
 
-**4. Import the backup key.** You type the passphrase yourself:
+**4. Import the backup key.** Copy the kit to the new server, readable for the web server user
+(for example `scp ng_backup-kit.json newserver:/tmp/` and `chown www-data /tmp/ng_backup-kit.json`).
+Then import it; you type the passphrase yourself:
 
-    occ backup:key:import /path/to/ng_backup-kit.json
+    occ backup:key:import /tmp/ng_backup-kit.json
+
+It shows the key fingerprint: it must match the one of your old server (on the recovery kit).
 
 **5. Add the backup location** with the same details as before. This can take a while on a large
 backup (the index is read first) and shows nothing until it is done.
 
     occ backup:target:add offsite sftp -a password::password -o host=... -o user=... -o password=... -o root=... --path=...
 
-If it says "No backup key yet", go back to step 4: do **not** run `backup:key:init`, that makes a
-new key that cannot read your backups.
+If it says "No backup key yet", go back to step 4. Do **not** run `backup:key:init`: that makes a
+brand new key, and your backups were encrypted with the old one. NG Backup then refuses the
+location ("created with a different key") and you still need the kit.
 
 **6. List the restore points** and pick one, normally the newest:
 

@@ -414,6 +414,12 @@ in README "Known limitations":
   8. `backup:target:add` toont geen voortgang bij het ophalen van de index (27.582 bestanden).
   9. `backup:target:remove` laat de index-cache van die locatie in de database staan; opruimen,
      ook bestaande wezen.
+  10. Snapshot-meta uitbreiden: ook geïnstalleerde maar uitgeschakelde apps, met per app of hij
+      uit de app store komt; `occ backup:apps <locatie> <snapshot>` toont de lijst leesbaar
+      (geen platte tekst op de locatie: dat lekt welke apps/versies er draaien).
+  11. **Tabelstructuur meedumpen** (kolommen, typen, indexen, primary key), zodat de restore een
+      ontbrekende tabel zelf aanmaakt met de gegevens erin. Lost restanten van oude apps op zonder
+      ze over te slaan; een later opnieuw geïnstalleerde app vindt zijn oude gegevens terug.
   **Daarna verplicht:** een tweede volledige restore op een verse VM, alleen met de HOWTO en de
   nieuwe opties, zonder handwerk. Pas als die in één keer slaagt: 1.0.0.
 
