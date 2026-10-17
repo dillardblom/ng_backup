@@ -433,6 +433,9 @@ in README "Known limitations":
   14. **Uploaden over een lange lijn**: backup naar OVH S3 Warschau vanaf Canada (RTT 114 ms) haalt
       ~1 MiB/s met één pack tegelijk; `aws s3 cp` (multipart, parallel) 6 MiB/s. Meerdere packs tegelijk
       uploaden of S3 multipart. Minder dringend dan 13 (restore).
+      Oorzaak netwerk (met Sysop): pakketverlies trans-Atlantisch + cubic in de VM; met BBR gaat één
+      PUT van 2,4 naar 7,5 MiB/s, ng_backup van ~1 naar ~1,6 MiB/s (rest = serieel lezen/uploaden).
+      Tip over BBR in de README gezet. Let op: PVE02 staat in Canada; een restore in de EU gaat sneller.
   15. DR-document: in het Docker-voorbeeld "je containernaam" (`docker ps`) i.p.v. `nextcloud`.
   **Daarna verplicht:** een tweede volledige restore op een verse VM, alleen met de HOWTO en de
   nieuwe opties, zonder handwerk. Pas als die in één keer slaagt: 1.0.0.

@@ -175,6 +175,13 @@ Contributions welcome via PR — add what you ran into with your own provider.
   the backend being listed is not proof it will work here. Once the extension is present it works
   the same as any other backend; no ng_backup-specific config beyond host/share/user/password.
 
+- **Backups over a long distance (high latency):** on Linux, the default TCP congestion control
+  (cubic) slows a single connection down a lot on a long line with some packet loss. From Canada to
+  an S3 bucket in Warsaw (114 ms), one upload went from 2.4 to 7.5 MiB/s after switching the
+  server (or the VM/container host where TCP ends) to BBR:
+  `sysctl -w net.core.default_qdisc=fq net.ipv4.tcp_congestion_control=bbr`
+  (`modprobe tcp_bbr` first; make it permanent in `/etc/sysctl.d/`).
+
 - **NFS is not a files_external backend at all.** Mount the NFS export on the server yourself
   (e.g. via `/etc/fstab` or a systemd `.mount` unit) and point ng_backup's `local` backend at the
   mount point; ng_backup never mounts or unmounts anything on its own, so an NFS mount dropping
