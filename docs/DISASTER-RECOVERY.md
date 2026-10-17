@@ -76,18 +76,21 @@ with a different key").
 
     occ backup:list offsite
 
-**7. Install the apps the old server had.** Run the restore; before it changes anything it checks
-the apps and stops with what is missing:
+**7. Start the restore, and let it install the apps.**
 
-    occ backup:restore:full offsite <snapshot>
+    occ backup:restore:full offsite <snapshot> --install-apps
 
-- "install these apps first: …": install each from the app store (`occ app:install <app>`), or
-  enable it if it is part of Nextcloud but switched off (`occ app:enable <app>`, for example
-  `admin_audit`). Apps that are not in the app store: copy them into `custom_apps` and enable them.
-- "Table … does not exist here": an app that was removed or switched off long ago left tables
-  behind. Install that app (for example `deck`, `onlyoffice`), then run the restore again.
+`--install-apps` first installs every app the old server had enabled from the app store (or
+switches it on, if it is part of Nextcloud). Tables of apps that are missing or were removed long
+ago are created from the backup, so they do not stop the restore.
 
-Repeat until the restore starts.
+At the end it lists the apps it could not install, usually your own builds that are not in the
+app store. Copy those into `custom_apps` and enable them (`occ app:enable <app>`); their data is
+already restored.
+
+Backups made before 1.0.0-rc.2 do not record the structure of their tables. If the restore lists
+tables that do not exist here, install the apps they belong to and run it again, or leave them
+out with `--skip-missing-tables`.
 
 **8. Let the restore run.** It restores the database, then the data directory, and takes hours for
 a large backup. If it stops halfway, fix the cause and run the same command again with `--force`.

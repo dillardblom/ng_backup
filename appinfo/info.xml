@@ -41,7 +41,7 @@ welcome: use the "Share your experience" link on the admin page.
 
 Developed and sponsored by [Ensembia](https://www.ensembia.com), which also offers paid help with
 restoring a backup after a crash.]]></description>
-    <version>0.9.7</version>
+    <version>0.9.8</version>
     <licence>agpl</licence>
     <author mail="dillard.blom@ensembia.com">Dillard Blom</author>
     <namespace>NgBackup</namespace>
