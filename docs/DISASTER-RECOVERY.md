@@ -47,8 +47,11 @@ From your own computer:
 Then on the server, one of:
 
     chown www-data /tmp/ng_backup-kit.json                                    # regular server
-    docker cp /tmp/ng_backup-kit.json nextcloud:/tmp/ && \
-      docker exec nextcloud chown www-data /tmp/ng_backup-kit.json            # Docker
+    docker cp /tmp/ng_backup-kit.json <container>:/tmp/ && \
+      docker exec <container> chown www-data /tmp/ng_backup-kit.json          # Docker
+
+`<container>` is the name of your Nextcloud container: `docker ps` shows it (for example
+`nextcloud-aio-nextcloud`, or `myproject-nextcloud-1` with Docker Compose).
 
 Import it; you type the passphrase yourself:
 
