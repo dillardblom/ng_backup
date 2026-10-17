@@ -9,6 +9,9 @@ instead carried by the app description, the git tag, the release, and this file.
 
 ## [Unreleased]
 
+### Changed
+- A fuller app store description, ready for 1.0.0.
+
 ## [1.0.0-rc.1] - 2026-10-17
 
 Release candidate for 1.0.0; the app version is 0.9.7. Only bug fixes until 1.0.0. Tested on a

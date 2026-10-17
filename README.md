@@ -11,7 +11,7 @@ ng_backup, and applies to any Nextcloud app that writes to an SMB share.)
 alongside your current backup, but not yet a drop-in replacement for it. See "Known limitations" below, `PLAN.md` for the design and
 `docs/HOWTO.md` for a step-by-step guide from setup to a tested restore.
 
-License: AGPL-3.0-or-later.
+License: AGPL-3.0-or-later. Developed and sponsored by [Ensembia](https://www.ensembia.com).
 
 ## How it works
 
