@@ -95,15 +95,19 @@ out with `--skip-missing-tables`.
 **8. Let the restore run.** It restores the database, then the data directory, and takes hours for
 a large backup. If it stops halfway, fix the cause and run the same command again with `--force`.
 
-**9. After the restore** <!-- completed after the PVE02 test -->
+**9. After the restore.** These worked in our tests:
 
-- Check `config/config.php`: `trusted_domains`, `overwrite.cli.url`, and the cache (Redis) host
-  must match the new server. The database settings and data directory are kept from the new
-  installation.
-- `occ upgrade` (apps on the new server may be newer than in the backup), then
-  `occ maintenance:repair`.
-- Log in, open some files, a calendar and a contact.
-- Start background jobs (cron).
+    occ upgrade
+    occ maintenance:repair
+    occ files:scan --all
+
+- Check `config/config.php`: `trusted_domains`, `overwrite.cli.url` and `overwritehost` come from
+  the old server; change them if the new server has another name. The database settings and the
+  data directory are kept from the new installation.
+- From Nextcloud All-in-One to a regular server: also check the cache settings (`memcache.*`,
+  `redis`), which point at AIO's containers.
+- Log in, open a few files, a calendar and a contact.
+- Start background jobs again (cron), as in step 2 in reverse.
 
 **10. Point your domain at the new server** and check that clients reconnect.
 

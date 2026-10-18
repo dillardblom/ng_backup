@@ -440,6 +440,11 @@ in README "Known limitations":
       PUT van 2,4 naar 7,5 MiB/s, ng_backup van ~1 naar ~1,6 MiB/s (rest = serieel lezen/uploaden).
       Tip over BBR in de README gezet. Let op: PVE02 staat in Canada; een restore in de EU gaat sneller.
   15. DR-document: in het Docker-voorbeeld "je containernaam" (`docker ps`) i.p.v. `nextcloud`.
+  **Kleine DR-test met rc2 (2026-10-18), volautomatisch geslaagd:** bron VM 981 (NC 34, PostgreSQL,
+  51 GB, Mail met gesynct account, Deck uitgeschakeld, Calendar/Contacts, admin_audit) → OVH S3 →
+  verse VM 982 met alleen de DR-gids en `--install-apps`: apps vanzelf geïnstalleerd, 10 Deck-tabellen
+  aangemaakt, 15 FK's in orde, 23.519/23.519 checksums gelijk, agenda/contact/mail/bord terug.
+  Restore 1 u 47 vanuit Warschau naar Canada (met BBR). Lokaal slaagt de test ook op SQLite en MariaDB.
   **Daarna verplicht:** een tweede volledige restore op een verse VM, alleen met de HOWTO en de
   nieuwe opties, zonder handwerk. Pas als die in één keer slaagt: 1.0.0.
 
