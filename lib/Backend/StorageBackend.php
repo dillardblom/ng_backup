@@ -257,6 +257,8 @@ final class StorageBackend implements IBackend, IReadsAhead {
 		if (!$this->sftpReads || $reconnect === null || $ranges === []) {
 			return null;
 		}
+		// before any connection is opened: an invalid path throws
+		$abs = array_map(fn (array $r): array => [$this->abs($r[0]), $r[1], $r[2]], $ranges);
 		$storages = [];
 		$connections = [];
 		$root = '';
@@ -277,7 +279,6 @@ final class StorageBackend implements IBackend, IReadsAhead {
 		if ($connections === []) {
 			return null;
 		}
-		$abs = array_map(fn (array $r): array => [$this->abs($r[0]), $r[1], $r[2]], $ranges);
 		return (static function () use ($storages, $connections, $root, $abs, $spool): \Generator {
 			// the storages hold their connections: kept until the fetcher is done
 			try {

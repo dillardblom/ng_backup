@@ -254,7 +254,11 @@ final class Repository {
 		if (count($plan->ranges()) < 2 || (!is_dir($plan->spool) && !@mkdir($plan->spool, 0700, true))) {
 			return null;
 		}
-		$streams = $this->backend->readAhead($plan->ranges(), $plan->spool);
+		try {
+			$streams = $this->backend->readAhead($plan->ranges(), $plan->spool);
+		} catch (\Throwable) {
+			$streams = null; // the usual reads report what is wrong
+		}
 		if ($streams === null) {
 			@rmdir($plan->spool);
 			return null;
