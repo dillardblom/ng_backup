@@ -383,6 +383,17 @@ in README "Known limitations":
   de gebruiker, wachtwoordzin min. 16 tekens). Geen nieuwe functies meer.
 - **Vóór 1.0.0 (verplicht):** volledige restore met kit op een tweede server (PVE02), alleen lezend
   of op een kopie van de locatie; plus een user-restore. Zonder geslaagde test geen 1.0.0.
+- **1.0.0 (besluit 2026-10-18):** alleen betrouwbaarheid. rc2 uitgebracht; slaagt de grote
+  DR-test op VM 980 (snapshot van 12-10, met `--skip-missing-tables`), dan 1.0.0. Zo niet: fix,
+  rc3, en rc3 pas uitbrengen na een geslaagde volledige DR-test.
+- **1.0.1:**
+  1. Herstelsnelheid: bij een restore meerdere pakketten tegelijk lezen (SFTP: meerdere
+     verbindingen; S3 heeft al 16 tegelijk). Raakt het leespad, daarom niet in 1.0.0.
+  2. Waarschuwing in de beheerpagina en `backup:status` als achtergrondjobs niet op systeem-cron
+     staan, en "waiting for background jobs" als een lopende backup lang geen stap zette (issue
+     #13). Cron zelf aanzetten kan de app niet: zonder echte cron-regel stopt dan alles.
+  3. Volledige DR-test met een backup die al de tabelstructuur bevat (gemaakt met rc2 of later),
+     zonder `--skip-missing-tables`: dat pad is op 1 TB nog niet getest.
 - **1.1.0:**
   1. `backup:key:import` zonder kit: de sleutel-slots van de locatie (`config`) lezen, met de kit
      als reserve als `config` ontbreekt of niet opent. Vergt een andere volgorde van
