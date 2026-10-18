@@ -216,7 +216,7 @@ final class DbDumper {
 				}
 				$report['restored'][] = $table;
 			}
-			$this->restoreSequences($manifest['sequences'] ?? []);
+			$this->restoreSequences($manifest['sequences'] ?? [], $report['missing']);
 			$this->resumeForeignKeys($foreignKeys);
 			$this->db->commit();
 			// Foreign keys of the tables created above, now their rows are in. Not inside the
@@ -573,11 +573,16 @@ final class DbDumper {
 		return $name;
 	}
 
-	private function restoreSequences(array $sequences): void {
+	/** @param list<string> $leftOut tables not restored (--skip-missing-tables): they do not exist here */
+	private function restoreSequences(array $sequences, array $leftOut = []): void {
 		if (!$this->db->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\PostgreSQLPlatform) {
 			return;
 		}
+		$leftOut = array_flip($leftOut);
 		foreach ($sequences as $info) {
+			if (isset($leftOut[$info['table']])) {
+				continue;
+			}
 			$seq = $this->db->fetchOne('SELECT pg_get_serial_sequence(quote_ident(?), ?)', [$info['table'], $info['column']]);
 			if ($seq === false || $seq === null) {
 				continue;

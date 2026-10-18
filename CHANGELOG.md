@@ -9,6 +9,12 @@ instead carried by the app description, the git tag, the release, and this file.
 
 ## [Unreleased]
 
+### Fixed
+- A full restore of a backup made before 1.0.0-rc.2 with `--skip-missing-tables` failed on
+  PostgreSQL with "relation ... does not exist": the left-out tables were still looked up to set
+  their ID counters. It now skips them. A new test restores a backup made by 1.0.0-rc.1 on
+  PostgreSQL and MariaDB.
+
 ## [1.0.0-rc.2] - 2026-10-18
 
 Second release candidate for 1.0.0; the app version is 0.9.8. Fixes from a full disaster recovery
