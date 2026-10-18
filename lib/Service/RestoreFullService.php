@@ -63,19 +63,25 @@ final class RestoreFullService {
 		$enabled = array_flip($this->appManager->getEnabledApps());
 		$missingApps = array_values(array_diff(array_keys($meta['apps'] ?? []), array_keys($enabled), self::ENVIRONMENT_APPS));
 		$missingTables = [];
+		$prefixMismatch = null;
 		if (isset($meta['db'])) {
 			$manifest = json_decode($repo->getObject($meta['db']), true, 512, JSON_THROW_ON_ERROR);
 			$prefix = $this->config->getSystemValueString('dbtableprefix', 'oc_');
+			$sourcePrefix = DbDumper::dumpPrefix($manifest);
+			if ($sourcePrefix !== null && $sourcePrefix !== $prefix) {
+				$prefixMismatch = [$sourcePrefix, $prefix];
+			}
 			$dumper = new DbDumper($this->db->getInner(), $prefix);
 			$missingTables = array_values(array_filter($dumper->missingTables($manifest),
 				fn (string $t) => !isset($manifest['tables'][$t]['schema']) && !str_starts_with($t, $prefix . 'ngb_')));
 		}
 		return [
-			'ok' => $currentMajor === $snapshotMajor && ($missingTables === [] || $skipMissingTables),
+			'ok' => $currentMajor === $snapshotMajor && $prefixMismatch === null && ($missingTables === [] || $skipMissingTables),
 			'currentMajor' => $currentMajor,
 			'snapshotMajor' => $snapshotMajor,
 			'missingApps' => $missingApps,
-			'missingTables' => $missingTables,
+			'missingTables' => $prefixMismatch === null ? $missingTables : [],
+			'prefixMismatch' => $prefixMismatch,
 		];
 	}
 
@@ -223,6 +229,10 @@ final class RestoreFullService {
 		$parts = [];
 		if ($check['currentMajor'] !== $check['snapshotMajor']) {
 			$parts[] = "this installation is Nextcloud {$check['currentMajor']}, the backup is from {$check['snapshotMajor']} (same major version required)";
+		}
+		if (($check['prefixMismatch'] ?? null) !== null) {
+			[$source, $here] = $check['prefixMismatch'];
+			$parts[] = "the backup's tables use the prefix '$source', this installation '$here': install Nextcloud again with 'dbtableprefix' => '$source' in config/config.php before occ maintenance:install, and restore again";
 		}
 		if ($check['missingTables'] !== []) {
 			$prefix = $this->config->getSystemValueString('dbtableprefix', 'oc_');

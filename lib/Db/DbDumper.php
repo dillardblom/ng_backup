@@ -145,6 +145,11 @@ final class DbDumper {
 	 */
 	public function restore(Repository $repo, array $manifest, ?array &$report = null, ?callable $heartbeat = null, bool $skipMissing = false): int {
 		$report = ['skipped' => [], 'restored' => [], 'created' => [], 'missing' => []];
+		$source = self::dumpPrefix($manifest);
+		if ($source !== null && $source !== $this->prefix) {
+			// Every table would look missing and be created under the old prefix, unused.
+			throw new \RuntimeException("The backup's tables use the prefix '$source', this installation '{$this->prefix}'. Install Nextcloud again with 'dbtableprefix' => '$source' in config/config.php before occ maintenance:install, and restore again.");
+		}
 		$missing = $this->missingTables($manifest);
 		$unknown = array_values(array_filter($missing, fn (string $t) => !isset($manifest['tables'][$t]['schema'])));
 		if ($unknown !== [] && !$skipMissing) {
@@ -239,6 +244,22 @@ final class DbDumper {
 			throw $e;
 		}
 		return $total;
+	}
+
+	/**
+	 * The table prefix of the instance the dump was made on (from its appconfig table), or null
+	 * when the dump has none.
+	 *
+	 */
+	public static function dumpPrefix(array $manifest): ?string {
+		/** @var list<string> $tables table names */
+		$tables = array_keys($manifest['tables'] ?? []);
+		foreach ($tables as $name) {
+			if (str_ends_with($name, 'appconfig') && !str_ends_with($name, '_ex_appconfig')) {
+				return substr($name, 0, -strlen('appconfig'));
+			}
+		}
+		return null;
 	}
 
 	/**

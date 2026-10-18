@@ -24,6 +24,8 @@ All-in-One onto a plain Nextcloud with PostgreSQL).
 - A full restore no longer refuses when apps are missing: it restores their data and lists the
   apps to install afterwards. `nextcloud-aio` is never required, so a backup of Nextcloud
   All-in-One can be restored onto a plain Nextcloud.
+- A full restore onto an installation with a different table prefix (`dbtableprefix`) is refused
+  before it starts, with what to change, instead of restoring into tables nobody uses.
 - All problems are listed at once, with the app each missing table probably belongs to. For
   backups made before this version, `--skip-missing-tables` leaves out tables whose structure is
   unknown.
