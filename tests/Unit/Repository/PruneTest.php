@@ -88,6 +88,33 @@ class PruneTest extends TestCase {
 		$this->assertSame(self::hashTree($src), self::hashTree($target));
 	}
 
+	public function testRestoreFollowsPacksRepackedByAnotherServer(): void {
+		// A disaster recovery test on a second server reads the location while the original
+		// server's weekly cleanup repacks it: the restore must not stop at a pack that moved.
+		$src = $this->tempDir();
+		$backend = new LocalBackend($this->tempDir());
+		$keys = KeyRing::generate();
+		$repo = Repository::initWithKey($backend, $keys, $keys->wrap('pw'));
+		for ($i = 0; $i < 40; $i++) {
+			file_put_contents("$src/f$i", random_bytes(500000));
+		}
+		$a = $repo->backupDirectory($src);
+		for ($i = 0; $i < 40; $i++) {
+			if ($i % 5 !== 0) {
+				unlink("$src/f$i");
+			}
+		}
+		$b = $repo->backupDirectory($src, $a['snapshot']);
+		$reader = Repository::openWithKey($backend, $keys); // index loaded before the cleanup
+		$repo->forget($a['snapshot']);
+		$repo->purgeTrash(0);
+		$this->assertGreaterThan(0, $repo->prune(false, 0.5)['repacked']);
+
+		$target = $this->tempDir();
+		$reader->restore($b['snapshot'], $target);
+		$this->assertSame(self::hashTree($src), self::hashTree($target));
+	}
+
 	public function testUntrashRestoresAWorkingSnapshot(): void {
 		$src = $this->tempDir();
 		$backend = new LocalBackend($this->tempDir());

@@ -39,6 +39,10 @@ All-in-One onto a plain Nextcloud with PostgreSQL).
 - `occ backup:target:add` without a key pointed to `backup:key:init`, which makes a new key that
   cannot read existing backups. It now points to `backup:key:import` for a restore, and says that
   connecting to a location with backups can take a while.
+- A restore stopped with "Not found: packs/..." when the location was cleaned up while it ran,
+  for example by the weekly cleanup of the original server during a recovery test on a second
+  server: blobs that were moved into new packs were still looked for in the old ones. A restore
+  now reloads the index and reads them from where they are now.
 - Removing a location left its cached index in the database (tens of thousands of rows for a large
   backup). It is removed with the location now, and once for locations that are already gone.
 
