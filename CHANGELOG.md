@@ -9,8 +9,11 @@ instead carried by the app description, the git tag, the release, and this file.
 
 ## [Unreleased]
 
-Fixes from a full disaster recovery test of a production instance (about 1 TB, Nextcloud
-All-in-One onto a plain Nextcloud with PostgreSQL).
+## [1.0.0-rc.2] - 2026-10-18
+
+Second release candidate for 1.0.0; the app version is 0.9.8. Fixes from a full disaster recovery
+test of a production instance (about 1 TB, Nextcloud All-in-One onto a plain Nextcloud with
+PostgreSQL).
 
 ### Added
 - `docs/DISASTER-RECOVERY.md`: step-by-step guide for when your server is gone.
