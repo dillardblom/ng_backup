@@ -440,6 +440,12 @@ in README "Known limitations":
       PUT van 2,4 naar 7,5 MiB/s, ng_backup van ~1 naar ~1,6 MiB/s (rest = serieel lezen/uploaden).
       Tip over BBR in de README gezet. Let op: PVE02 staat in Canada; een restore in de EU gaat sneller.
   15. DR-document: in het Docker-voorbeeld "je containernaam" (`docker ps`) i.p.v. `nextcloud`.
+  16. Grote restore (VM 980, snapshot aa7cce8d van de Storage Box) stopte na 22 uur met
+      `Not found: packs/26/2642ef39…`. Oorzaak: de wekelijkse opruiming van nc01 (zo 18-10) heeft
+      dat pakket tijdens de restore omgepakt (blob staat nu in `389567b7…`); de herstelserver had de
+      index van vóór de opruiming. Productie heel: `backup:verify` op nc01 OK (150.639 bestanden,
+      316.830 blobs). Opgelost in rc2: bij een mislukte pakketlezing de index herladen en de blob
+      lezen waar hij nu staat (test `testRestoreFollowsPacksRepackedByAnotherServer`).
   **Kleine DR-test met rc2 (2026-10-18), volautomatisch geslaagd:** bron VM 981 (NC 34, PostgreSQL,
   51 GB, Mail met gesynct account, Deck uitgeschakeld, Calendar/Contacts, admin_audit) → OVH S3 →
   verse VM 982 met alleen de DR-gids en `--install-apps`: apps vanzelf geïnstalleerd, 10 Deck-tabellen
