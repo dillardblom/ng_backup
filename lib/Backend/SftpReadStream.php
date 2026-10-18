@@ -144,9 +144,9 @@ final class SftpReadStream {
 
 	/**
 	 * The storage's phpseclib connection, with its SFTP channel open, when it offers what these
-	 * streams need; null otherwise.
+	 * streams (and SftpRangeFetcher) need; null otherwise.
 	 */
-	private static function connection(object $storage): ?object {
+	public static function connection(object $storage): ?object {
 		if (!is_callable([$storage, 'getConnection']) || !is_callable([$storage, 'getRoot'])) {
 			return null;
 		}

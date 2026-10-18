@@ -14,7 +14,7 @@ use OCP\Files\Storage\IWriteStreamStorage;
  * IBackend on top of a Nextcloud storage object (from files_external or core), below a base
  * directory on that storage.
  */
-final class StorageBackend implements IBackend {
+final class StorageBackend implements IBackend, IReadsAhead {
 	/** Object stores write whole objects atomically; other storages get a temp name + rename. */
 	private bool $atomicPut;
 	/** SFTP: read through SftpReadStream, which keeps several requests in flight. */
@@ -241,6 +241,51 @@ final class StorageBackend implements IBackend {
 		} catch (\Throwable) {
 			return null;
 		}
+	}
+
+	/**
+	 * Over SFTP: SftpRangeFetcher, on CONNECTIONS new connections of its own (built with the
+	 * reconnect function), so the storage's connection stays free for other requests. Elsewhere
+	 * not (yet): null.
+	 */
+	public function canReadAhead(): bool {
+		return $this->sftpReads && $this->reconnect !== null;
+	}
+
+	public function readAhead(array $ranges, string $spool): ?\Generator {
+		$reconnect = $this->reconnect;
+		if (!$this->sftpReads || $reconnect === null || $ranges === []) {
+			return null;
+		}
+		$storages = [];
+		$connections = [];
+		$root = '';
+		for ($n = 0; $n < SftpRangeFetcher::CONNECTIONS; $n++) {
+			try {
+				$storage = $reconnect();
+				$sftp = SftpReadStream::connection($storage);
+				if ($sftp === null || !is_callable([$storage, 'getRoot'])) {
+					break;
+				}
+				$root = (string)$storage->getRoot();
+			} catch (\Throwable) {
+				break; // the server may allow fewer connections: go on with those that work
+			}
+			$storages[] = $storage;
+			$connections[] = $sftp;
+		}
+		if ($connections === []) {
+			return null;
+		}
+		$abs = array_map(fn (array $r): array => [$this->abs($r[0]), $r[1], $r[2]], $ranges);
+		return (static function () use ($storages, $connections, $root, $abs, $spool): \Generator {
+			// the storages hold their connections: kept until the fetcher is done
+			try {
+				yield from SftpRangeFetcher::fetch($connections, $root, $abs, $spool);
+			} finally {
+				unset($storages);
+			}
+		})();
 	}
 
 	public function getRange(string $path, int $offset, int $length): string {
