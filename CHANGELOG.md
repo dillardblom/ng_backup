@@ -14,6 +14,8 @@ instead carried by the app description, the git tag, the release, and this file.
   PostgreSQL with "relation ... does not exist": the left-out tables were still looked up to set
   their ID counters. It now skips them. A new test restores a backup made by 1.0.0-rc.1 on
   PostgreSQL and MariaDB.
+- The app store showed old screenshots: it keeps a copy per URL, and the URLs always pointed at
+  `main`. They now point at the release's tag.
 
 ## [1.0.0-rc.2] - 2026-10-18
 
