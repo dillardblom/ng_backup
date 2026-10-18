@@ -105,6 +105,9 @@ HELP);
 			$output->writeln(sprintf('Created <info>%d</info> tables that did not exist here (apps that are missing or were removed): %s',
 				count($result['dbReport']['created']), implode(', ', $result['dbReport']['created'])));
 		}
+		foreach ($result['dbReport']['foreignKeyErrors'] ?? [] as $error) {
+			$output->writeln('<comment>Could not add a foreign key to a created table (the data is restored): ' . $error . '</comment>');
+		}
 		if ($result['dbReport']['missing'] !== []) {
 			$output->writeln('<comment>Left out (structure unknown): ' . implode(', ', $result['dbReport']['missing']) . '</comment>');
 		}

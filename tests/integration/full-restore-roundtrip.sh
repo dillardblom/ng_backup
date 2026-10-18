@@ -2,9 +2,9 @@
 # Disaster recovery: occ backup:key:import + backup:target:add + backup:restore:full on a
 # SECOND, fresh Nextcloud instance that never saw the first one, sharing only the backup
 # location (a local directory, bind-mounted into both containers) -- see PLAN.md 3.7.
-# Usage: full-restore-roundtrip.sh <nextcloud-image-tag> [sqlite|pgsql]
+# Usage: full-restore-roundtrip.sh <nextcloud-image-tag> [sqlite|pgsql|mysql]
 #   e.g. full-restore-roundtrip.sh 35-apache pgsql
-# With pgsql the origin also has what broke real disaster recoveries: the Mail app with a synced
+# With pgsql or mysql the origin also has what broke real disaster recoveries: the Mail app with a synced
 # account (foreign keys between its tables) and Deck installed and then switched off (tables of
 # an app that is not enabled). The restore instance has neither; --install-apps adds Mail.
 set -euo pipefail
@@ -35,6 +35,11 @@ db_env() {
 			-e POSTGRES_PASSWORD=nextcloud postgres:16-alpine >/dev/null
 		for i in $(seq 1 30); do docker exec "ngb-frt-db-$1" pg_isready -q 2>/dev/null && break; sleep 2; done
 		echo "-e POSTGRES_HOST=ngb-frt-db-$1 -e POSTGRES_DB=nextcloud -e POSTGRES_USER=nextcloud -e POSTGRES_PASSWORD=nextcloud"
+	elif [ "$DB" = mysql ]; then
+		docker run -d --name "ngb-frt-db-$1" --network "$NET" -e MARIADB_DATABASE=nextcloud -e MARIADB_USER=nextcloud \
+			-e MARIADB_PASSWORD=nextcloud -e MARIADB_ROOT_PASSWORD=nextcloud mariadb:11 >/dev/null
+		for i in $(seq 1 60); do docker exec "ngb-frt-db-$1" mariadb-admin ping -unextcloud -pnextcloud --silent >/dev/null 2>&1 && break; sleep 2; done
+		echo "-e MYSQL_HOST=ngb-frt-db-$1 -e MYSQL_DATABASE=nextcloud -e MYSQL_USER=nextcloud -e MYSQL_PASSWORD=nextcloud"
 	else
 		echo "-e SQLITE_DATABASE=nextcloud"
 	fi
@@ -64,7 +69,12 @@ docker exec -u www-data -e OC_PASS="$NC_PASS" ngb-frt-origin php occ user:add --
 docker exec ngb-frt-origin sh -c "mkdir -p /var/www/html/data/frtest/files/Docs && head -c 200000 /dev/urandom > /var/www/html/data/frtest/files/Docs/report.bin && echo 'hello disaster recovery' > /var/www/html/data/frtest/files/Docs/note.txt && chown -R www-data:www-data /var/www/html/data/frtest"
 run_on ngb-frt-origin files:scan frtest >/dev/null
 
-if [ "$DB" = pgsql ]; then
+# SQL on an instance's own database (pgsql/mysql only)
+sql() {
+	if [ "$DB" = pgsql ]; then docker exec "ngb-frt-db-$1" psql -U nextcloud -d nextcloud -Atc "$2"
+	else docker exec "ngb-frt-db-$1" mariadb -unextcloud -pnextcloud -N -B nextcloud -e "$2"; fi
+}
+if [ "$DB" != sqlite ]; then
 	# Mail with a synced account: oc_mail_accounts points at oc_mail_mailboxes (foreign keys),
 	# while the restore loads tables in name order, accounts before mailboxes.
 	docker run -d --name ngb-frt-imap --network "$NET" -e MAILNAME=mail.domain.tld -e MAIL_ADDRESS=user@domain.tld \
@@ -75,7 +85,7 @@ if [ "$DB" = pgsql ]; then
 	run_on ngb-frt-origin mail:account:create frtest Test user@domain.tld ngb-frt-imap 993 ssl user@domain.tld mypassword \
 		ngb-frt-imap 25 tls user@domain.tld mypassword >/dev/null || fail "mail account"
 	run_on ngb-frt-origin mail:account:sync -f 1 >/dev/null || fail "mail sync"
-	[ "$(docker exec ngb-frt-db-origin psql -U nextcloud -d nextcloud -Atc 'select count(*) from oc_mail_accounts where drafts_mailbox_id is not null')" = 1 ] \
+	[ "$(sql origin 'select count(*) from oc_mail_accounts where drafts_mailbox_id is not null')" = 1 ] \
 		|| fail "the mail account does not point at its mailboxes"
 	# Deck installed and then switched off: its tables stay in the database and in the backup
 	run_on ngb-frt-origin app:install deck >/dev/null || fail "install deck on the origin"
@@ -124,11 +134,10 @@ docker exec ngb-frt-restore test -f /var/www/html/data/frtest/files/Docs/note.tx
 run_on ngb-frt-restore files:scan frtest >/dev/null || fail "files:scan fails after restore"
 ok "database, files and ng_backup's own state are all intact and usable after the restore"
 
-if [ "$DB" = pgsql ]; then
-	Q() { docker exec ngb-frt-db-restore psql -U nextcloud -d nextcloud -Atc "$1"; }
-	[ "$(Q "select count(*) from pg_tables where tablename = 'oc_deck_boards'")" = 1 ] || fail "the tables of the disabled app were not created"
-	[ "$(Q "select count(*) from oc_mail_accounts where drafts_mailbox_id is not null")" = 1 ] || fail "the mail account was not restored"
-	[ "$(Q "select count(*) from pg_constraint where contype = 'f' and conrelid::regclass::text like 'oc_mail_%'")" -gt 0 ] \
+if [ "$DB" != sqlite ]; then
+	[ "$(sql restore "select count(*) from information_schema.tables where table_name = 'oc_deck_boards'")" = 1 ] || fail "the tables of the disabled app were not created"
+	[ "$(sql restore "select count(*) from oc_mail_accounts where drafts_mailbox_id is not null")" = 1 ] || fail "the mail account was not restored"
+	[ "$(sql restore "select count(*) from information_schema.table_constraints where constraint_type = 'FOREIGN KEY' and table_name like 'oc_mail_%'")" -gt 0 ] \
 		|| fail "the foreign keys of Mail are missing after the restore"
 	printf '%s\n' "$OUT" | grep -q "Created .* tables" || fail "the restore did not report the tables it created"
 	ok "tables of a disabled app created, Mail restored with its foreign keys"

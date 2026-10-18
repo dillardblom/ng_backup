@@ -214,6 +214,21 @@ final class DbDumper {
 			$this->restoreSequences($manifest['sequences'] ?? []);
 			$this->resumeForeignKeys($foreignKeys);
 			$this->db->commit();
+			// Foreign keys of the tables created above, now their rows are in. Not inside the
+			// transaction: MySQL commits on DDL. A failure is reported, not fatal: the data is
+			// restored either way.
+			foreach ($report['created'] as $table) {
+				$structure = $manifest['tables'][$table]['schema'] ?? [];
+				foreach ($structure['foreignKeys'] ?? [] as $fk) {
+					try {
+						$this->db->createSchemaManager()->createForeignKey(
+							new \Doctrine\DBAL\Schema\ForeignKeyConstraint($fk['columns'], $fk['table'], $fk['foreign'], $fk['name'], $fk['options'] ?? []),
+							$table);
+					} catch (\Throwable $e) {
+						$report['foreignKeyErrors'][] = $table . '.' . $fk['name'] . ': ' . $e->getMessage();
+					}
+				}
+			}
 		} catch (\Throwable $e) {
 			$this->db->rollBack();
 			// PostgreSQL rolls the dropped foreign keys back with the transaction; MySQL's session
@@ -268,10 +283,18 @@ final class DbDumper {
 		$indexes = [];
 		foreach ($table->getIndexes() as $i) {
 			if (!$i->isPrimary()) {
-				$indexes[] = ['name' => $i->getName(), 'columns' => array_values($i->getColumns()), 'unique' => $i->isUnique()];
+				// options holds the prefix lengths MySQL needs for indexes on long text columns
+				$indexes[] = ['name' => $i->getName(), 'columns' => array_values($i->getColumns()), 'unique' => $i->isUnique(),
+					'flags' => array_values($i->getFlags()), 'options' => $i->getOptions()];
 			}
 		}
-		return ['columns' => $columns, 'pk' => array_values($table->getPrimaryKey()?->getColumns() ?? []), 'indexes' => $indexes];
+		$foreignKeys = [];
+		foreach ($table->getForeignKeys() as $fk) {
+			$foreignKeys[] = ['name' => $fk->getName(), 'columns' => array_values($fk->getLocalColumns()),
+				'table' => $fk->getForeignTableName(), 'foreign' => array_values($fk->getForeignColumns()), 'options' => $fk->getOptions()];
+		}
+		return ['columns' => $columns, 'pk' => array_values($table->getPrimaryKey()?->getColumns() ?? []), 'indexes' => $indexes,
+			'foreignKeys' => $foreignKeys];
 	}
 
 	private static function tableFromStructure(string $name, array $structure): \Doctrine\DBAL\Schema\Table {
@@ -287,7 +310,9 @@ final class DbDumper {
 			$table->setPrimaryKey($structure['pk']);
 		}
 		foreach ($structure['indexes'] as $i) {
-			$i['unique'] ? $table->addUniqueIndex($i['columns'], $i['name']) : $table->addIndex($i['columns'], $i['name']);
+			$i['unique']
+				? $table->addUniqueIndex($i['columns'], $i['name'], $i['options'] ?? [])
+				: $table->addIndex($i['columns'], $i['name'], $i['flags'] ?? [], $i['options'] ?? []);
 		}
 		return $table;
 	}
@@ -316,8 +341,30 @@ final class DbDumper {
 			return $restore;
 		}
 		if ($platform instanceof \Doctrine\DBAL\Platforms\AbstractMySQLPlatform) {
+			// MySQL does not check rows again when FOREIGN_KEY_CHECKS goes back to 1, and its DDL
+			// would commit the transaction halfway. So every foreign key is checked explicitly,
+			// with a query that finds rows pointing at nothing (resumeForeignKeys()).
+			$rows = $this->db->fetchAllAssociative(
+				'SELECT TABLE_NAME AS tbl, CONSTRAINT_NAME AS name, COLUMN_NAME AS col, REFERENCED_TABLE_NAME AS rtbl, REFERENCED_COLUMN_NAME AS rcol
+				 FROM information_schema.KEY_COLUMN_USAGE
+				 WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IS NOT NULL
+				 ORDER BY TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION');
+			$keys = [];
+			foreach ($rows as $r) {
+				if (str_starts_with((string)$r['tbl'], $this->prefix)) {
+					$keys[$r['tbl'] . "\0" . $r['name']][] = $r;
+				}
+			}
+			$q = fn (string $i): string => $this->db->quoteIdentifier($i);
+			$checks = ['SET FOREIGN_KEY_CHECKS = 1'];
+			foreach ($keys as $parts) {
+				$join = implode(' AND ', array_map(fn (array $r): string => 'c.' . $q($r['col']) . ' = p.' . $q($r['rcol']), $parts));
+				$set = implode(' AND ', array_map(fn (array $r): string => 'c.' . $q($r['col']) . ' IS NOT NULL', $parts));
+				$checks[] = sprintf('SELECT COUNT(*) FROM %s c LEFT JOIN %s p ON %s WHERE %s AND p.%s IS NULL /* %s */',
+					$q($parts[0]['tbl']), $q($parts[0]['rtbl']), $join, $set, $q($parts[0]['rcol']), $parts[0]['name']);
+			}
 			$this->db->executeStatement('SET FOREIGN_KEY_CHECKS = 0');
-			return ['SET FOREIGN_KEY_CHECKS = 1'];
+			return $checks;
 		}
 		if ($platform instanceof \Doctrine\DBAL\Platforms\SqlitePlatform) {
 			$this->db->executeStatement('PRAGMA defer_foreign_keys = ON'); // checked at commit
@@ -325,11 +372,22 @@ final class DbDumper {
 		return [];
 	}
 
-	/** Add the foreign keys back; a row that breaks one fails the restore here, before it commits. */
+	/**
+	 * Check the foreign keys again; a row that breaks one fails the restore here, before it commits.
+	 * Statements add them back (PostgreSQL) or switch the checks on (MySQL); queries count the rows
+	 * that point at nothing (MySQL) and must find none.
+	 */
 	private function resumeForeignKeys(array $statements): void {
 		foreach ($statements as $sql) {
 			try {
-				$this->db->executeStatement($sql);
+				if (str_starts_with($sql, 'SELECT ')) {
+					$orphans = (int)$this->db->fetchOne($sql);
+					if ($orphans > 0) {
+						throw new \RuntimeException("$orphans rows point at nothing");
+					}
+				} else {
+					$this->db->executeStatement($sql);
+				}
 			} catch (\Throwable $e) {
 				throw new \RuntimeException('The restored data breaks a foreign key (' . $sql . '): ' . $e->getMessage(), 0, $e);
 			}

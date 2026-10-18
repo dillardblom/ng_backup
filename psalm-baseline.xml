@@ -189,6 +189,8 @@
       <code><![CDATA[$this->db]]></code>
       <code><![CDATA[$this->db]]></code>
       <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
       <code><![CDATA[TransactionIsolationLevel]]></code>
       <code><![CDATA[\Doctrine\DBAL\ParameterType]]></code>
       <code><![CDATA[\Doctrine\DBAL\ParameterType]]></code>
@@ -197,6 +199,7 @@
       <code><![CDATA[\Doctrine\DBAL\Platforms\PostgreSQLPlatform]]></code>
       <code><![CDATA[\Doctrine\DBAL\Platforms\PostgreSQLPlatform]]></code>
       <code><![CDATA[\Doctrine\DBAL\Platforms\PostgreSQLPlatform]]></code>
+      <code><![CDATA[\Doctrine\DBAL\Schema\ForeignKeyConstraint]]></code>
       <code><![CDATA[\Doctrine\DBAL\Schema\Table]]></code>
       <code><![CDATA[\Doctrine\DBAL\Schema\Table]]></code>
       <code><![CDATA[\Doctrine\DBAL\Schema\Table]]></code>

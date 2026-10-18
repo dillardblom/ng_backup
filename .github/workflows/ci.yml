@@ -106,3 +106,5 @@ jobs:
         run: tests/integration/full-restore-roundtrip.sh 35-apache
       - name: Full restore round trip on PostgreSQL, with Mail (foreign keys) and a disabled app
         run: tests/integration/full-restore-roundtrip.sh 35-apache pgsql
+      - name: Full restore round trip on MariaDB, with Mail (foreign keys) and a disabled app
+        run: tests/integration/full-restore-roundtrip.sh 35-apache mysql
