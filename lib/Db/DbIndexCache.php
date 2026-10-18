@@ -64,6 +64,13 @@ final class DbIndexCache implements IIndexCache {
 		}
 	}
 
+	/** Drop the cached index of a repository that no location uses any more. */
+	public function forget(string $repositoryId): void {
+		$qb = $this->db->getQueryBuilder();
+		$qb->delete('ngb_index')->where($qb->expr()->eq('repository_id', $qb->createNamedParameter($repositoryId)));
+		$qb->executeStatement();
+	}
+
 	/** All or nothing: when it fails, the cache stays as it was. */
 	public function replaceAll(string $repositoryId, array $packs): void {
 		$this->transaction(function () use ($repositoryId, $packs): void {

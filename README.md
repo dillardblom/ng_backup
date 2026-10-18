@@ -9,9 +9,12 @@ ng_backup, and applies to any Nextcloud app that writes to an SMB share.)
 
 **Status: release candidate for 1.0.0 (1.0.0-rc.1, app version 0.9.7).** Tested thoroughly, usable
 alongside your current backup, but not yet a drop-in replacement for it. See "Known limitations" below, `PLAN.md` for the design and
-`docs/HOWTO.md` for a step-by-step guide from setup to a tested restore.
+`docs/HOWTO.md` for a step-by-step guide from setup to a tested restore. Server lost? See
+`docs/DISASTER-RECOVERY.md`.
 
-License: AGPL-3.0-or-later.
+License: AGPL-3.0-or-later. Developed and sponsored by [Ensembia](https://www.ensembia.com).
+Need help restoring a backup after a crash? Ensembia offers paid restore assistance:
+[www.ensembia.com](https://www.ensembia.com).
 
 ## How it works
 
@@ -171,6 +174,13 @@ Contributions welcome via PR — add what you ran into with your own provider.
   smbclient` + `docker-php-ext-enable smbclient` on Debian-based images), not just the CLI tool —
   the backend being listed is not proof it will work here. Once the extension is present it works
   the same as any other backend; no ng_backup-specific config beyond host/share/user/password.
+
+- **Backups over a long distance (high latency):** on Linux, the default TCP congestion control
+  (cubic) slows a single connection down a lot on a long line with some packet loss. From Canada to
+  an S3 bucket in Warsaw (114 ms), one upload went from 2.4 to 7.5 MiB/s after switching the
+  server (or the VM/container host where TCP ends) to BBR:
+  `sysctl -w net.core.default_qdisc=fq net.ipv4.tcp_congestion_control=bbr`
+  (`modprobe tcp_bbr` first; make it permanent in `/etc/sysctl.d/`).
 
 - **NFS is not a files_external backend at all.** Mount the NFS export on the server yourself
   (e.g. via `/etc/fstab` or a systemd `.mount` unit) and point ng_backup's `local` backend at the

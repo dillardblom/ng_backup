@@ -9,6 +9,44 @@ instead carried by the app description, the git tag, the release, and this file.
 
 ## [Unreleased]
 
+Fixes from a full disaster recovery test of a production instance (about 1 TB, Nextcloud
+All-in-One onto a plain Nextcloud with PostgreSQL).
+
+### Added
+- `docs/DISASTER-RECOVERY.md`: step-by-step guide for when your server is gone.
+- `occ backup:restore:full --install-apps` installs (from the app store) or enables the apps the
+  old server had enabled, before the restore starts.
+
+### Changed
+- Backups record the structure of every database table. A full restore creates tables that do not
+  exist on the new instance, for example those left behind by an app that was removed long ago or
+  is switched off, instead of stopping at the first one.
+- A full restore no longer refuses when apps are missing: it restores their data and lists the
+  apps to install afterwards. `nextcloud-aio` is never required, so a backup of Nextcloud
+  All-in-One can be restored onto a plain Nextcloud.
+- A full restore onto an installation with a different table prefix (`dbtableprefix`) is refused
+  before it starts, with what to change, instead of restoring into tables nobody uses.
+- All problems are listed at once, with the app each missing table probably belongs to. For
+  backups made before this version, `--skip-missing-tables` leaves out tables whose structure is
+  unknown.
+- A fuller app store description, ready for 1.0.0, and a note on paid restore help by Ensembia.
+- README: switching the server to TCP BBR made backups over a long distance about 3 times faster.
+
+### Fixed
+- A full restore failed on foreign keys (for example those of the Mail app), because tables are
+  restored in name order. Foreign keys are now checked after all rows are loaded, before the
+  restore commits.
+- `occ backup:target:add` without a key pointed to `backup:key:init`, which makes a new key that
+  cannot read existing backups. It now points to `backup:key:import` for a restore, and says that
+  connecting to a location with backups can take a while. While it reads the index of a location
+  with backups, it shows how far it is and about how long it still takes.
+- A restore stopped with "Not found: packs/..." when the location was cleaned up while it ran,
+  for example by the weekly cleanup of the original server during a recovery test on a second
+  server: blobs that were moved into new packs were still looked for in the old ones. A restore
+  now reloads the index and reads them from where they are now.
+- Removing a location left its cached index in the database (tens of thousands of rows for a large
+  backup). It is removed with the location now, and once for locations that are already gone.
+
 ## [1.0.0-rc.1] - 2026-10-17
 
 Release candidate for 1.0.0; the app version is 0.9.7. Only bug fixes until 1.0.0. Tested on a

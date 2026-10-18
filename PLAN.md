@@ -395,6 +395,65 @@ in README "Known limitations":
   3. Snelheid: lezen en uploaden laten overlappen, meerdere bestanden tegelijk lezen, eventueel
      een eigen worker (`occ background-job:worker`). Gemeten op nc01: 55% wachten op de schijf,
      33% op de SMB-upload, ~7% CPU. Vergt extra PHP-processen; botst mogelijk met uitgangspunt 1.
+- **Bevindingen DR-test op PVE02 (2026-10-17, snapshot van nc01, 1 TB, AIO → gewone NC 34 met
+  PostgreSQL 18)** — voor **1.0.0-rc.2**:
+  1. Tabellen van apps die bij de backup **niet aanstonden** (restanten: Deck, ONLYOFFICE,
+     AppAPI, een archief-app) blokkeren de restore met één tabelnaam per poging. Standaard
+     overslaan met één waarschuwing per app; optie om ze toch terug te zetten.
+  2. Alle ontbrekende apps en tabellen **vooraf in één lijst**, per app benoemd (nu één per poging,
+     ook voor uitgeschakelde standaard-apps zoals `admin_audit`).
+  3. `--skip-missing-apps`; `nextcloud-aio` standaard overslaan (bestaat buiten AIO niet), zodat
+     AIO → gewone Nextcloud werkt.
+  4. `--install-apps`: ontbrekende apps uit de app store installeren.
+  5. Apps buiten de app store (eigen builds, `side_menu`, `nextcloud-aio`): documenteren; later
+     eventueel `custom_apps` meenemen in de backup.
+  6. Tabellen van een app die wél aanstond maar die hun tabel later zelf maakt (Memories:
+     `memories_planet_geometry`) netjes afhandelen.
+  7. `backup:target:add` zonder sleutel verwijst naar `key:init`; als er al een repository staat,
+     moet het naar `key:import <kit>` wijzen.
+  8. `backup:target:add` toont geen voortgang bij het ophalen van de index (27.582 bestanden).
+  9. `backup:target:remove` laat de index-cache van die locatie in de database staan; opruimen,
+     ook bestaande wezen.
+  10. Snapshot-meta uitbreiden: ook geïnstalleerde maar uitgeschakelde apps, met per app of hij
+      uit de app store komt; `occ backup:apps <locatie> <snapshot>` toont de lijst leesbaar
+      (geen platte tekst op de locatie: dat lekt welke apps/versies er draaien).
+  11. **Tabelstructuur meedumpen** (kolommen, typen, indexen, primary key), zodat de restore een
+      ontbrekende tabel zelf aanmaakt met de gegevens erin. Lost restanten van oude apps op zonder
+      ze over te slaan; een later opnieuw geïnstalleerde app vindt zijn oude gegevens terug.
+  12. **Foreign keys**: de restore zet tabellen op alfabet terug; `oc_mail_accounts` verwijst naar
+      `oc_mail_mailboxes` en PostgreSQL weigert (fk_61a7e87f59a77cdc). Iedereen met Mail loopt hier
+      vast. Oplossing: in de juiste volgorde terugzetten (afhankelijkheden eerst), of de controle
+      tijdelijk uitzetten en na afloop terugzetten en controleren. In de test: 15 FK's (alle van
+      Mail) tijdelijk verwijderd en na de restore teruggezet: alle 15 geldig op de teruggezette
+      data, dus "uitzetten, terugzetten, achteraf controleren" werkt.
+  13. **SFTP-restore over een lange lijn is traag**: 0,75 MiB/s vanaf Hetzner naar Canada (RTT 122 ms),
+      terwijl OpenSSH `sftp` 16,6 MiB/s haalt. De SFTP-stream van files_external (phpseclib) wacht na
+      elk klein blok op antwoord. Oplossing: pack-ranges bij SFTP met phpseclib's eigen `get()`
+      (veel verzoeken tegelijk) lezen in plaats van via de stream, zoals bij S3. 1 TB duurt nu ~2 weken.
+      Na meten: de grootste oorzaak was het netwerk (cubic, zie 14): met BBR gaat de restore van 0,75
+      naar 2,3 MiB/s, een hele pack lezen 4-5 MiB/s. Meer verzoeken in één stream (DEPTH 16/32) gaf geen
+      duidelijke winst. Verder komen vraagt meerdere verbindingen tegelijk: naar **1.1.0**.
+  14. **Uploaden over een lange lijn**: backup naar OVH S3 Warschau vanaf Canada (RTT 114 ms) haalt
+      ~1 MiB/s met één pack tegelijk; `aws s3 cp` (multipart, parallel) 6 MiB/s. Meerdere packs tegelijk
+      uploaden of S3 multipart. Minder dringend dan 13 (restore).
+      Oorzaak netwerk (met Sysop): pakketverlies trans-Atlantisch + cubic in de VM; met BBR gaat één
+      PUT van 2,4 naar 7,5 MiB/s, ng_backup van ~1 naar ~1,6 MiB/s (rest = serieel lezen/uploaden).
+      Tip over BBR in de README gezet. Let op: PVE02 staat in Canada; een restore in de EU gaat sneller.
+  15. DR-document: in het Docker-voorbeeld "je containernaam" (`docker ps`) i.p.v. `nextcloud`.
+  16. Grote restore (VM 980, snapshot aa7cce8d van de Storage Box) stopte na 22 uur met
+      `Not found: packs/26/2642ef39…`. Oorzaak: de wekelijkse opruiming van nc01 (zo 18-10) heeft
+      dat pakket tijdens de restore omgepakt (blob staat nu in `389567b7…`); de herstelserver had de
+      index van vóór de opruiming. Productie heel: `backup:verify` op nc01 OK (150.639 bestanden,
+      316.830 blobs). Opgelost in rc2: bij een mislukte pakketlezing de index herladen en de blob
+      lezen waar hij nu staat (test `testRestoreFollowsPacksRepackedByAnotherServer`).
+  **Kleine DR-test met rc2 (2026-10-18), volautomatisch geslaagd:** bron VM 981 (NC 34, PostgreSQL,
+  51 GB, Mail met gesynct account, Deck uitgeschakeld, Calendar/Contacts, admin_audit) → OVH S3 →
+  verse VM 982 met alleen de DR-gids en `--install-apps`: apps vanzelf geïnstalleerd, 10 Deck-tabellen
+  aangemaakt, 15 FK's in orde, 23.519/23.519 checksums gelijk, agenda/contact/mail/bord terug.
+  Restore 1 u 47 vanuit Warschau naar Canada (met BBR). Lokaal slaagt de test ook op SQLite en MariaDB.
+  **Daarna verplicht:** een tweede volledige restore op een verse VM, alleen met de HOWTO en de
+  nieuwe opties, zonder handwerk. Pas als die in één keer slaagt: 1.0.0.
+
 - **Later (geen versie):** optie om de sleutel niet op de locatie op te slaan (kit is dan de enige
   kopie; uitdrukkelijke waarschuwing). Primaire object storage en External-storage-koppelingen
   meenemen via de opslaglaag (§3.4; nu niet ondersteund, zie README "Known limitations").

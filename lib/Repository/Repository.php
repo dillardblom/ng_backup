@@ -81,7 +81,8 @@ final class Repository {
 	}
 
 	/** Open with the master key the server holds (scheduled backups, no passphrase needed). */
-	public static function openWithKey(IBackend $backend, KeyRing $keys, ?IIndexCache $cache = null, ?ICatalogAnchor $anchor = null): self {
+	/** @param ?callable(int, int): void $progress index files downloaded so far, and in all (see BlobIndex::load()) */
+	public static function openWithKey(IBackend $backend, KeyRing $keys, ?IIndexCache $cache = null, ?ICatalogAnchor $anchor = null, ?callable $progress = null): self {
 		$config = self::readConfig($backend);
 		try {
 			$ok = isset($config['check']) && (new StreamCipher($keys))->decryptString((string)base64_decode($config['check'], true), 'config-check') === $config['id'];
@@ -95,7 +96,7 @@ final class Repository {
 		if ($cache !== null) {
 			$repo->index->setCache($cache, $config['id']);
 		}
-		$repo->index->load();
+		$repo->index->load(false, $progress);
 		$repo->loadCatalog($anchor);
 		return $repo;
 	}
@@ -771,16 +772,48 @@ final class Repository {
 			$ranges[] = [$curPath, $curOffset, $curLength];
 			$parts[] = $curParts;
 		}
-		foreach ($this->backend->getRanges($ranges) as $i => $data) {
-			foreach ($parts[$i] as [$id, $at, $length]) {
-				yield $this->decodeBlob($id, substr($data, $at, $length));
+		$done = 0;
+		try {
+			foreach ($this->backend->getRanges($ranges) as $i => $data) {
+				foreach ($parts[$i] as [$id, $at, $length]) {
+					yield $this->decodeBlob($id, substr($data, $at, $length));
+					$done++;
+				}
+			}
+		} catch (BackendException $e) {
+			// A pack moved (see loadBlob()): the rest one blob at a time, from the fresh index.
+			$this->refreshIndex($e);
+			foreach (array_slice($ids, $done) as $id) {
+				yield $this->loadBlob($id);
 			}
 		}
 	}
 
 	private function loadBlob(string $id): string {
 		[$pack, $offset, $length] = $this->index->get($id);
-		return $this->decodeBlob($id, $this->packReader->read($pack, $offset, $length));
+		try {
+			$encrypted = $this->packReader->read($pack, $offset, $length);
+		} catch (BackendException $e) {
+			// Another server's cleanup may have repacked this blob into a new pack since the index
+			// was loaded (a disaster recovery test while the original server still runs). Reload
+			// the index from the location; read again only if the blob has moved.
+			$this->refreshIndex($e);
+			[$moved, $offset, $length] = $this->index->get($id);
+			if ($moved === $pack) {
+				throw $e;
+			}
+			$encrypted = $this->packReader->read($moved, $offset, $length);
+		}
+		return $this->decodeBlob($id, $encrypted);
+	}
+
+	/** Reload the index from the location after a failed pack read; rethrows that failure if it cannot. */
+	private function refreshIndex(BackendException $cause): void {
+		try {
+			$this->index->load();
+		} catch (\Throwable) {
+			throw $cause;
+		}
 	}
 
 	/** Decrypts and checks a blob read from its pack; throws when it is corrupted or tampered with. */

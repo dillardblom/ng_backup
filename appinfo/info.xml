@@ -3,13 +3,45 @@
     xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
     <id>ng_backup</id>
     <name>NG Backup</name>
-    <summary>Encrypted, incremental backups of your Nextcloud with restore from the web interface</summary>
-    <description><![CDATA[Release candidate for 1.0.0: scheduled, encrypted, incremental backups of the database, config and data
-directory to S3, SFTP, WebDAV, FTP, SMB or a local path, with restore of files and folders, of
-single users (via user_migration) and of the whole server onto a fresh installation. Tested
-thoroughly and usable alongside your current backup, but not yet a drop-in replacement for it.
-See the README for known limitations and the recovery kit before relying on it.]]></description>
-    <version>0.9.7</version>
+    <summary>Encrypted, incremental backups of your Nextcloud — files, database and config — with restore from the web interface</summary>
+    <description><![CDATA[Back up your whole Nextcloud — data directory, database and configuration — encrypted and
+incremental, to storage you choose. Restore single files, folders, a user, or the whole server from
+the web interface or `occ`. No shell access or external tools needed, so it also runs on Nextcloud
+All-in-One and hosted Nextcloud.
+
+**Where to**
+- S3 and S3-compatible storage, SFTP, WebDAV, SMB, FTP, Swift or a local path (NFS mount), through
+  the connection code of the External storage app. A location is never mounted and never shows up
+  in Files.
+
+**How**
+- Deduplicated, compressed and encrypted (XChaCha20-Poly1305) on the server before upload, streamed
+  straight to the location: no local copy, no double disk space. Unchanged files are not read again.
+- Database dump through Nextcloud's own connection, in one consistent transaction (PostgreSQL,
+  MySQL/MariaDB, SQLite).
+- Runs in short steps from the background jobs, so a server or container restart does not lose a
+  running backup.
+- Daily schedule, retention policy, and `occ backup:verify` (optionally `--deep`) to check that a
+  backup can be read.
+
+**Safe**
+- Up to three passphrases plus a recovery kit; the passphrase is the actual key.
+- Deletion delay and append-only locations against ransomware or a compromised server; S3 object
+  lock supported.
+- Admin notifications on failures, stale backups and changes to keys and locations.
+
+**Restore**
+- Files and folders into a new folder, merged, or replacing the original — through Nextcloud, so
+  overwritten files keep a version and removed ones go to the trash.
+- One user (account, files, calendars, contacts) via user_migration.
+- The whole server onto a fresh installation (disaster recovery).
+
+Read "Known limitations" in the README before you rely on it, and test a restore. Feedback is very
+welcome: use the "Share your experience" link on the admin page.
+
+Developed and sponsored by [Ensembia](https://www.ensembia.com), which also offers paid help with
+restoring a backup after a crash.]]></description>
+    <version>0.9.8</version>
     <licence>agpl</licence>
     <author mail="dillard.blom@ensembia.com">Dillard Blom</author>
     <namespace>NgBackup</namespace>

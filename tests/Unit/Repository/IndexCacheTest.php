@@ -54,6 +54,24 @@ class IndexCacheTest extends TestCase {
 		$this->assertCount(12, self::hashTree($target));
 	}
 
+	/** Connecting a new server to a location with backups reports how far reading the index is. */
+	public function testOpeningReportsIndexProgress(): void {
+		$src = $this->tempDir();
+		for ($i = 0; $i < 6; $i++) {
+			file_put_contents("$src/f$i", random_bytes(3 * 1048576));
+		}
+		$backend = new LocalBackend($this->tempDir());
+		$keys = KeyRing::generate();
+		Repository::initWithKey($backend, $keys, $keys->wrap('pw'))->backupDirectory($src);
+		$files = count($backend->list('index'));
+		$seen = [];
+		Repository::openWithKey($backend, $keys, null, null, function (int $done, int $total) use (&$seen): void {
+			$seen[] = [$done, $total];
+		});
+		$this->assertCount($files, $seen);
+		$this->assertSame([$files, $files], end($seen));
+	}
+
 	/** The database dump reads in a read-only transaction: a pack that fills up then must not write the cache yet. */
 	public function testHeldCacheWritesWaitForRelease(): void {
 		$cache = new class implements IIndexCache {

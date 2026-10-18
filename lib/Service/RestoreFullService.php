@@ -43,34 +43,55 @@ final class RestoreFullService {
 	) {
 	}
 
+	/** Apps that only exist in a particular setup and are never needed elsewhere. */
+	private const ENVIRONMENT_APPS = ['nextcloud-aio'];
+
 	/**
-	 * Whether this installation can receive $snapshotId: same Nextcloud major version, and every
-	 * app that was enabled at backup time already installed here (its tables must exist before
-	 * the database restore can write into them).
+	 * Whether this installation can receive $snapshotId, all problems at once:
+	 * - the same Nextcloud major version is required;
+	 * - apps that were enabled at backup time but are not here (they work again once installed);
+	 * - tables in the backup that do not exist here: a backup made from 1.0.0-rc.2 on records
+	 *   their structure and the restore creates them, an older one cannot (missingTables).
 	 *
-	 * @return array{ok:bool, currentMajor:string, snapshotMajor:string, missingApps:list<string>}
+	 * @return array{ok:bool, currentMajor:string, snapshotMajor:string, missingApps:list<string>, missingTables:list<string>}
 	 */
-	public function checkCompatibility(Target $target, string $snapshotId): array {
-		$meta = $this->targets->repository($target)->snapshotMeta($snapshotId);
+	public function checkCompatibility(Target $target, string $snapshotId, bool $skipMissingTables = false): array {
+		$repo = $this->targets->repository($target);
+		$meta = $repo->snapshotMeta($snapshotId);
 		$currentMajor = explode('.', $this->config->getSystemValueString('version'))[0];
 		$snapshotMajor = explode('.', (string)($meta['nextcloud'] ?? ''))[0];
 		$enabled = array_flip($this->appManager->getEnabledApps());
-		$missingApps = array_values(array_diff(array_keys($meta['apps'] ?? []), array_keys($enabled)));
+		$missingApps = array_values(array_diff(array_keys($meta['apps'] ?? []), array_keys($enabled), self::ENVIRONMENT_APPS));
+		$missingTables = [];
+		$prefixMismatch = null;
+		if (isset($meta['db'])) {
+			$manifest = json_decode($repo->getObject($meta['db']), true, 512, JSON_THROW_ON_ERROR);
+			$prefix = $this->config->getSystemValueString('dbtableprefix', 'oc_');
+			$sourcePrefix = DbDumper::dumpPrefix($manifest);
+			if ($sourcePrefix !== null && $sourcePrefix !== $prefix) {
+				$prefixMismatch = [$sourcePrefix, $prefix];
+			}
+			$dumper = new DbDumper($this->db->getInner(), $prefix);
+			$missingTables = array_values(array_filter($dumper->missingTables($manifest),
+				fn (string $t) => !isset($manifest['tables'][$t]['schema']) && !str_starts_with($t, $prefix . 'ngb_')));
+		}
 		return [
-			'ok' => $currentMajor === $snapshotMajor && $missingApps === [],
+			'ok' => $currentMajor === $snapshotMajor && $prefixMismatch === null && ($missingTables === [] || $skipMissingTables),
 			'currentMajor' => $currentMajor,
 			'snapshotMajor' => $snapshotMajor,
 			'missingApps' => $missingApps,
+			'missingTables' => $prefixMismatch === null ? $missingTables : [],
+			'prefixMismatch' => $prefixMismatch,
 		];
 	}
 
-	/** @return array{dbReport:array, dataFiles:int, configKeys:int, dbConsistent:bool} */
-	public function restoreFull(Target $target, string $snapshotId): array {
-		$check = $this->checkCompatibility($target, $snapshotId);
+	/** @return array{dbReport:array, dataFiles:int, configKeys:int, dbConsistent:bool, missingApps:list<string>} */
+	public function restoreFull(Target $target, string $snapshotId, bool $skipMissingTables = false): array {
+		$check = $this->checkCompatibility($target, $snapshotId, $skipMissingTables);
 		if (!$check['ok']) {
 			throw new \RuntimeException($this->describeBlockers($check));
 		}
-		return $this->withSharedLock($target, function (callable $refresh) use ($target, $snapshotId) {
+		return $this->withSharedLock($target, function (callable $refresh) use ($target, $snapshotId, $skipMissingTables, $check) {
 			$beat = LeaseService::throttled($refresh);
 			$repo = $this->targets->repository($target);
 			$meta = $repo->snapshotMeta($snapshotId);
@@ -102,7 +123,7 @@ final class RestoreFullService {
 				$ownAppConfig = $this->preserveOwnAppConfig();
 				$dumper = new DbDumper($this->db->getInner(), $prefix);
 				try {
-					$dumper->restore($repo, $manifest, $dbReport, $beat);
+					$dumper->restore($repo, $manifest, $dbReport, $beat, $skipMissingTables);
 				} finally {
 					$this->restoreOwnAppConfig($ownAppConfig);
 				}
@@ -125,8 +146,8 @@ final class RestoreFullService {
 				);
 			}
 
-			return ['dbReport' => $dbReport ?? ['skipped' => [], 'restored' => []], 'dataFiles' => $dataFiles, 'configKeys' => count($backupConfig),
-				'dbConsistent' => (bool)($manifest['consistent'] ?? true)];
+			return ['dbReport' => $dbReport ?? ['skipped' => [], 'restored' => [], 'created' => [], 'missing' => []], 'dataFiles' => $dataFiles, 'configKeys' => count($backupConfig),
+				'dbConsistent' => (bool)($manifest['consistent'] ?? true), 'missingApps' => $check['missingApps']];
 		});
 	}
 
@@ -209,11 +230,15 @@ final class RestoreFullService {
 		if ($check['currentMajor'] !== $check['snapshotMajor']) {
 			$parts[] = "this installation is Nextcloud {$check['currentMajor']}, the backup is from {$check['snapshotMajor']} (same major version required)";
 		}
-		if ($check['missingApps'] !== []) {
-			$parts[] = 'install these apps first (their tables must exist before the database restore can use them): '
-				. implode(', ', array_map(fn (string $a) => "occ app:install $a", $check['missingApps']));
+		if (($check['prefixMismatch'] ?? null) !== null) {
+			[$source, $here] = $check['prefixMismatch'];
+			$parts[] = "the backup's tables use the prefix '$source', this installation '$here': install Nextcloud again with 'dbtableprefix' => '$source' in config/config.php before occ maintenance:install, and restore again";
 		}
-		return implode('; ', $parts);
+		if ($check['missingTables'] !== []) {
+			$prefix = $this->config->getSystemValueString('dbtableprefix', 'oc_');
+			$parts[] = DbDumper::describeMissing($check['missingTables'], $prefix);
+		}
+		return implode("\n", $parts);
 	}
 
 	private function withSharedLock(Target $target, callable $fn): mixed {
