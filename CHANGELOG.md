@@ -38,7 +38,8 @@ All-in-One onto a plain Nextcloud with PostgreSQL).
   restore commits.
 - `occ backup:target:add` without a key pointed to `backup:key:init`, which makes a new key that
   cannot read existing backups. It now points to `backup:key:import` for a restore, and says that
-  connecting to a location with backups can take a while.
+  connecting to a location with backups can take a while. While it reads the index of a location
+  with backups, it shows how far it is and about how long it still takes.
 - A restore stopped with "Not found: packs/..." when the location was cleaned up while it ran,
   for example by the weekly cleanup of the original server during a recovery test on a second
   server: blobs that were moved into new packs were still looked for in the old ones. A restore

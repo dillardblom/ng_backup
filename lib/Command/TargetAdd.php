@@ -64,16 +64,50 @@ HELP);
 			return 1;
 		}
 		// Adopting an existing repository reads its whole index first, which takes a while on a
-		// large backup or a slow line; say so instead of looking stuck.
-		$output->writeln('Connecting to the location; with existing backups this reads their index first and can take a while ...');
+		// large backup or a slow line; show how far it is instead of looking stuck.
+		$output->writeln('Connecting to the location; with existing backups this reads their index first ...');
 		try {
-			$r = $this->targets->add($input->getArgument('name'), $input->getArgument('backend'), $input->getOption('auth'), $options, (string)$input->getOption('path'));
+			$r = $this->targets->add($input->getArgument('name'), $input->getArgument('backend'), $input->getOption('auth'), $options,
+				(string)$input->getOption('path'), self::progress($output));
 		} catch (\Throwable $e) {
+			if ($output->isDecorated()) {
+				$output->write("\r\033[K"); // clear an unfinished progress line
+			}
 			$output->writeln('<error>' . $e->getMessage() . '</error>');
 			return 1;
 		}
 		$output->writeln(sprintf('Location <info>%s</info> added (id %d), repository %s %s.', $r['target']->getName(), $r['target']->getId(),
 			$r['target']->getRepositoryId(), $r['created'] ? 'created' : 'found and adopted'));
 		return 0;
+	}
+
+	/**
+	 * Progress of reading the index: on a terminal one line that is updated in place, otherwise
+	 * (a log, a pipe) a line every 30 seconds. The time left is estimated from the rate so far.
+	 *
+	 * @return callable(int, int): void
+	 */
+	private static function progress(OutputInterface $output): callable {
+		$start = microtime(true);
+		$shown = 0.0;
+		$inPlace = $output->isDecorated();
+		return static function (int $done, int $total) use ($output, $start, &$shown, $inPlace): void {
+			$now = microtime(true);
+			if ($done < $total && $now - $shown < ($inPlace ? 1 : 30)) {
+				return;
+			}
+			$shown = $now;
+			$line = sprintf('Reading the index: %s/%s files (%d%%)', number_format($done), number_format($total), intdiv(100 * $done, max(1, $total)));
+			$elapsed = $now - $start;
+			if ($done < $total && $done > 0 && $elapsed >= 5) {
+				$left = (int)ceil($elapsed / (float)$done * (float)($total - $done) / 60.0);
+				$line .= $left <= 1 ? ', less than a minute left' : sprintf(', about %d min left', $left);
+			}
+			if ($inPlace) {
+				$output->write("\r\033[K" . $line . ($done >= $total ? "\n" : ''));
+			} else {
+				$output->writeln($line);
+			}
+		};
 	}
 }

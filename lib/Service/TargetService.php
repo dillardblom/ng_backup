@@ -48,15 +48,16 @@ final class TargetService {
 	 * installation's key), then save it.
 	 *
 	 * @param array<string, mixed> $options
+	 * @param ?callable(int, int): void $progress reading an existing repository's index: files done, and in all
 	 * @return array{target: Target, created: bool}
 	 */
-	public function add(string $name, string $backend, string $auth, array $options, string $basePath): array {
+	public function add(string $name, string $backend, string $auth, array $options, string $basePath, ?callable $progress = null): array {
 		$this->validateName($name);
 		$this->requireUsableBackend($backend);
 		$keys = $this->keys->keyRing();
 		$storageBackend = $this->buildBackend($backend, $auth, $options, $basePath);
 		if ($storageBackend->exists('config')) {
-			$repo = Repository::openWithKey($storageBackend, $keys, $this->indexCache, $this->anchor);
+			$repo = Repository::openWithKey($storageBackend, $keys, $this->indexCache, $this->anchor, $progress);
 			$created = false;
 		} else {
 			$repo = Repository::initWithKey($storageBackend, $keys, $this->keys->wrappedKey(), $this->anchor);

@@ -59,8 +59,9 @@ Import it; you type the passphrase yourself:
 
 It shows the key fingerprint: it must match the one of your old server (on the recovery kit).
 
-**5. Add the backup location** with the same details as before. This can take a while on a large
-backup (the index is read first) and shows nothing until it is done.
+**5. Add the backup location** with the same details as before. On a large backup this first reads
+the index and shows how far it is, for example
+`Reading the index: 6,913/26,791 files (25%), about 12 min left`.
 
     occ backup:target:add offsite sftp -a password::password -o host=... -o user=... -o password=... -o root=... --path=...
 

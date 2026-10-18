@@ -81,7 +81,8 @@ final class Repository {
 	}
 
 	/** Open with the master key the server holds (scheduled backups, no passphrase needed). */
-	public static function openWithKey(IBackend $backend, KeyRing $keys, ?IIndexCache $cache = null, ?ICatalogAnchor $anchor = null): self {
+	/** @param ?callable(int, int): void $progress index files downloaded so far, and in all (see BlobIndex::load()) */
+	public static function openWithKey(IBackend $backend, KeyRing $keys, ?IIndexCache $cache = null, ?ICatalogAnchor $anchor = null, ?callable $progress = null): self {
 		$config = self::readConfig($backend);
 		try {
 			$ok = isset($config['check']) && (new StreamCipher($keys))->decryptString((string)base64_decode($config['check'], true), 'config-check') === $config['id'];
@@ -95,7 +96,7 @@ final class Repository {
 		if ($cache !== null) {
 			$repo->index->setCache($cache, $config['id']);
 		}
-		$repo->index->load();
+		$repo->index->load(false, $progress);
 		$repo->loadCatalog($anchor);
 		return $repo;
 	}
