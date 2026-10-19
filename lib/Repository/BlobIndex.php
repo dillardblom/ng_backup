@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace OCA\NgBackup\Repository;
 
+use OCA\NgBackup\Backend\BackendException;
 use OCA\NgBackup\Backend\IBackend;
 use OCA\NgBackup\Crypto\StreamCipher;
 
@@ -104,6 +105,11 @@ final class BlobIndex {
 				$fetch[] = $path;
 			}
 		}
+		if ($present === [] && $cached !== []) {
+			// A repository never loses all its index files: an empty listing is a connection that
+			// failed quietly. Taken as is, it would empty the index and the cache.
+			throw new BackendException('The location listed no index files, while ' . count($cached) . ' are known: not trusting that listing');
+		}
 		// The rest is downloaded several at a time where the location allows it: on a large
 		// repository these are tens of thousands of small files. getMany() keeps their order, so
 		// the cached packs listed before each one are added first.
@@ -192,6 +198,39 @@ final class BlobIndex {
 	}
 
 	/** @return array<string, list<array{id:string, offset:int, length:int}>> packId => blobs currently located in that pack */
+	/**
+	 * Add the index files that appeared on the location since load(), such as those of packs
+	 * another server's cleanup wrote while a restore runs. Only adds and updates: a blob is
+	 * never dropped, as a listing that misses files (a connection that failed) must not make a
+	 * restore lose blobs it knows. A blob in a new pack takes that pack's place.
+	 */
+	public function refresh(): void {
+		$known = array_flip(array_map(fn (array $b): string => $b[0], $this->blobs));
+		$fetch = [];
+		$listed = 0;
+		foreach ($this->backend->listFiles('index') as $path) {
+			$listed++;
+			if (!isset($known[basename($path)])) {
+				$fetch[] = $path;
+			}
+		}
+		if ($listed === 0 && $this->blobs !== []) {
+			throw new BackendException('The location listed no index files, while ' . count($known) . ' are known: not trusting that listing');
+		}
+		$toCache = [];
+		foreach ($this->backend->getMany($fetch) as $path => $data) {
+			$packId = basename($path);
+			/** @var list<array{id:string, offset:int, length:int, raw:int, flags:int}> $entries authenticated: written by NG Backup */
+			$entries = json_decode($this->cipher->decryptString($data, 'index:' . $packId), true, 512, JSON_THROW_ON_ERROR);
+			$this->downloaded++;
+			$this->add($packId, $entries);
+			$toCache[$packId] = $entries;
+		}
+		if ($toCache !== []) {
+			$this->cache?->putMany($this->repositoryId, $toCache);
+		}
+	}
+
 	public function packs(): array {
 		$packs = [];
 		foreach ($this->blobs as $id => [$pack, $offset, $length]) {

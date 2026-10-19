@@ -7,6 +7,22 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
+## [1.0.0-rc.5] - 2026-10-20
+
+Fifth release candidate for 1.0.0; the app version is 0.9.11. A full restore of 1 TB over SFTP
+stopped after 13 hours with "Blob not in index"; the backup itself was fine.
+
+### Fixed
+- A full restore no longer stops with "Blob not in index" after a pack could not be read for a
+  moment. Reading the index again then got an empty listing (from a connection the location had
+  dropped) and emptied the index. Reading the index again now only adds, an empty listing of a
+  location that has an index is an error instead of an empty index, and a pack that could not be
+  read is read once more before the restore gives up.
+- An SFTP connection that a Hetzner Storage Box dropped without phpseclib noticing is now
+  recognised and replaced: the check asks the server and counts its answer.
+- The extra connection a full restore reads ahead on is replaced when it breaks (up to 20 times),
+  instead of reading the rest of the restore the slow way.
+
 ## [1.0.0-rc.4] - 2026-10-19
 
 Fourth release candidate for 1.0.0; the app version is 0.9.10. 1.0.0-rc.3 (0.9.9) was not

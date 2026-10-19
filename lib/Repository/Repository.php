@@ -841,9 +841,9 @@ final class Repository {
 					$done++;
 				}
 			}
-		} catch (BackendException $e) {
-			// A pack moved (see loadBlob()): the rest one blob at a time, from the fresh index.
-			$this->refreshIndex($e);
+		} catch (BackendException) {
+			// A pack moved, or the read failed for a while (see loadBlob()): the rest one blob at a
+			// time, each read once more after a failure.
 			foreach (array_slice($ids, $done) as $id) {
 				yield $this->loadBlob($id);
 			}
@@ -872,25 +872,23 @@ final class Repository {
 			$encrypted = $this->packReader->read($pack, $offset, $length);
 		} catch (BackendException $e) {
 			// Another server's cleanup may have repacked this blob into a new pack since the index
-			// was loaded (a disaster recovery test while the original server still runs). Reload
-			// the index from the location; read again only if the blob has moved.
-			$this->refreshIndex($e);
+			// was loaded (a disaster recovery test while the original server still runs): add the
+			// new index files, and read the blob where it is now. Or the read failed for a while
+			// (a connection that died; the backend has replaced it by now): then read it once
+			// more where it was. A second failure is the real one.
+			try {
+				$this->index->refresh();
+			} catch (\Throwable) {
+				// the location could not be listed either: read again where the blob was
+			}
 			[$moved, $offset, $length] = $this->index->get($id);
-			if ($moved === $pack) {
+			try {
+				$encrypted = $this->packReader->read($moved, $offset, $length);
+			} catch (BackendException) {
 				throw $e;
 			}
-			$encrypted = $this->packReader->read($moved, $offset, $length);
 		}
 		return $this->decodeBlob($id, $encrypted);
-	}
-
-	/** Reload the index from the location after a failed pack read; rethrows that failure if it cannot. */
-	private function refreshIndex(BackendException $cause): void {
-		try {
-			$this->index->load();
-		} catch (\Throwable) {
-			throw $cause;
-		}
 	}
 
 	/** Decrypts and checks a blob read from its pack; throws when it is corrupted or tampered with. */

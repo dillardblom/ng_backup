@@ -184,6 +184,38 @@ class SftpRangeFetcherTest extends TestCase {
 		$this->assertSame(array_fill(0, 10, null), $result);
 	}
 
+	public function testABrokenConnectionIsReplacedAndTheRestIsReadAhead(): void {
+		$connections = $this->connections(1, [['loseAt' => 1048576]]);
+		$made = [];
+		$connect = function () use (&$made): object {
+			$made[] = $c = new FakeSftpConnection($this->files);
+			return SftpReadStream::connection(new FakeSftpStorage($c));
+		};
+		$ranges = $this->ranges();
+
+		$result = self::collect(SftpRangeFetcher::fetch(self::opened($connections), '/home/', $ranges, $this->tempDir(), $connect));
+
+		$expected = $this->expected($ranges);
+		$expected[0] = null; // the range it was reading when it broke: read the usual way
+		$this->assertSame($expected, $result);
+		$this->assertCount(1, $made);
+		$this->assertTrue($made[0]->disconnected, 'the new one ends with the fetcher too');
+	}
+
+	public function testConnectionsThatKeepBreakingAreReplacedOnlySoOften(): void {
+		$made = 0;
+		$connect = function () use (&$made): object {
+			$made++;
+			return SftpReadStream::connection(new FakeSftpStorage(new FakeSftpConnection($this->files, loseAt: 0)));
+		};
+		$ranges = array_merge($this->ranges(), $this->ranges(), $this->ranges());
+
+		$result = self::collect(SftpRangeFetcher::fetch(self::opened($this->connections(1, [['loseAt' => 0]])), '/home/', $ranges, $this->tempDir(), $connect));
+
+		$this->assertSame(array_fill(0, count($ranges), null), $result);
+		$this->assertSame(SftpRangeFetcher::MAX_RECONNECTS, $made);
+	}
+
 	public function testStoppingHalfwayEndsTheConnectionsAndLeavesNothingBehind(): void {
 		$connections = $this->connections(2);
 		$spool = $this->tempDir();

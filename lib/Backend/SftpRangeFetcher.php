@@ -54,6 +54,9 @@ final class SftpRangeFetcher {
 	private const FXF_READ = 1;
 	private const FX_OK = 0;
 
+	/** Connections that broke and are replaced, at most, in one restore. */
+	public const MAX_RECONNECTS = 20;
+
 	private const OPEN = 0;
 	private const READ = 1;
 	private const CLOSE = 2;
@@ -65,6 +68,8 @@ final class SftpRangeFetcher {
 	/** @var array<int, resource|null> ranges read (or failed) and not yet given to the caller */
 	private array $done = [];
 	private int $requestId = 0x4e520000;
+	/** Connections replaced so far (see MAX_RECONNECTS). */
+	public int $reconnects = 0;
 
 	/**
 	 * @param array<int, object> $connections phpseclib 2 connections with their SFTP channel open
@@ -75,6 +80,7 @@ final class SftpRangeFetcher {
 		private string $root,
 		private array $ranges,
 		private string $spool,
+		private ?\Closure $connect = null,
 	) {
 		foreach (array_keys($connections) as $c) {
 			$this->chunks[$c] = self::CHUNK;
@@ -86,10 +92,12 @@ final class SftpRangeFetcher {
 	 *
 	 * @param list<object> $connections
 	 * @param list<array{0:string, 1:int, 2:int}> $ranges
+	 * @param (\Closure():?object)|null $connect a new connection in place of one that broke
+	 *                                         (null when it cannot be made)
 	 * @return \Generator<int, resource|null>
 	 */
-	public static function fetch(array $connections, string $root, array $ranges, string $spool): \Generator {
-		$fetcher = new self($connections, rtrim($root, '/'), $ranges, $spool);
+	public static function fetch(array $connections, string $root, array $ranges, string $spool, ?\Closure $connect = null): \Generator {
+		$fetcher = new self($connections, rtrim($root, '/'), $ranges, $spool, $connect);
 		try {
 			yield from $fetcher->run();
 		} finally {
@@ -319,6 +327,27 @@ final class SftpRangeFetcher {
 		}
 		self::disconnect($this->connections[$c]);
 		unset($this->connections[$c]);
+		// A long restore outlives connections (a Storage Box drops one now and then): without a
+		// new one, the rest would be read the slow way.
+		if ($this->connect === null || $this->reconnects >= self::MAX_RECONNECTS) {
+			return;
+		}
+		$this->reconnects++;
+		try {
+			$new = ($this->connect)();
+		} catch (\Throwable) {
+			$new = null;
+		}
+		if (function_exists('OCP\Log\logger')) {
+			\OCP\Log\logger('ng_backup')->info($new === null
+				? 'Reading ahead: an SFTP connection broke and no new one could be made'
+				: 'Reading ahead: an SFTP connection broke; reading on with a new one');
+		}
+		if ($new !== null) {
+			$key = max(array_merge(array_keys($this->chunks), [-1])) + 1;
+			$this->connections[$key] = $new;
+			$this->chunks[$key] = self::CHUNK;
+		}
 	}
 
 	/** @return resource|null a new file in the spool, already unlinked: nothing is left behind if the process dies */
