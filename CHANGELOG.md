@@ -7,7 +7,10 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
-## [Unreleased]
+## [1.0.0-rc.4] - 2026-10-19
+
+Fourth release candidate for 1.0.0; the app version is 0.9.10. 1.0.0-rc.3 (0.9.9) was not
+released: its fixes are in here.
 
 ### Changed
 - A full restore over SFTP reads the packs ahead on a connection of its own, 32 requests in
@@ -15,6 +18,7 @@ instead carried by the app description, the git tag, the release, and this file.
   Canada (122 ms) packs now come in at about 14 MiB/s instead of 2.8. More connections can be set
   with `restore_sftp_connections` (README). A part that cannot be read this way is read as
   before. Restores from other locations work as before.
+- App store description: the line about Ensembia.
 
 ### Fixed
 - After a full restore stopped halfway, running it again with `--force` was refused when the
