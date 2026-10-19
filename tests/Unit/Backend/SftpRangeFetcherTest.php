@@ -79,9 +79,9 @@ class SftpRangeFetcherTest extends TestCase {
 	}
 
 	public function testKeepsSeveralRequestsInFlightOnEachConnection(): void {
-		$this->files['/home/repo/packs/big'] = random_bytes(6 * 1048576);
+		$this->files['/home/repo/packs/big'] = random_bytes(10 * 1048576);
 		$connections = $this->connections(2);
-		self::collect(SftpRangeFetcher::fetch(self::opened($connections), '/home/', [['repo/packs/big', 0, 6 * 1048576], ['repo/packs/big', 5, 6 * 1048576 - 5]], $this->tempDir()));
+		self::collect(SftpRangeFetcher::fetch(self::opened($connections), '/home/', [['repo/packs/big', 0, 10 * 1048576], ['repo/packs/big', 5, 10 * 1048576 - 5]], $this->tempDir()));
 
 		$this->assertSame(SftpRangeFetcher::DEPTH, $connections[0]->maxInFlight);
 		$this->assertSame(SftpRangeFetcher::DEPTH, $connections[1]->maxInFlight);

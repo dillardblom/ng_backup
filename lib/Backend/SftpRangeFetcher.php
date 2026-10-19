@@ -11,10 +11,9 @@ namespace OCA\NgBackup\Backend;
  * Reads byte ranges of files on an SFTP location ahead of use, over several connections at once,
  * into local files (StorageBackend::readAhead(), for a full restore).
  *
- * One connection is bound by the round trip and by what a single TCP connection gets over a long
- * line: a restore from a Hetzner Storage Box to Canada (RTT 122 ms) reached about 2 MiB/s, with
- * the PHP process mostly waiting. Here every connection reads its own range with DEPTH requests
- * in flight. PHP runs one thing at a time: while it waits for an answer on one connection, the
+ * A restore that reads its packs as it goes is bound by the round trip: from a Hetzner Storage
+ * Box to Canada (RTT 122 ms) it reached about 2.8 MiB/s, with the PHP process mostly waiting.
+ * Here every connection reads its own range with DEPTH requests in flight, ahead of the restore. PHP runs one thing at a time: while it waits for an answer on one connection, the
  * answers of the others arrive in the kernel's buffers, so the connections still transfer at the
  * same time.
  *
@@ -24,10 +23,17 @@ namespace OCA\NgBackup\Backend;
  * for the caller to read the usual way; a broken connection is not used again.
  */
 final class SftpRangeFetcher {
-	/** Connections used at once by a full restore. A Hetzner Storage Box allows 10 per account. */
-	public const CONNECTIONS = 4;
+	/**
+	 * Connections a full restore uses, unless the app setting restore_sftp_connections says
+	 * otherwise. One: a Hetzner Storage Box gave about 14 MiB/s on one connection with DEPTH
+	 * requests in flight, and 4-6 MiB/s on 2 or 4 (it reads from disks, and parallel readers make
+	 * them seek). On a line with packet loss to a server that handles parallel reads well, 4
+	 * connections did better (21 against 14 MiB/s).
+	 */
+	public const DEFAULT_CONNECTIONS = 1;
+	public const MAX_CONNECTIONS = 8;
 	/** READ requests in flight per connection. */
-	public const DEPTH = 16;
+	public const DEPTH = 32;
 	/** Ranges read ahead of the one the caller is at, in flight or waiting in the spool. */
 	public const AHEAD = 8;
 	/**

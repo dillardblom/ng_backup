@@ -287,7 +287,10 @@ final class TargetService {
 
 	private function buildBackend(string $backend, string $auth, array $options, string $basePath, bool $createBase = true): StorageBackend {
 		$create = fn (): IStorage => $this->factory()->create($backend, $auth, $options);
-		return new StorageBackend($create(), $basePath, $createBase, $create);
+		$storage = new StorageBackend($create(), $basePath, $createBase, $create);
+		$storage->readAheadConnections = Server::get(\OCP\IAppConfig::class)
+			->getValueInt('ng_backup', 'restore_sftp_connections', \OCA\NgBackup\Backend\SftpRangeFetcher::DEFAULT_CONNECTIONS);
+		return $storage;
 	}
 
 	private ?ExternalStorageFactory $factory = null;

@@ -191,7 +191,7 @@ if [ "$MODE" = sftp ]; then
 	LOGINS=$(( $(sftp_logins) - LOGINS_BEFORE ))
 	[ "$LOGINS" -gt 1 ] || fail "the restore did not read ahead on connections of its own ($LOGINS SFTP logins)"
 	docker exec ngb-frt-restore sh -c 'ls -a /var/www/html/data' | grep -q ngb-restore-spool && fail "the spool folder was left behind"
-	ok "over SFTP: read ahead on $LOGINS connections, large file identical, no spool left"
+	ok "over SFTP: read ahead on connections of its own ($LOGINS SFTP logins during the restore), large file identical, no spool left"
 fi
 
 run_on ngb-frt-restore backup:run offsite -l post-restore-check >/dev/null || fail "a new backup after the restore fails"

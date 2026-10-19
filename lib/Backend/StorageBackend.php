@@ -29,6 +29,8 @@ final class StorageBackend implements IBackend, IReadsAhead {
 	/** Seconds without a request after which an SFTP connection is checked before it is used. */
 	public const IDLE_CHECK = 60;
 	private float $lastUsed;
+	/** Connections readAhead() opens (see SftpRangeFetcher::DEFAULT_CONNECTIONS). */
+	public int $readAheadConnections = SftpRangeFetcher::DEFAULT_CONNECTIONS;
 	/** Times the storage was built anew after its connection died (for tests and diagnostics). */
 	public int $reconnects = 0;
 
@@ -244,7 +246,7 @@ final class StorageBackend implements IBackend, IReadsAhead {
 	}
 
 	/**
-	 * Over SFTP: SftpRangeFetcher, on CONNECTIONS new connections of its own (built with the
+	 * Over SFTP: SftpRangeFetcher, on readAheadConnections new connections of its own (built with the
 	 * reconnect function), so the storage's connection stays free for other requests. Elsewhere
 	 * not (yet): null.
 	 */
@@ -262,7 +264,8 @@ final class StorageBackend implements IBackend, IReadsAhead {
 		$storages = [];
 		$connections = [];
 		$root = '';
-		for ($n = 0; $n < SftpRangeFetcher::CONNECTIONS; $n++) {
+		$wanted = max(1, min(SftpRangeFetcher::MAX_CONNECTIONS, $this->readAheadConnections));
+		for ($n = 0; $n < $wanted; $n++) {
 			try {
 				$storage = $reconnect();
 				$sftp = SftpReadStream::connection($storage);

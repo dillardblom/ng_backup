@@ -53,6 +53,7 @@ class StorageBackendReadAheadTest extends TestCase {
 
 	public function testReadsAheadOnNewConnectionsOnly(): void {
 		$backend = new StorageBackend($this->storage(), 'base/repo', false, fn (): IStorage => $this->storage());
+		$backend->readAheadConnections = 4;
 		$this->assertTrue($backend->canReadAhead());
 
 		$result = [];
@@ -62,7 +63,7 @@ class StorageBackendReadAheadTest extends TestCase {
 
 		$expected = array_map(fn (int $i): string => sha1(substr($this->files["/home/base/repo/packs/p$i"], 7, 1048576 - 7)), range(0, 5));
 		$this->assertSame($expected, $result);
-		$this->assertCount(1 + SftpRangeFetcher::CONNECTIONS, $this->connections);
+		$this->assertCount(1 + 4, $this->connections);
 		$this->assertSame(0, $this->connections[0]->sent, 'the storage\'s own connection stays free');
 		foreach (array_slice($this->connections, 1) as $c) {
 			$this->assertTrue($c->disconnected);
@@ -72,6 +73,7 @@ class StorageBackendReadAheadTest extends TestCase {
 	public function testGoesOnWithTheConnectionsTheServerAllows(): void {
 		$this->connectLimit = 3;
 		$backend = new StorageBackend($this->storage(), 'base/repo', false, fn (): IStorage => $this->storage());
+		$backend->readAheadConnections = 4;
 
 		$count = 0;
 		foreach ($backend->readAhead(self::ranges(), $this->tempDir()) as $fh) {
@@ -81,6 +83,16 @@ class StorageBackendReadAheadTest extends TestCase {
 
 		$this->assertSame(6, $count);
 		$this->assertCount(3, $this->connections);
+	}
+
+	public function testByDefaultOneConnectionNextToTheStoragesOwn(): void {
+		$backend = new StorageBackend($this->storage(), 'base/repo', false, fn (): IStorage => $this->storage());
+		foreach ($backend->readAhead(self::ranges(), $this->tempDir()) as $fh) {
+			$this->assertIsResource($fh);
+		}
+
+		$this->assertSame(1, SftpRangeFetcher::DEFAULT_CONNECTIONS);
+		$this->assertCount(2, $this->connections);
 	}
 
 	public function testNoNewConnectionMeansNoReadingAhead(): void {
