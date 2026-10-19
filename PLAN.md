@@ -405,6 +405,11 @@ in README "Known limitations":
         statusaanroep die de pagina toch al herhaalt ook een korte, begrensde stap uit (zoals de
         korte stappen die AJAX-cron nu al krijgt). "Back up now" werkt dan ook zonder cron zolang
         het tabblad openstaat; de melding zegt dat geplande backups echte cron nodig hebben.
+        Bij `ajax`: in de melding zeggen dat een backup alleen doorloopt zolang de NG Backup-pagina
+        openstaat, met een link naar de Nextcloud-documentatie over achtergrondjobs voor de
+        versie van de server (nu
+        https://docs.nextcloud.com/server/34/admin_manual/configuration_server/background_jobs_configuration.html;
+        het versienummer uit de server halen, niet vast in de tekst).
      Niet doen: de cron-modus vanuit de app omzetten (zonder echte cron-regel stopt alles, en
      `cron.php` zet de modus zelf op `cron`), en geen `exec php occ backup:run &` vanuit de knop
      (vaak uitgeschakeld, niet op hosted, buiten Nextcloud om lastig te volgen en te stoppen).
