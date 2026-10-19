@@ -416,6 +416,10 @@ in README "Known limitations":
      (vaak uitgeschakeld, niet op hosted, buiten Nextcloud om lastig te volgen en te stoppen).
   3. Volledige DR-test met een backup die al de tabelstructuur bevat (gemaakt met rc2 of later),
      zonder `--skip-missing-tables`: dat pad is op 1 TB nog niet getest.
+  4. **Label bij "Back up now"** (besluit 2026-10-19): een optioneel tekstveld naast de knop; de
+     tekst gaat als label van de snapshot mee (nu kan dat alleen met `occ backup:run -l`; de knop
+     stuurt een leeg label, geplande runs krijgen "scheduled"). Raakt alleen de UI en een
+     bestaande parameter.
 - **Polish:** `target:add` toonde bij het eerste indexbestand al "about 642 min left" (S3,
   4.568 bestanden, daarna binnen een minuut klaar): een schatting pas na ~5% of na meer dan
   een paar bestanden.
@@ -431,6 +435,15 @@ in README "Known limitations":
   3. Snelheid: lezen en uploaden laten overlappen, meerdere bestanden tegelijk lezen, eventueel
      een eigen worker (`occ background-job:worker`). Gemeten op nc01: 55% wachten op de schijf,
      33% op de SMB-upload, ~7% CPU. Vergt extra PHP-processen; botst mogelijk met uitgangspunt 1.
+  4. **Schema per locatie** (besluit 2026-10-19): in de instellingen van een locatie "uit",
+     "dagelijks om HH:MM" of "elke N uur (vanaf HH:MM)". Nu is er één `schedule_time` voor alle
+     locaties, één keer per dag. Bij de update wordt de huidige tijd het schema van elke
+     bestaande locatie (voor bestaande gebruikers verandert er niets).
+  5. **Locaties na elkaar laten starten** in plaats van tegelijk: twee runs die dezelfde schijven
+     lezen zijn samen niet sneller (gezien op nc01); wachtende runs zichtbaar als "queued".
+  6. **Notitie achteraf bij een restorepunt**, te wijzigen in de lijst. Het label in de snapshot
+     is versleuteld en ligt vast; de notitie apart op de locatie bewaren (bijv. in de catalogus),
+     zodat een nieuwe server na een DR hem ook ziet.
 - **Bevindingen DR-test op PVE02 (2026-10-17, snapshot van nc01, 1 TB, AIO → gewone NC 34 met
   PostgreSQL 18)** — voor **1.0.0-rc.2**:
   1. Tabellen van apps die bij de backup **niet aanstonden** (restanten: Deck, ONLYOFFICE,
