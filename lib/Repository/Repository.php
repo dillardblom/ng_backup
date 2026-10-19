@@ -243,18 +243,22 @@ final class Repository {
 			@rmdir($dir);
 		}
 		$plan = new ReadAheadPlan(rtrim($target, '/') . '/.ngb-restore-spool-' . bin2hex(random_bytes(4)));
-		foreach ($this->streamEntries($snapshotId) as $entry) {
-			if ($prefix !== '' && !str_starts_with($entry['p'], $prefix)) {
-				continue;
-			}
-			foreach ($entry['b'] as $id) {
-				try {
-					[$pack, $offset, $length] = $this->index->get($id);
-				} catch (RepositoryException) {
-					continue; // the restore reports it when it gets there
+		try {
+			foreach ($this->streamEntries($snapshotId) as $entry) {
+				if ($prefix !== '' && !str_starts_with($entry['p'], $prefix)) {
+					continue;
 				}
-				$plan->add('packs/' . substr($pack, 0, 2) . '/' . $pack, $offset, $length);
+				foreach ($entry['b'] as $id) {
+					try {
+						[$pack, $offset, $length] = $this->index->get($id);
+					} catch (RepositoryException) {
+						continue; // the restore reports it when it gets there
+					}
+					$plan->add('packs/' . substr($pack, 0, 2) . '/' . $pack, $offset, $length);
+				}
 			}
+		} catch (\Throwable) {
+			return null; // reading ahead is only faster: the restore itself reads the snapshot again and reports what is wrong
 		}
 		if (count($plan->ranges()) < 2 || (!is_dir($plan->spool) && !@mkdir($plan->spool, 0700, true))) {
 			return null;

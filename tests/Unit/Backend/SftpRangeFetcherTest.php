@@ -96,7 +96,7 @@ class SftpRangeFetcherTest extends TestCase {
 			$pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
 			$sockets[] = $pair;
 			$c->fsock = $pair[0];
-			$c->packet_buffer = 'more';
+			$c->packet_buffer = pack('N', 4) . 'more'; // a whole packet
 		}
 		$ranges = array_slice($this->ranges(), 0, 3);
 		$start = microtime(true);

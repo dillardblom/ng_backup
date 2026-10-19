@@ -150,7 +150,7 @@ final class SftpRangeFetcher {
 			$buffered = $vars['requestBuffer'] ?? null;
 			$channels = $vars['channel_buffers'] ?? null;
 			if ((is_array($buffered) && isset($job->queue[0]) && array_key_exists($job->queue[0][0], $buffered))
-				|| (is_string($vars['packet_buffer'] ?? null) && $vars['packet_buffer'] !== '')
+				|| (is_string($vars['packet_buffer'] ?? null) && self::wholePacket($vars['packet_buffer']))
 				|| (is_array($channels) && array_filter($channels) !== [])) {
 				$ready[] = $c;
 				continue;
@@ -171,6 +171,12 @@ final class SftpRangeFetcher {
 		// each in turn, where phpseclib's own timeout applies.
 		$n = @stream_select($read, $write, $except, self::SELECT_TIMEOUT);
 		return $n === false || $n === 0 ? array_keys($this->jobs) : array_keys($read);
+	}
+
+	/** Whether $buffer starts with a whole SFTP packet (length, then that many bytes). */
+	private static function wholePacket(string $buffer): bool {
+		$length = strlen($buffer) >= 4 ? unpack('N', $buffer) : false;
+		return is_array($length) && strlen($buffer) >= 4 + $length[1];
 	}
 
 	private function start(int $c, int $i): void {

@@ -66,6 +66,15 @@ class ReadAheadTest extends TestCase {
 		$this->assertLessThanOrEqual(count($backend->inner->list('packs')) + 1, count($backend->asked));
 	}
 
+	public function testAPlanThatCannotBeMadeLeavesTheRestoreToTheUsualReads(): void {
+		$backend = new ReadAheadBackend(new LocalBackend($this->root), failSnapshotReads: 1);
+
+		$this->assertRestored($this->restore($backend));
+
+		$this->assertSame([], $backend->asked, 'no reading ahead without a plan');
+		$this->assertSame(2, $backend->snapshotReads, 'the restore itself read the snapshot again');
+	}
+
 	public function testTheEmptySpoolOfAStoppedRestoreIsRemoved(): void {
 		$target = $this->tempDir();
 		mkdir("$target/.ngb-restore-spool-0badc0de", 0700); // a restore that was killed
@@ -195,6 +204,8 @@ final class ReadAheadBackend implements IBackend, IReadsAhead {
 		private bool $unavailable = false,
 		/** reading a pack the usual way fails */
 		private bool $packsGone = false,
+		/** this many reads of a snapshot fail, then they work */
+		private int $failSnapshotReads = 0,
 	) {
 		$this->counter = new PackOpenCountingBackend($inner);
 	}
@@ -238,7 +249,15 @@ final class ReadAheadBackend implements IBackend, IReadsAhead {
 		$this->counter->put($path, $stream);
 	}
 
+	public int $snapshotReads = 0;
+
 	public function get(string $path) {
+		if (str_starts_with($path, 'snapshots/')) {
+			$this->snapshotReads++;
+			if ($this->snapshotReads <= $this->failSnapshotReads) {
+				throw new BackendException('Connection lost reading ' . $path);
+			}
+		}
 		if ($this->packsGone && str_starts_with($path, 'packs/')) {
 			throw new BackendException('Not found: ' . $path);
 		}
