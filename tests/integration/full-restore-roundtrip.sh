@@ -2,8 +2,10 @@
 # Disaster recovery: occ backup:key:import + backup:target:add + backup:restore:full on a
 # SECOND, fresh Nextcloud instance that never saw the first one, sharing only the backup
 # location (a local directory, bind-mounted into both containers) -- see PLAN.md 3.7.
-# Usage: full-restore-roundtrip.sh <nextcloud-image-tag> [sqlite|pgsql|mysql] [legacy]
+# Usage: full-restore-roundtrip.sh <nextcloud-image-tag> [sqlite|pgsql|mysql] [legacy|sftp]
 #   e.g. full-restore-roundtrip.sh 35-apache pgsql
+# With "sftp" the location is an SFTP server instead of a shared directory, and the origin has a
+# file spread over several packs: the restore reads them ahead on connections of its own.
 # With "legacy" the origin runs NG Backup 1.0.0-rc.1 (0.9.7), whose backups do not record the
 # structure of their tables: the restore must then leave the tables of the disabled app out
 # with --skip-missing-tables, as for a real backup made before 1.0.0-rc.2.
@@ -13,7 +15,9 @@
 set -euo pipefail
 IMAGE="nextcloud:${1:-35-apache}"
 DB="${2:-sqlite}"
-LEGACY="${3:-}"
+MODE="${3:-}"
+LEGACY=""
+[ "$MODE" = legacy ] && LEGACY=legacy
 APP=$(cd "$(dirname "$0")/../.." && pwd)
 ORIGIN_APP="$APP"
 NET=ngb-frt-net
@@ -23,7 +27,7 @@ fail() { echo "FAIL: $*"; exit 1; }
 ok() { echo "ok   $*"; }
 
 cleanup() {
-	docker rm -fv ngb-frt-origin ngb-frt-restore ngb-frt-db-origin ngb-frt-db-restore ngb-frt-imap >/dev/null 2>&1 || true
+	docker rm -fv ngb-frt-origin ngb-frt-restore ngb-frt-db-origin ngb-frt-db-restore ngb-frt-imap ngb-frt-sftp >/dev/null 2>&1 || true
 	docker network rm "$NET" >/dev/null 2>&1 || true
 	docker run --rm -v "$SHARED:/target" alpine sh -c 'rm -rf /target/*' >/dev/null 2>&1 || true
 	rmdir "$SHARED" 2>/dev/null || true
@@ -59,6 +63,11 @@ db_env() {
 }
 
 docker network create "$NET" >/dev/null
+LOCATION=(local -a null::null -o datadir=/mnt/shared)
+if [ "$MODE" = sftp ]; then
+	docker run -d --name ngb-frt-sftp --network "$NET" atmoz/sftp:alpine ngbackup:ngbackuppw:::upload >/dev/null
+	LOCATION=(sftp -a password::password -o host=ngb-frt-sftp -o root=/upload -o user=ngbackup -o password=ngbackuppw)
+fi
 ORIGIN_DB=$(db_env origin)
 # shellcheck disable=SC2086
 docker run -d --name ngb-frt-origin --network "$NET" $ORIGIN_DB \
@@ -74,12 +83,17 @@ run_on ngb-frt-origin backup:key:init --passphrase-file=/tmp/pass --label=CI >/d
 run_on ngb-frt-origin backup:key:kit --output=/tmp/kit.json >/dev/null
 CODE=$(run_on ngb-frt-origin backup:key:kit | php -r 'echo json_decode(stream_get_contents(STDIN), true)["confirmation_code"];')
 run_on ngb-frt-origin backup:key:confirm -u admin --code="$CODE" --confirm="Yes, I confirm" >/dev/null || fail "confirm"
-run_on ngb-frt-origin backup:target:add offsite local -a null::null -o datadir=/mnt/shared --path=repo >/dev/null || fail "target add"
+run_on ngb-frt-origin backup:target:add offsite "${LOCATION[@]}" --path=repo >/dev/null || fail "target add"
 ok "key, kit and location on the origin"
 
 NC_PASS=$(openssl rand -hex 16)
 docker exec -u www-data -e OC_PASS="$NC_PASS" ngb-frt-origin php occ user:add --password-from-env frtest >/dev/null
 docker exec ngb-frt-origin sh -c "mkdir -p /var/www/html/data/frtest/files/Docs && head -c 200000 /dev/urandom > /var/www/html/data/frtest/files/Docs/report.bin && echo 'hello disaster recovery' > /var/www/html/data/frtest/files/Docs/note.txt && chown -R www-data:www-data /var/www/html/data/frtest"
+if [ "$MODE" = sftp ]; then
+	# about three packs of 32 MiB
+	docker exec ngb-frt-origin sh -c "head -c 90000000 /dev/urandom > /var/www/html/data/frtest/files/Docs/large.bin && chown www-data:www-data /var/www/html/data/frtest/files/Docs/large.bin"
+	LARGE_SUM=$(docker exec ngb-frt-origin sha256sum /var/www/html/data/frtest/files/Docs/large.bin | cut -d' ' -f1)
+fi
 run_on ngb-frt-origin files:scan frtest >/dev/null
 
 # SQL on an instance's own database (pgsql/mysql only)
@@ -127,7 +141,7 @@ docker cp /tmp/ngb-frt-pass ngb-frt-restore:/tmp/pass
 ok "fresh restore instance up"
 
 run_on ngb-frt-restore backup:key:import /tmp/kit.json --passphrase-file=/tmp/pass >/dev/null || fail "key import"
-run_on ngb-frt-restore backup:target:add offsite local -a null::null -o datadir=/mnt/shared --path=repo >/dev/null || fail "target add on the restore instance"
+run_on ngb-frt-restore backup:target:add offsite "${LOCATION[@]}" --path=repo >/dev/null || fail "target add on the restore instance"
 run_on ngb-frt-restore backup:list offsite | grep -q "$SNAP" || fail "the origin's snapshot is not listed after connecting the location"
 ok "recovery kit imported, existing repository adopted, snapshot visible"
 
@@ -140,6 +154,8 @@ if [ "$LEGACY" = legacy ] && [ "$DB" != sqlite ]; then
 	ok "older backup refused without --skip-missing-tables, missing tables named"
 	RESTORE_OPTS+=(--skip-missing-tables)
 fi
+sftp_logins() { docker logs ngb-frt-sftp 2>&1 | grep -c "Accepted password" || true; }
+[ "$MODE" = sftp ] && LOGINS_BEFORE=$(sftp_logins)
 OUT=$(run_on ngb-frt-restore backup:restore:full offsite "$SNAP" "${RESTORE_OPTS[@]}" 2>&1) || {
 	printf '%s\n' "$OUT" | tail -40
 	docker exec ngb-frt-restore sh -c 'tail -c 6000 /var/www/html/data/nextcloud.log' || true
@@ -169,7 +185,16 @@ elif [ "$DB" != sqlite ]; then
 	ok "tables of a disabled app created, Mail restored with its foreign keys"
 fi
 
+if [ "$MODE" = sftp ]; then
+	[ "$(docker exec ngb-frt-restore sha256sum /var/www/html/data/frtest/files/Docs/large.bin | cut -d' ' -f1)" = "$LARGE_SUM" ] \
+		|| fail "the large file differs after the restore"
+	LOGINS=$(( $(sftp_logins) - LOGINS_BEFORE ))
+	[ "$LOGINS" -gt 1 ] || fail "the restore did not read ahead on connections of its own ($LOGINS SFTP logins)"
+	docker exec ngb-frt-restore sh -c 'ls -a /var/www/html/data' | grep -q ngb-restore-spool && fail "the spool folder was left behind"
+	ok "over SFTP: read ahead on $LOGINS connections, large file identical, no spool left"
+fi
+
 run_on ngb-frt-restore backup:run offsite -l post-restore-check >/dev/null || fail "a new backup after the restore fails"
 ok "the restored instance can run a new backup of its own"
 
-echo "FULL RESTORE ROUNDTRIP PASS ($DB${LEGACY:+, legacy})"
+echo "FULL RESTORE ROUNDTRIP PASS ($DB${MODE:+, $MODE})"

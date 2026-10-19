@@ -181,6 +181,9 @@ Contributions welcome via PR — add what you ran into with your own provider.
   server (or the VM/container host where TCP ends) to BBR:
   `sysctl -w net.core.default_qdisc=fq net.ipv4.tcp_congestion_control=bbr`
   (`modprobe tcp_bbr` first; make it permanent in `/etc/sysctl.d/`).
+  A full restore over SFTP reads the packs ahead on 4 connections of its own, next to the one
+  NG Backup already has open: the SFTP server must allow 5 connections at once for that user (a
+  Hetzner Storage Box allows 10). With fewer it uses the connections it gets.
 
 - **NFS is not a files_external backend at all.** Mount the NFS export on the server yourself
   (e.g. via `/etc/fstab` or a systemd `.mount` unit) and point ng_backup's `local` backend at the

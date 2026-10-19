@@ -9,6 +9,13 @@ instead carried by the app description, the git tag, the release, and this file.
 
 ## [Unreleased]
 
+### Changed
+- A full restore over SFTP reads the packs ahead on 4 connections of its own, many requests in
+  flight on each, into temporary files in the restore folder. From a Hetzner Storage Box to a
+  server in Canada (122 ms) packs now come in at about 7.6 MiB/s instead of 2.8; on a test line
+  with 120 ms and some packet loss, a 1.6 GiB restore went from 5.1 to 17.8 MiB/s. A part that
+  cannot be read this way is read as before. Restores from other locations work as before.
+
 ### Fixed
 - A full restore of a backup made before 1.0.0-rc.2 with `--skip-missing-tables` failed on
   PostgreSQL with "relation ... does not exist": the left-out tables were still looked up to set
