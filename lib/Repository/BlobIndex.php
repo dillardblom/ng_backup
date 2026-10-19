@@ -33,6 +33,8 @@ final class BlobIndex {
 	private const CACHE_LOT = 256;
 	/** @var int index files downloaded by the last load() (for tests and diagnostics) */
 	public int $downloaded = 0;
+	/** @var array<string, true> packs whose index file is loaded (refresh() fetches only others) */
+	private array $loaded = [];
 
 	public function __construct(
 		private IBackend $backend,
@@ -91,6 +93,7 @@ final class BlobIndex {
 	 * longer exist on the backend are dropped from the cache.
 	 */
 	public function load(bool $verify = false, ?callable $progress = null): void {
+		$hadIndex = $this->blobs !== [];
 		$this->blobs = [];
 		$cached = $verify ? [] : ($this->cache?->all($this->repositoryId) ?? []);
 		$present = [];
@@ -105,11 +108,13 @@ final class BlobIndex {
 				$fetch[] = $path;
 			}
 		}
-		if ($present === [] && $cached !== []) {
-			// A repository never loses all its index files: an empty listing is a connection that
-			// failed quietly. Taken as is, it would empty the index and the cache.
-			throw new BackendException('The location listed no index files, while ' . count($cached) . ' are known: not trusting that listing');
+		// A repository never loses all its index files: an empty listing is a connection that
+		// failed quietly. Taken as is, it would empty the index and the cache (or make a check
+		// report every blob missing, or a cleanup wipe the cache).
+		if ($present === [] && ($hadIndex || $cached !== [] || ($verify && ($this->cache?->all($this->repositoryId) ?? []) !== []))) {
+			throw new BackendException('The location listed no index files, while some are known: not trusting that listing');
 		}
+		$this->loaded = $present;
 		// The rest is downloaded several at a time where the location allows it: on a large
 		// repository these are tens of thousands of small files. getMany() keeps their order, so
 		// the cached packs listed before each one are added first.
@@ -191,13 +196,13 @@ final class BlobIndex {
 		rewind($stream);
 		$this->backend->put('index/' . $packId, $stream);
 		$this->cachePut($packId, $entries);
+		$this->loaded[$packId] = true;
 		foreach ($entries as $e) {
 			$this->blobs[$e['id']] = [$packId, $e['offset'], $e['length'], $e['raw'], $e['flags']];
 			unset($this->pending[$e['id']]);
 		}
 	}
 
-	/** @return array<string, list<array{id:string, offset:int, length:int}>> packId => blobs currently located in that pack */
 	/**
 	 * Add the index files that appeared on the location since load(), such as those of packs
 	 * another server's cleanup wrote while a restore runs. Only adds and updates: a blob is
@@ -205,17 +210,16 @@ final class BlobIndex {
 	 * restore lose blobs it knows. A blob in a new pack takes that pack's place.
 	 */
 	public function refresh(): void {
-		$known = array_flip(array_map(fn (array $b): string => $b[0], $this->blobs));
 		$fetch = [];
 		$listed = 0;
 		foreach ($this->backend->listFiles('index') as $path) {
 			$listed++;
-			if (!isset($known[basename($path)])) {
+			if (!isset($this->loaded[basename($path)])) {
 				$fetch[] = $path;
 			}
 		}
-		if ($listed === 0 && $this->blobs !== []) {
-			throw new BackendException('The location listed no index files, while ' . count($known) . ' are known: not trusting that listing');
+		if ($listed === 0 && $this->loaded !== []) {
+			throw new BackendException('The location listed no index files, while ' . count($this->loaded) . ' are known: not trusting that listing');
 		}
 		$toCache = [];
 		foreach ($this->backend->getMany($fetch) as $path => $data) {
@@ -224,6 +228,7 @@ final class BlobIndex {
 			$entries = json_decode($this->cipher->decryptString($data, 'index:' . $packId), true, 512, JSON_THROW_ON_ERROR);
 			$this->downloaded++;
 			$this->add($packId, $entries);
+			$this->loaded[$packId] = true;
 			$toCache[$packId] = $entries;
 		}
 		if ($toCache !== []) {
@@ -231,6 +236,7 @@ final class BlobIndex {
 		}
 	}
 
+	/** @return array<string, list<array{id:string, offset:int, length:int}>> packId => blobs currently located in that pack */
 	public function packs(): array {
 		$packs = [];
 		foreach ($this->blobs as $id => [$pack, $offset, $length]) {
@@ -243,6 +249,7 @@ final class BlobIndex {
 	public function removePack(string $packId): void {
 		$this->backend->delete('index/' . $packId);
 		$this->cacheRemove([$packId]);
+		unset($this->loaded[$packId]);
 		foreach ($this->blobs as $id => $loc) {
 			if ($loc[0] === $packId) {
 				unset($this->blobs[$id]);

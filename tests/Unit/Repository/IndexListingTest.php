@@ -65,6 +65,27 @@ class IndexListingTest extends TestCase {
 		}
 	}
 
+	public function testACheckWithAnEmptyListingIsAnErrorNotEveryBlobMissing(): void {
+		$backend = new FlakyBackend(new LocalBackend($this->root));
+		$repo = Repository::openWithKey($backend, $this->keys);
+		$backend->emptyIndexListings = 1;
+
+		$this->expectException(BackendException::class);
+		$this->expectExceptionMessage('listed no index files');
+		$repo->verify($this->snapshot);
+	}
+
+	public function testRefreshingFetchesOnlyIndexFilesItHasNotLoaded(): void {
+		$backend = new FlakyBackend(new LocalBackend($this->root));
+		$repo = Repository::openWithKey($backend, $this->keys);
+		$index = (new \ReflectionProperty($repo, 'index'))->getValue($repo);
+		$index->downloaded = 0;
+
+		$index->refresh();
+
+		$this->assertSame(0, $index->downloaded, 'every index file is loaded already, also those whose blobs are elsewhere too');
+	}
+
 	public function testOpeningWithAnEmptyListingKeepsTheCachedIndex(): void {
 		$cache = new class implements IIndexCache {
 			public array $data = [];
