@@ -7,7 +7,29 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
-## [Unreleased]
+## [1.0.0-rc.4] - 2026-10-19
+
+Fourth release candidate for 1.0.0; the app version is 0.9.10. 1.0.0-rc.3 (0.9.9) was not
+released: its fixes are in here.
+
+### Changed
+- A full restore over SFTP reads the packs ahead on a connection of its own, 32 requests in
+  flight, into temporary files in the restore folder. From a Hetzner Storage Box to a server in
+  Canada (122 ms) packs now come in at about 14 MiB/s instead of 2.8. More connections can be set
+  with `restore_sftp_connections` (README). A part that cannot be read this way is read as
+  before. Restores from other locations work as before.
+- App store description: the line about Ensembia.
+
+### Fixed
+- After a full restore stopped halfway, running it again with `--force` was refused when the
+  database was already restored: Nextcloud then first wants `occ upgrade`. The guide and the
+  error message now say so.
+- A full restore of a backup made before 1.0.0-rc.2 with `--skip-missing-tables` failed on
+  PostgreSQL with "relation ... does not exist": the left-out tables were still looked up to set
+  their ID counters. It now skips them. A new test restores a backup made by 1.0.0-rc.1 on
+  PostgreSQL and MariaDB.
+- The app store showed old screenshots: it keeps a copy per URL, and the URLs always pointed at
+  `main`. They now point at the release's tag.
 
 ## [1.0.0-rc.2] - 2026-10-18
 

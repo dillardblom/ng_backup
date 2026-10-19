@@ -9,6 +9,7 @@ namespace OCA\NgBackup\Repository;
 
 use OCA\NgBackup\Backend\BackendException;
 use OCA\NgBackup\Backend\IBackend;
+use OCA\NgBackup\Backend\IReadsAhead;
 use OCA\NgBackup\Crypto\KeyRing;
 use OCA\NgBackup\Crypto\StreamCipher;
 
@@ -216,6 +217,66 @@ final class Repository {
 		if ($prefix !== '' && !self::isSafePath(rtrim($prefix, '/'))) {
 			throw new RepositoryException('Invalid path prefix');
 		}
+		$plan = $this->readAhead($snapshotId, $prefix, $target);
+		try {
+			return $this->restoreEntries($snapshotId, $target, $prefix, $stripPrefix, $heartbeat, $plan);
+		} finally {
+			$plan?->close();
+			if ($plan !== null) {
+				@rmdir($plan->spool);
+			}
+		}
+	}
+
+	/**
+	 * Start reading the packs of a restore ahead, when the location can (IReadsAhead): a first
+	 * pass over the snapshot lists the ranges of packs it needs, in order. The spool is a
+	 * folder in the target, which has room for the restore anyway.
+	 */
+	private function readAhead(string $snapshotId, string $prefix, string $target): ?ReadAheadPlan {
+		if (!$this->backend instanceof IReadsAhead || !$this->backend->canReadAhead()) {
+			return null;
+		}
+		// what a restore that was stopped left behind: empty, its files were unlinked when opened
+		$stale = glob(rtrim($target, '/') . '/.ngb-restore-spool-*', GLOB_ONLYDIR);
+		foreach ($stale === false ? [] : $stale as $dir) {
+			@rmdir($dir);
+		}
+		$plan = new ReadAheadPlan(rtrim($target, '/') . '/.ngb-restore-spool-' . bin2hex(random_bytes(4)));
+		try {
+			foreach ($this->streamEntries($snapshotId) as $entry) {
+				if ($prefix !== '' && !str_starts_with($entry['p'], $prefix)) {
+					continue;
+				}
+				foreach ($entry['b'] as $id) {
+					try {
+						[$pack, $offset, $length] = $this->index->get($id);
+					} catch (RepositoryException) {
+						continue; // the restore reports it when it gets there
+					}
+					$plan->add('packs/' . substr($pack, 0, 2) . '/' . $pack, $offset, $length);
+				}
+			}
+		} catch (\Throwable) {
+			return null; // reading ahead is only faster: the restore itself reads the snapshot again and reports what is wrong
+		}
+		if (count($plan->ranges()) < 2 || (!is_dir($plan->spool) && !@mkdir($plan->spool, 0700, true))) {
+			return null;
+		}
+		try {
+			$streams = $this->backend->readAhead($plan->ranges(), $plan->spool);
+		} catch (\Throwable) {
+			$streams = null; // the usual reads report what is wrong
+		}
+		if ($streams === null) {
+			@rmdir($plan->spool);
+			return null;
+		}
+		$plan->readFrom($streams);
+		return $plan;
+	}
+
+	private function restoreEntries(string $snapshotId, string $target, string $prefix, bool $stripPrefix, ?callable $heartbeat, ?ReadAheadPlan $plan): int {
 		$count = 0;
 		foreach ($this->streamEntries($snapshotId) as $entry) {
 			if ($prefix !== '' && !str_starts_with($entry['p'], $prefix)) {
@@ -240,7 +301,7 @@ final class Repository {
 				throw new RepositoryException('Cannot create a temporary file for ' . $entry['p']);
 			}
 			foreach ($entry['b'] as $id) {
-				fwrite($out, $this->loadBlob($id));
+				fwrite($out, $this->restoreBlob($id, $plan));
 				if ($heartbeat !== null) {
 					$heartbeat();
 				}
@@ -787,6 +848,22 @@ final class Repository {
 				yield $this->loadBlob($id);
 			}
 		}
+	}
+
+	/** A blob for restore(): read ahead when it could be, otherwise (or when that copy is bad) the usual way. */
+	private function restoreBlob(string $id, ?ReadAheadPlan $plan): string {
+		if ($plan !== null) {
+			[$pack, $offset, $length] = $this->index->get($id);
+			$encrypted = $plan->read('packs/' . substr($pack, 0, 2) . '/' . $pack, $offset, $length);
+			if ($encrypted !== null) {
+				try {
+					return $this->decodeBlob($id, $encrypted);
+				} catch (\Exception) {
+					// read again from the location below, which reports what is wrong
+				}
+			}
+		}
+		return $this->loadBlob($id);
 	}
 
 	private function loadBlob(string $id): string {

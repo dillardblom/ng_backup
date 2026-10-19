@@ -181,6 +181,10 @@ Contributions welcome via PR — add what you ran into with your own provider.
   server (or the VM/container host where TCP ends) to BBR:
   `sysctl -w net.core.default_qdisc=fq net.ipv4.tcp_congestion_control=bbr`
   (`modprobe tcp_bbr` first; make it permanent in `/etc/sysctl.d/`).
+  A full restore over SFTP reads the packs ahead on a second connection, with many requests in
+  flight. A server that handles parallel reads well (not a Hetzner Storage Box, which gets slower)
+  can be read on more connections: `occ config:app:set ng_backup restore_sftp_connections
+  --value=4` (at most 8; the server must allow that many plus one at once for the user).
 
 - **NFS is not a files_external backend at all.** Mount the NFS export on the server yourself
   (e.g. via `/etc/fstab` or a systemd `.mount` unit) and point ng_backup's `local` backend at the

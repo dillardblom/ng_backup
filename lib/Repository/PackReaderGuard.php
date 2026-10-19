@@ -8,9 +8,10 @@ declare(strict_types=1);
 namespace OCA\NgBackup\Repository;
 
 use OCA\NgBackup\Backend\IBackend;
+use OCA\NgBackup\Backend\IReadsAhead;
 
 /** The location as Repository sees it: closes the PackReader's open stream before every other request. */
-final class PackReaderGuard implements IBackend {
+final class PackReaderGuard implements IBackend, IReadsAhead {
 	public function __construct(
 		private IBackend $inner,
 		private PackReader $reader,
@@ -41,6 +42,15 @@ final class PackReaderGuard implements IBackend {
 	public function getRanges(array $ranges): \Generator {
 		$this->reader->close();
 		return $this->inner->getRanges($ranges);
+	}
+
+	public function canReadAhead(): bool {
+		return $this->inner instanceof IReadsAhead && $this->inner->canReadAhead();
+	}
+
+	/** Over connections of the location's own: the open stream may stay open. */
+	public function readAhead(array $ranges, string $spool): ?\Generator {
+		return $this->inner instanceof IReadsAhead ? $this->inner->readAhead($ranges, $spool) : null;
 	}
 
 	public function exists(string $path): bool {

@@ -95,6 +95,8 @@ out with `--skip-missing-tables`.
 
 **8. Let the restore run.** It restores the database, then the data directory, and takes hours for
 a large backup. If it stops halfway, fix the cause and run the same command again with `--force`.
+If occ then says that Nextcloud or one of the apps requires an upgrade, the database is already
+the old server's: run `occ upgrade` first, then the same command with `--force`.
 
 **9. After the restore.** These worked in our tests:
 

@@ -92,6 +92,7 @@ HELP);
 		} catch (\Throwable $e) {
 			$output->writeln('<error>' . $e->getMessage() . '</error>');
 			$output->writeln('If this happened after the restore had started, the instance may be partly restored: fix the cause and run the same command again with --force.');
+			$output->writeln('If occ then says that Nextcloud needs an upgrade (the database is already the old server\'s), run occ upgrade first.');
 			return 1;
 		}
 		$output->writeln(sprintf(

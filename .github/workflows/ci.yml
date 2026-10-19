@@ -108,3 +108,9 @@ jobs:
         run: tests/integration/full-restore-roundtrip.sh 35-apache pgsql
       - name: Full restore round trip on MariaDB, with Mail (foreign keys) and a disabled app
         run: tests/integration/full-restore-roundtrip.sh 35-apache mysql
+      - name: Full restore of a backup made by 1.0.0-rc.1 (no table structure) on PostgreSQL
+        run: tests/integration/full-restore-roundtrip.sh 35-apache pgsql legacy
+      - name: Full restore of a backup made by 1.0.0-rc.1 (no table structure) on MariaDB
+        run: tests/integration/full-restore-roundtrip.sh 35-apache mysql legacy
+      - name: Full restore over SFTP on PostgreSQL, reading packs ahead on several connections
+        run: tests/integration/full-restore-roundtrip.sh 35-apache pgsql sftp
