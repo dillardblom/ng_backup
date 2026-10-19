@@ -192,6 +192,35 @@ Contributions welcome via PR — add what you ran into with your own provider.
   mid-run behaves like any other local-path failure (the run resumes). See PLAN.md 3.5 for why NFS
   can't be driven from PHP directly.
 
+## Roadmap
+
+What is planned, without dates. Ideas and votes are welcome in the
+[issues](https://github.com/dillardblom/ng_backup/issues); if something you need is listed here,
+a 👍 on its issue helps decide what comes first.
+
+**1.0.1**
+- A warning on the admin page and in `occ backup:status` when background jobs do not run on a
+  system cron, with how to set one up. Without cron, a backup started with "Back up now" moves on
+  while the NG Backup page is open ([#13](https://github.com/dillardblom/ng_backup/issues/13)).
+- An optional label for a backup started with "Back up now".
+- Faster full restores from S3, reading ahead as restores over SFTP do since 1.0.0-rc.4.
+
+**1.1.0**
+- Restore without the recovery kit: the backup key from the location itself, opened with one of
+  your passphrases.
+- A schedule per location, also "every N hours".
+- Locations backed up one after the other instead of at the same time.
+- A note on a restore point that you can change afterwards.
+- An option to pause heavy background jobs (such as Memories, Recognize or the Preview
+  Generator) while a backup runs.
+- Faster backups: reading and uploading at the same time.
+
+**Later**
+- A full restore onto the existing installation, without first installing a fresh Nextcloud.
+- Users restoring their own files from the Files app.
+- Primary object storage and External Storage mounts (see Known limitations).
+- An option not to keep the backup key on the location (the recovery kit is then the only copy).
+
 ## Known limitations
 
 On the backlog; none of these block the beta or 1.0.0, but know them before you rely on it:
