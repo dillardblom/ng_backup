@@ -395,9 +395,19 @@ in README "Known limitations":
 - **1.0.1:**
   1. (Naar rc4: herstelsnelheid over SFTP.) S3 leest al 16 tegelijk bij index en tree, maar een
      restore leest de packs nog één voor één: ook vooruitlezen via de S3-client.
-  2. Waarschuwing in de beheerpagina en `backup:status` als achtergrondjobs niet op systeem-cron
-     staan, en "waiting for background jobs" als een lopende backup lang geen stap zette (issue
-     #13). Cron zelf aanzetten kan de app niet: zonder echte cron-regel stopt dan alles.
+  2. Achtergrondjobs zonder systeem-cron (issue #13; besluit 2026-10-19):
+     a. **Waarschuwen** in de beheerpagina en `backup:status`: modus uit `core backgroundjobs_mode`
+        (`ajax`/`webcron`/`cron`) en de laatste run uit `core lastcron`. Niet op `cron`, of de
+        laatste run te lang geleden: melding met de cron-regel erbij ("Backups only move while
+        someone has Nextcloud open"), en "waiting for background jobs" als een lopende backup lang
+        geen stap zette.
+     b. **De pagina laat de backup lopen** zolang ze openstaat: in `ajax`/`webcron` voert de
+        statusaanroep die de pagina toch al herhaalt ook een korte, begrensde stap uit (zoals de
+        korte stappen die AJAX-cron nu al krijgt). "Back up now" werkt dan ook zonder cron zolang
+        het tabblad openstaat; de melding zegt dat geplande backups echte cron nodig hebben.
+     Niet doen: de cron-modus vanuit de app omzetten (zonder echte cron-regel stopt alles, en
+     `cron.php` zet de modus zelf op `cron`), en geen `exec php occ backup:run &` vanuit de knop
+     (vaak uitgeschakeld, niet op hosted, buiten Nextcloud om lastig te volgen en te stoppen).
   3. Volledige DR-test met een backup die al de tabelstructuur bevat (gemaakt met rc2 of later),
      zonder `--skip-missing-tables`: dat pad is op 1 TB nog niet getest.
 - **1.1.0:**
