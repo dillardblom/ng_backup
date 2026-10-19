@@ -237,6 +237,11 @@ final class Repository {
 		if (!$this->backend instanceof IReadsAhead || !$this->backend->canReadAhead()) {
 			return null;
 		}
+		// what a restore that was stopped left behind: empty, its files were unlinked when opened
+		$stale = glob(rtrim($target, '/') . '/.ngb-restore-spool-*', GLOB_ONLYDIR);
+		foreach ($stale === false ? [] : $stale as $dir) {
+			@rmdir($dir);
+		}
 		$plan = new ReadAheadPlan(rtrim($target, '/') . '/.ngb-restore-spool-' . bin2hex(random_bytes(4)));
 		foreach ($this->streamEntries($snapshotId) as $entry) {
 			if ($prefix !== '' && !str_starts_with($entry['p'], $prefix)) {

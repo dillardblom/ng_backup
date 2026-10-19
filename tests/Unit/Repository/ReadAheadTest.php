@@ -41,8 +41,8 @@ class ReadAheadTest extends TestCase {
 		$this->snapshot = $repo->backupDirectory($this->src)['snapshot'];
 	}
 
-	private function restore(ReadAheadBackend $backend, string $prefix = ''): string {
-		$target = $this->tempDir();
+	private function restore(ReadAheadBackend $backend, string $prefix = '', ?string $target = null): string {
+		$target ??= $this->tempDir();
 		$repo = Repository::openWithKey($backend, $this->keys, null, null);
 		$repo->restore($this->snapshot, $target, $prefix);
 		return $target;
@@ -64,6 +64,13 @@ class ReadAheadTest extends TestCase {
 		// in the order of the files, one range per pack the restore goes through (the same blob
 		// again later is a range of its own)
 		$this->assertLessThanOrEqual(count($backend->inner->list('packs')) + 1, count($backend->asked));
+	}
+
+	public function testTheEmptySpoolOfAStoppedRestoreIsRemoved(): void {
+		$target = $this->tempDir();
+		mkdir("$target/.ngb-restore-spool-0badc0de", 0700); // a restore that was killed
+
+		$this->assertRestored($this->restore(new ReadAheadBackend(new LocalBackend($this->root)), '', $target));
 	}
 
 	public function testARangeThatCouldNotBeReadAheadIsReadTheUsualWay(): void {

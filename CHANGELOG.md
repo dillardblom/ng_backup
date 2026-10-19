@@ -17,6 +17,9 @@ instead carried by the app description, the git tag, the release, and this file.
   cannot be read this way is read as before. Restores from other locations work as before.
 
 ### Fixed
+- After a full restore stopped halfway, running it again with `--force` was refused when the
+  database was already restored: Nextcloud then first wants `occ upgrade`. The guide and the
+  error message now say so.
 - A full restore of a backup made before 1.0.0-rc.2 with `--skip-missing-tables` failed on
   PostgreSQL with "relation ... does not exist": the left-out tables were still looked up to set
   their ID counters. It now skips them. A new test restores a backup made by 1.0.0-rc.1 on
