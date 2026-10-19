@@ -405,16 +405,20 @@ in README "Known limitations":
         statusaanroep die de pagina toch al herhaalt ook een korte, begrensde stap uit (zoals de
         korte stappen die AJAX-cron nu al krijgt). "Back up now" werkt dan ook zonder cron zolang
         het tabblad openstaat; de melding zegt dat geplande backups echte cron nodig hebben.
-        Bij `ajax`: in de melding zeggen dat een backup alleen doorloopt zolang de NG Backup-pagina
-        openstaat, met een link naar de Nextcloud-documentatie over achtergrondjobs voor de
-        versie van de server (nu
-        https://docs.nextcloud.com/server/34/admin_manual/configuration_server/background_jobs_configuration.html;
-        het versienummer uit de server halen, niet vast in de tekst).
+        De melding zegt (zonder werkende systeem-cron): backups hebben systeem-cron nodig, ook de
+        gewone nachtelijke; zo stel je cron in (link naar de Nextcloud-documentatie over
+        achtergrondjobs voor de versie van de server, nu
+        https://docs.nextcloud.com/server/34/admin_manual/configuration_server/background_jobs_configuration.html,
+        versienummer uit de server, niet vast); zolang er geen cron is, loopt een backup die je
+        met de knop start alleen door terwijl de NG Backup-pagina openstaat.
      Niet doen: de cron-modus vanuit de app omzetten (zonder echte cron-regel stopt alles, en
      `cron.php` zet de modus zelf op `cron`), en geen `exec php occ backup:run &` vanuit de knop
      (vaak uitgeschakeld, niet op hosted, buiten Nextcloud om lastig te volgen en te stoppen).
   3. Volledige DR-test met een backup die al de tabelstructuur bevat (gemaakt met rc2 of later),
      zonder `--skip-missing-tables`: dat pad is op 1 TB nog niet getest.
+- **Polish:** `target:add` toonde bij het eerste indexbestand al "about 642 min left" (S3,
+  4.568 bestanden, daarna binnen een minuut klaar): een schatting pas na ~5% of na meer dan
+  een paar bestanden.
 - **1.1.0:**
   1. `backup:key:import` zonder kit: de sleutel-slots van de locatie (`config`) lezen, met de kit
      als reserve als `config` ontbreekt of niet opent. Vergt een andere volgorde van
