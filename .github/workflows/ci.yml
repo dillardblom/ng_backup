@@ -93,8 +93,6 @@ jobs:
       - name: Per-user backup/restore round trip on Nextcloud ${{ matrix.nextcloud }}
         run: tests/integration/user-roundtrip.sh "docker exec -u www-data ngbu" /var/www/html/data
 
-  # 35.0.0, not 35: the app store lists apps for a new point release only some time after it
-  # is out, and this test installs Mail and Deck from it.
   integration-full-restore:
     # Disaster recovery (occ backup:restore:full) on a SECOND, fresh Nextcloud instance that
     # never saw the first one, sharing only the backup location. Does not depend on the database
@@ -105,14 +103,14 @@ jobs:
         with:
           persist-credentials: false
       - name: Full restore round trip
-        run: tests/integration/full-restore-roundtrip.sh 35.0.0-apache
+        run: tests/integration/full-restore-roundtrip.sh 35-apache
       - name: Full restore round trip on PostgreSQL, with Mail (foreign keys) and a disabled app
-        run: tests/integration/full-restore-roundtrip.sh 35.0.0-apache pgsql
+        run: tests/integration/full-restore-roundtrip.sh 35-apache pgsql
       - name: Full restore round trip on MariaDB, with Mail (foreign keys) and a disabled app
-        run: tests/integration/full-restore-roundtrip.sh 35.0.0-apache mysql
+        run: tests/integration/full-restore-roundtrip.sh 35-apache mysql
       - name: Full restore of a backup made by 1.0.0-rc.1 (no table structure) on PostgreSQL
-        run: tests/integration/full-restore-roundtrip.sh 35.0.0-apache pgsql legacy
+        run: tests/integration/full-restore-roundtrip.sh 35-apache pgsql legacy
       - name: Full restore of a backup made by 1.0.0-rc.1 (no table structure) on MariaDB
-        run: tests/integration/full-restore-roundtrip.sh 35.0.0-apache mysql legacy
+        run: tests/integration/full-restore-roundtrip.sh 35-apache mysql legacy
       - name: Full restore over SFTP on PostgreSQL, reading packs ahead on several connections
-        run: tests/integration/full-restore-roundtrip.sh 35.0.0-apache pgsql sftp
+        run: tests/integration/full-restore-roundtrip.sh 35-apache pgsql sftp
