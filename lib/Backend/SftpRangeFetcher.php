@@ -30,8 +30,11 @@ final class SftpRangeFetcher {
 	public const DEPTH = 16;
 	/** Ranges read ahead of the one the caller is at, in flight or waiting in the spool. */
 	public const AHEAD = 8;
-	/** Seconds ready() waits for any connection to answer before it waits for each in turn. */
-	private const SELECT_TIMEOUT = 10;
+	/**
+	 * Seconds ready() waits for any connection to answer before it waits for each in turn: short,
+	 * in case a connection holds an answer where ready() does not look.
+	 */
+	private const SELECT_TIMEOUT = 1;
 	/** See SftpReadStream::CHUNK and MIN_CHUNK. */
 	private const CHUNK = 261120;
 	private const MIN_CHUNK = 32768;
@@ -134,9 +137,16 @@ final class SftpRangeFetcher {
 		foreach ($this->jobs as $c => $job) {
 			$sftp = $this->connections[$c];
 			$vars = get_object_vars($sftp); // only what is public: phpseclib 2's are
+			// Answers phpseclib has read already: the socket does not show them. Its request
+			// buffer holds whole answers read while it waited for another; its packet buffer and
+			// channel buffers hold what came in with the last packet it read (small answers, such
+			// as a CLOSE and the next OPEN, often arrive together).
 			$buffered = $vars['requestBuffer'] ?? null;
-			if (is_array($buffered) && isset($job->queue[0]) && array_key_exists($job->queue[0][0], $buffered)) {
-				$ready[] = $c; // read already, while waiting for another answer
+			$channels = $vars['channel_buffers'] ?? null;
+			if ((is_array($buffered) && isset($job->queue[0]) && array_key_exists($job->queue[0][0], $buffered))
+				|| (is_string($vars['packet_buffer'] ?? null) && $vars['packet_buffer'] !== '')
+				|| (is_array($channels) && array_filter($channels) !== [])) {
+				$ready[] = $c;
 				continue;
 			}
 			$socket = $vars['fsock'] ?? null;

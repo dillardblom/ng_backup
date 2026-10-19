@@ -468,6 +468,10 @@ final class FakeSftpConnection {
 	public array $openHandles = [];
 	/** @var list<string> paths of every OPEN request */
 	public array $opened = [];
+	/** @var resource|null like phpseclib's socket (SftpRangeFetcher waits on it) */
+	public $fsock = null;
+	/** like phpseclib's: what came in with the last packet and is not read yet */
+	public string $packet_buffer = '';
 	/** Whether the SFTP channel is open: phpseclib 2 opens it on the first SFTP call. */
 	public bool $initialised = false;
 	/** Packets sent */

@@ -87,6 +87,25 @@ class SftpRangeFetcherTest extends TestCase {
 		$this->assertSame(SftpRangeFetcher::DEPTH, $connections[1]->maxInFlight);
 	}
 
+	public function testAnAnswerPhpseclibHasReadAlreadyIsTakenWithoutWaitingOnTheSocket(): void {
+		// The fake's answers are all "read already": its socket never becomes readable, and
+		// phpseclib's packet buffer holds data. Waiting on the socket would take a second a step.
+		$connections = $this->connections(2);
+		$sockets = [];
+		foreach ($connections as $c) {
+			$pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+			$sockets[] = $pair;
+			$c->fsock = $pair[0];
+			$c->packet_buffer = 'more';
+		}
+		$ranges = array_slice($this->ranges(), 0, 3);
+		$start = microtime(true);
+
+		$this->assertSame($this->expected($ranges), self::collect(SftpRangeFetcher::fetch(self::opened($connections), '/home/', $ranges, $this->tempDir())));
+
+		$this->assertLessThan(1.0, microtime(true) - $start);
+	}
+
 	public function testAServerThatCapsAReadStillGivesEveryByte(): void {
 		$connections = $this->connections(3, array_fill(0, 3, ['cap' => 100000]));
 		$ranges = $this->ranges();
