@@ -411,6 +411,10 @@ in README "Known limitations":
         https://docs.nextcloud.com/server/34/admin_manual/configuration_server/background_jobs_configuration.html,
         versienummer uit de server, niet vast); zolang er geen cron is, loopt een backup die je
         met de knop start alleen door terwijl de NG Backup-pagina openstaat.
+     c. **Voortgang in de databasefase** (issue #13): nu staat er alleen "running (db)", wat er
+        hetzelfde uitziet als vastzitten. Toon "running (db: 47/183 tables)" zoals de bestandsfase
+        een percentage toont, en "waiting for background jobs (last ran 12 min ago)" als een run
+        een tijd geen stap zette, ook bij een cron die is blijven staan.
      Niet doen: de cron-modus vanuit de app omzetten (zonder echte cron-regel stopt alles, en
      `cron.php` zet de modus zelf op `cron`), en geen `exec php occ backup:run &` vanuit de knop
      (vaak uitgeschakeld, niet op hosted, buiten Nextcloud om lastig te volgen en te stoppen).
