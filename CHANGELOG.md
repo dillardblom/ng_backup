@@ -18,6 +18,11 @@ stopped after 13 hours with "Blob not in index"; the backup itself was fine.
   dropped) and emptied the index. Reading the index again now only adds, an empty listing of a
   location that has an index is an error instead of an empty index, and a pack that could not be
   read is read once more before the restore gives up.
+- After a full restore of a MySQL/MariaDB or SQLite backup onto PostgreSQL, new files, users or
+  activities could not be added ("duplicate key", "File entry could not be inserted"): such
+  backups record no ID counters, and they stayed at 1. Every counter of a restored table now goes
+  after its data. Found in a disaster recovery simulation of 138 GB from MariaDB to PostgreSQL,
+  where all 15,772 files and every count were identical.
 - An SFTP connection that a Hetzner Storage Box dropped without phpseclib noticing is now
   recognised and replaced: the check asks the server and counts its answer.
 - The extra connection a full restore reads ahead on is replaced when it breaks (up to 20 times),

@@ -114,3 +114,5 @@ jobs:
         run: tests/integration/full-restore-roundtrip.sh 35-apache mysql legacy
       - name: Full restore over SFTP on PostgreSQL, reading packs ahead on several connections
         run: tests/integration/full-restore-roundtrip.sh 35-apache pgsql sftp
+      - name: Full restore of a MariaDB backup onto PostgreSQL (ID counters after the data)
+        run: tests/integration/full-restore-roundtrip.sh 35-apache mysql to-pgsql

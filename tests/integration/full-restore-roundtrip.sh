@@ -2,10 +2,12 @@
 # Disaster recovery: occ backup:key:import + backup:target:add + backup:restore:full on a
 # SECOND, fresh Nextcloud instance that never saw the first one, sharing only the backup
 # location (a local directory, bind-mounted into both containers) -- see PLAN.md 3.7.
-# Usage: full-restore-roundtrip.sh <nextcloud-image-tag> [sqlite|pgsql|mysql] [legacy|sftp]
+# Usage: full-restore-roundtrip.sh <nextcloud-image-tag> [sqlite|pgsql|mysql] [legacy|sftp|to-pgsql]
 #   e.g. full-restore-roundtrip.sh 35-apache pgsql
 # With "sftp" the location is an SFTP server instead of a shared directory, and the origin has a
 # file spread over several packs: the restore reads them ahead on connections of its own.
+# With "to-pgsql" the restore instance runs PostgreSQL whatever the origin runs (MySQL and SQLite
+# backups record no ID counters; after the restore new rows must not collide with restored ones).
 # With "legacy" the origin runs NG Backup 1.0.0-rc.1 (0.9.7), whose backups do not record the
 # structure of their tables: the restore must then leave the tables of the disabled app out
 # with --skip-missing-tables, as for a real backup made before 1.0.0-rc.2.
@@ -127,6 +129,8 @@ ok "test data backed up, snapshot $SNAP"
 
 docker cp ngb-frt-origin:/tmp/kit.json /tmp/ngb-frt-kit.json
 docker exec ngb-frt-origin sh -c "cat /tmp/pass" > /tmp/ngb-frt-pass
+ORIGIN_DBTYPE=$DB
+[ "$MODE" = to-pgsql ] && DB=pgsql
 RESTORE_DB=$(db_env restore)
 # shellcheck disable=SC2086
 docker run -d --name ngb-frt-restore --network "$NET" $RESTORE_DB \
@@ -170,6 +174,15 @@ run_on ngb-frt-restore user:list | grep -q frtest || fail "the backed-up user is
 docker exec ngb-frt-restore test -f /var/www/html/data/frtest/files/Docs/note.txt || fail "restored file is missing"
 [ "$(docker exec ngb-frt-restore cat /var/www/html/data/frtest/files/Docs/note.txt)" = "hello disaster recovery" ] || fail "restored file content differs"
 run_on ngb-frt-restore files:scan frtest >/dev/null || fail "files:scan fails after restore"
+# New rows after the restore: a new file (file cache) and a new user must not collide with
+# restored rows (ID counters after the data).
+docker exec ngb-frt-restore sh -c "echo new > /var/www/html/data/frtest/files/Docs/after-restore.txt && chown www-data /var/www/html/data/frtest/files/Docs/after-restore.txt"
+run_on ngb-frt-restore files:scan frtest >/dev/null || fail "a new file cannot be added after the restore"
+if [ "$DB" != sqlite ]; then
+	[ "$(sql restore "select count(*) from oc_filecache where path = 'files/Docs/after-restore.txt'")" = 1 ] \
+		|| fail "a new file did not make it into the file cache after the restore (ID counters?)"
+fi
+docker exec -u www-data -e OC_PASS="$NC_PASS" ngb-frt-restore php occ user:add --password-from-env frnew >/dev/null || fail "a new user cannot be added after the restore"
 ok "database, files and ng_backup's own state are all intact and usable after the restore"
 
 if [ "$DB" != sqlite ] && [ "$LEGACY" = legacy ]; then
@@ -197,4 +210,4 @@ fi
 run_on ngb-frt-restore backup:run offsite -l post-restore-check >/dev/null || fail "a new backup after the restore fails"
 ok "the restored instance can run a new backup of its own"
 
-echo "FULL RESTORE ROUNDTRIP PASS ($DB${MODE:+, $MODE})"
+echo "FULL RESTORE ROUNDTRIP PASS ($ORIGIN_DBTYPE${MODE:+, $MODE})"
