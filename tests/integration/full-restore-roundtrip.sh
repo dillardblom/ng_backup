@@ -2,12 +2,13 @@
 # Disaster recovery: occ backup:key:import + backup:target:add + backup:restore:full on a
 # SECOND, fresh Nextcloud instance that never saw the first one, sharing only the backup
 # location (a local directory, bind-mounted into both containers) -- see PLAN.md 3.7.
-# Usage: full-restore-roundtrip.sh <nextcloud-image-tag> [sqlite|pgsql|mysql] [legacy|sftp|to-pgsql]
+# Usage: full-restore-roundtrip.sh <nextcloud-image-tag> [sqlite|pgsql|mysql] [legacy|sftp|to-pgsql|to-mysql|to-sqlite]
 #   e.g. full-restore-roundtrip.sh 35-apache pgsql
 # With "sftp" the location is an SFTP server instead of a shared directory, and the origin has a
 # file spread over several packs: the restore reads them ahead on connections of its own.
-# With "to-pgsql" the restore instance runs PostgreSQL whatever the origin runs (MySQL and SQLite
-# backups record no ID counters; after the restore new rows must not collide with restored ones).
+# With "to-<db>" the restore instance runs that database whatever the origin runs (a MySQL or
+# SQLite backup records no ID counters; after the restore new rows must not collide with restored
+# ones, whatever the database on either side).
 # With "legacy" the origin runs NG Backup 1.0.0-rc.1 (0.9.7), whose backups do not record the
 # structure of their tables: the restore must then leave the tables of the disabled app out
 # with --skip-missing-tables, as for a real backup made before 1.0.0-rc.2.
@@ -130,7 +131,7 @@ ok "test data backed up, snapshot $SNAP"
 docker cp ngb-frt-origin:/tmp/kit.json /tmp/ngb-frt-kit.json
 docker exec ngb-frt-origin sh -c "cat /tmp/pass" > /tmp/ngb-frt-pass
 ORIGIN_DBTYPE=$DB
-[ "$MODE" = to-pgsql ] && DB=pgsql
+case "$MODE" in to-*) DB=${MODE#to-} ;; esac
 RESTORE_DB=$(db_env restore)
 # shellcheck disable=SC2086
 docker run -d --name ngb-frt-restore --network "$NET" $RESTORE_DB \
