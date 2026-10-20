@@ -424,6 +424,11 @@ in README "Known limitations":
      tekst gaat als label van de snapshot mee (nu kan dat alleen met `occ backup:run -l`; de knop
      stuurt een leeg label, geplande runs krijgen "scheduled"). Raakt alleen de UI en een
      bestaande parameter.
+- **DR-tests over databasegrenzen** (besluit 2026-10-20; productie nc01 draait PostgreSQL): na
+  de MariaDB→PostgreSQL-fout (tellers, rc5) elke overstap in de integratietest (`to-pgsql`,
+  `to-mysql`, `to-sqlite`, ook in CI). Volle DR-tests met echte data: vóór 1.0.0 de S3-simulatie
+  (MariaDB-bron, 138 GB) nogmaals naar een MariaDB-doel en de SMB-simulatie naar een SQLite-doel;
+  **na 1.0.0** de 1 TB van nc01 (PostgreSQL) naar een MariaDB-doel.
 - **Polish:** `target:add` toonde bij het eerste indexbestand al "about 642 min left" (S3,
   4.568 bestanden, daarna binnen een minuut klaar): een schatting pas na ~5% of na meer dan
   een paar bestanden.
