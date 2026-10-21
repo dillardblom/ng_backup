@@ -30,6 +30,8 @@ final class RestoreFullService {
 	private const CONNECTION_KEYS = [
 		'dbtype', 'dbhost', 'dbport', 'dbname', 'dbuser', 'dbpassword', 'dbpersistent',
 		'dbtableprefix', 'dbdriveroptions', 'datadirectory',
+		// set by restoreFull() itself for the length of the restore
+		'maintenance',
 	];
 
 	public function __construct(
@@ -91,6 +93,25 @@ final class RestoreFullService {
 		if (!$check['ok']) {
 			throw new \RuntimeException($this->describeBlockers($check));
 		}
+		// Maintenance mode for the whole restore: background jobs (cron.php stops in maintenance
+		// mode), page visits (AJAX cron) and users must not write into tables or the data
+		// directory while they are being replaced; a row written in between would collide with a
+		// restored one or be silently lost. Switched off again at the end, also after an error:
+		// occ only offers app commands outside maintenance mode, and the guide's next step is
+		// to run the same restore again with --force.
+		$wasInMaintenance = $this->config->getSystemValueBool('maintenance', false);
+		$this->config->setSystemValue('maintenance', true);
+		try {
+			return $this->restoreInMaintenance($target, $snapshotId, $skipMissingTables, $check);
+		} finally {
+			if (!$wasInMaintenance) {
+				$this->config->setSystemValue('maintenance', false);
+			}
+		}
+	}
+
+	/** @return array{dbReport:array, dataFiles:int, configKeys:int, dbConsistent:bool, missingApps:list<string>} */
+	private function restoreInMaintenance(Target $target, string $snapshotId, bool $skipMissingTables, array $check): array {
 		return $this->withSharedLock($target, function (callable $refresh) use ($target, $snapshotId, $skipMissingTables, $check) {
 			$beat = LeaseService::throttled($refresh);
 			$repo = $this->targets->repository($target);

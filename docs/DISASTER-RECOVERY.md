@@ -94,7 +94,8 @@ tables that do not exist here, install the apps they belong to and run it again,
 out with `--skip-missing-tables`.
 
 **8. Let the restore run.** It restores the database, then the data directory, and takes hours for
-a large backup. If it stops halfway, fix the cause and run the same command again with `--force`.
+a large backup. Nextcloud is in maintenance mode meanwhile, so nobody and no background job
+writes into it; the restore switches it off again at the end, also after an error. If it stops halfway, fix the cause and run the same command again with `--force`.
 If occ then says that Nextcloud or one of the apps requires an upgrade, the database is already
 the old server's: run `occ upgrade` first, then the same command with `--force`.
 

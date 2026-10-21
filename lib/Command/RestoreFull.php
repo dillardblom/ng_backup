@@ -88,6 +88,7 @@ HELP);
 					$this->installApp($app, $output);
 				}
 			}
+			$output->writeln('Nextcloud is in maintenance mode while the restore runs (switched off again at the end, also after an error).');
 			$result = $this->restoreFull->restoreFull($target, $snapshot, $skipMissingTables);
 		} catch (\Throwable $e) {
 			$output->writeln('<error>' . $e->getMessage() . '</error>');

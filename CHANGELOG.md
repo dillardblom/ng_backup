@@ -23,6 +23,9 @@ stopped after 13 hours with "Blob not in index"; the backup itself was fine.
   backups record no ID counters, and they stayed at 1. Every counter of a restored table now goes
   after its data. Found in a disaster recovery simulation of 138 GB from MariaDB to PostgreSQL,
   where all 15,772 files and every count were identical.
+- A full restore now runs in maintenance mode, switched off again at the end (also after an
+  error): a background job, a page visit or a user writing into the instance meanwhile could
+  collide with restored rows ("duplicate key") or be lost.
 - Adding a location whose repository config could not be read, while backup data is there,
   no longer creates a new repository over it: it stops with an explanation. A snapshot that
   cannot be taken over when a location is added is now logged instead of left out silently.

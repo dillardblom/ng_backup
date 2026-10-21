@@ -172,7 +172,9 @@ OUT=$(run_on ngb-frt-restore backup:restore:full offsite "$SNAP" "${RESTORE_OPTS
 	docker exec ngb-frt-restore sh -c 'tail -c 6000 /var/www/html/data/nextcloud.log' || true
 	fail "restore:full"
 }
-ok "backup:restore:full completed"
+printf '%s\n' "$OUT" | grep -q "maintenance mode while the restore runs" || fail "the restore did not say it runs in maintenance mode"
+run_on ngb-frt-restore status 2>&1 | grep -q "maintenance: false" || fail "maintenance mode is still on after the restore"
+ok "backup:restore:full completed, in maintenance mode and out of it again"
 
 # Everything below must work in a FRESH occ process (a new PHP process per docker exec), since
 # earlier bugs here only showed up after config.php's secret was rewritten mid-restore.
