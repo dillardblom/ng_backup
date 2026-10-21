@@ -38,6 +38,10 @@ class IndexListingTest extends TestCase {
 		$this->snapshot = $repo->backupDirectory($this->src)['snapshot'];
 	}
 
+	private static function cache(): IIndexCache {
+		return indexCache();
+	}
+
 	public function testARestoreGoesOnAfterAPackReadFailedAndTheListingCameBackEmpty(): void {
 		$backend = new FlakyBackend(new LocalBackend($this->root));
 		$repo = Repository::openWithKey($backend, $this->keys);
@@ -68,7 +72,7 @@ class IndexListingTest extends TestCase {
 	public function testACheckWithAnEmptyListingIsAnErrorNotEveryBlobMissing(): void {
 		$backend = new FlakyBackend(new LocalBackend($this->root));
 		$repo = Repository::openWithKey($backend, $this->keys);
-		$backend->emptyIndexListings = 1;
+		$backend->dead = true;
 
 		$this->expectException(BackendException::class);
 		$this->expectExceptionMessage('listed no index files');
@@ -86,21 +90,54 @@ class IndexListingTest extends TestCase {
 		$this->assertSame(0, $index->downloaded, 'every index file is loaded already, also those whose blobs are elsewhere too');
 	}
 
+	public function testARestoreGoesOnWhenTheLocationCannotBeListedAfterAFailedRead(): void {
+		$backend = new FlakyBackend(new LocalBackend($this->root));
+		$repo = Repository::openWithKey($backend, $this->keys);
+		$backend->failPackReads = 1;
+		$backend->dead = true; // listing and config look gone; reading packs works again
+		$target = $this->tempDir();
+
+		$this->assertSame(12, $repo->restore($this->snapshot, $target));
+
+		$this->assertSame(self::hashTree($this->src), self::hashTree($target));
+	}
+
+	public function testAnEmptyListingThatWasAHiccupIsListedAgain(): void {
+		$cache = self::cache();
+		$backend = new FlakyBackend(new LocalBackend($this->root));
+		Repository::openWithKey($backend, $this->keys, $cache);
+		$cached = $cache->data;
+		$backend->emptyIndexListings = 1;
+
+		$again = Repository::openWithKey($backend, $this->keys, $cache);
+
+		$this->assertSame($cached, $cache->data);
+		$this->assertSame(12, $again->restore($this->snapshot, $this->tempDir()));
+	}
+
+	public function testARepositoryThatReallyBecameEmptyIsTakenAsEmpty(): void {
+		$cache = self::cache();
+		$backend = new FlakyBackend(new LocalBackend($this->root));
+		Repository::openWithKey($backend, $this->keys, $cache);
+		$this->assertNotSame([], array_filter($cache->data));
+		// another server forgot the last snapshot and cleaned up: no packs and index files left
+		foreach (array_merge($backend->list('index'), $backend->list('packs')) as $path) {
+			$backend->delete($path);
+		}
+
+		Repository::openWithKey($backend, $this->keys, $cache);
+
+		$this->assertSame([], array_filter($cache->data), 'the stale cache rows are gone');
+	}
+
 	public function testOpeningWithAnEmptyListingKeepsTheCachedIndex(): void {
-		$cache = new class implements IIndexCache {
-			public array $data = [];
-			public function all(string $r): array { return $this->data[$r] ?? []; }
-			public function put(string $r, string $p, array $e): void { $this->data[$r][$p] = $e; }
-			public function remove(string $r, array $ps): void { foreach ($ps as $p) { unset($this->data[$r][$p]); } }
-			public function putMany(string $r, array $packs): void { foreach ($packs as $p => $e) { $this->put($r, (string)$p, $e); } }
-			public function replaceAll(string $r, array $packs): void { $this->data[$r] = []; $this->putMany($r, $packs); }
-		};
+		$cache = self::cache();
 		$backend = new FlakyBackend(new LocalBackend($this->root));
 		Repository::openWithKey($backend, $this->keys, $cache);
 		$cached = $cache->data;
 		$this->assertNotSame([], $cached);
 
-		$backend->emptyIndexListings = 1;
+		$backend->dead = true;
 		try {
 			Repository::openWithKey($backend, $this->keys, $cache);
 			$this->fail('an empty listing of a repository with an index must not be taken as is');
@@ -111,12 +148,26 @@ class IndexListingTest extends TestCase {
 	}
 }
 
+/** @internal */
+function indexCache(): IIndexCache {
+	return new class implements IIndexCache {
+		public array $data = [];
+		public function all(string $r): array { return $this->data[$r] ?? []; }
+		public function put(string $r, string $p, array $e): void { $this->data[$r][$p] = $e; }
+		public function remove(string $r, array $ps): void { foreach ($ps as $p) { unset($this->data[$r][$p]); } }
+		public function putMany(string $r, array $packs): void { foreach ($packs as $p => $e) { $this->put($r, (string)$p, $e); } }
+		public function replaceAll(string $r, array $packs): void { $this->data[$r] = []; $this->putMany($r, $packs); }
+	};
+}
+
 /** A location whose pack reads fail, and whose index listings come back empty, a set number of times. */
 final class FlakyBackend implements IBackend {
 	use \OCA\NgBackup\Backend\GetsOneByOne;
 
 	public int $failPackReads = 0;
 	public int $emptyIndexListings = 0;
+	/** The connection is gone: also the repository config looks missing. */
+	public bool $dead = false;
 
 	public function __construct(
 		private IBackend $inner,
@@ -144,7 +195,7 @@ final class FlakyBackend implements IBackend {
 	}
 
 	public function exists(string $path): bool {
-		return $this->inner->exists($path);
+		return !$this->dead && $this->inner->exists($path);
 	}
 
 	public function move(string $from, string $to): void {
@@ -156,6 +207,9 @@ final class FlakyBackend implements IBackend {
 	}
 
 	public function listFiles(string $dir): array {
+		if ($dir === 'index' && $this->dead) {
+			return [];
+		}
 		if ($dir === 'index' && $this->emptyIndexListings > 0) {
 			$this->emptyIndexListings--;
 			return [];

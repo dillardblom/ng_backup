@@ -99,7 +99,8 @@ final class BlobIndex {
 		$this->downloaded = 0;
 		$order = []; // pack ids in listing order: where a blob is in two packs, the last listed wins
 		$fetch = [];
-		foreach ($this->backend->listFiles('index') as $path) {
+		$known = $hadIndex || $cached !== [] || ($verify && ($this->cache?->all($this->repositoryId) ?? []) !== []);
+		foreach ($this->listIndex($known) as $path) {
 			$packId = basename($path);
 			$present[$packId] = true;
 			$order[] = $packId;
@@ -107,13 +108,7 @@ final class BlobIndex {
 				$fetch[] = $path;
 			}
 		}
-		// A repository never loses all its index files: an empty listing is a connection that
-		// failed quietly. Taken as is, it would empty the index and the cache (or make a check
-		// report every blob missing, or a cleanup wipe the cache).
-		if ($present === [] && ($hadIndex || $cached !== [] || ($verify && ($this->cache?->all($this->repositoryId) ?? []) !== []))) {
-			throw new BackendException('The location listed no index files, while some are known: not trusting that listing');
-		}
-		// only now: an empty listing that was refused above leaves the index as it was
+		// only now: an empty listing that listIndex() refused leaves the index as it was
 		$this->blobs = [];
 		$this->loaded = $present;
 		// The rest is downloaded several at a time where the location allows it: on a large
@@ -213,14 +208,11 @@ final class BlobIndex {
 	public function refresh(): void {
 		$fetch = [];
 		$listed = 0;
-		foreach ($this->backend->listFiles('index') as $path) {
+		foreach ($this->listIndex($this->loaded !== []) as $path) {
 			$listed++;
 			if (!isset($this->loaded[basename($path)])) {
 				$fetch[] = $path;
 			}
-		}
-		if ($listed === 0 && $this->loaded !== []) {
-			throw new BackendException('The location listed no index files, while ' . count($this->loaded) . ' are known: not trusting that listing');
 		}
 		$toCache = [];
 		foreach ($this->backend->getMany($fetch) as $path => $data) {
@@ -235,6 +227,28 @@ final class BlobIndex {
 		if ($toCache !== []) {
 			$this->cache?->putMany($this->repositoryId, $toCache);
 		}
+	}
+
+	/**
+	 * The index files on the location. An empty listing while index files are known ($known) is
+	 * usually a connection that failed quietly; taken as is, it would empty the index and the
+	 * cache, make a check report every blob missing, or make a cleanup wipe the cache. So the
+	 * connection is checked (the repository's config must be there) and the folder listed once
+	 * more: empty again on a working connection, the repository really is empty (another server
+	 * removed its last snapshot and cleaned up).
+	 *
+	 * @return list<string>
+	 * @throws BackendException when the location does not answer as it should
+	 */
+	private function listIndex(bool $known): array {
+		$paths = $this->backend->listFiles('index');
+		if ($paths !== [] || !$known) {
+			return $paths;
+		}
+		if (!$this->backend->exists('config')) {
+			throw new BackendException('The location listed no index files and has no repository config: not trusting that listing');
+		}
+		return $this->backend->listFiles('index');
 	}
 
 	/** @return array<string, list<array{id:string, offset:int, length:int}>> packId => blobs currently located in that pack */
