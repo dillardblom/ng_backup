@@ -186,11 +186,12 @@ fi
 docker exec -u www-data -e OC_PASS="$NC_PASS" ngb-frt-restore php occ user:add --password-from-env frnew >/dev/null || fail "a new user cannot be added after the restore"
 ok "database, files and ng_backup's own state are all intact and usable after the restore"
 
-if [ "$DB" != sqlite ] && [ "$LEGACY" = legacy ]; then
+# Mail and Deck were only set up on an origin with a database server (see above)
+if [ "$ORIGIN_DBTYPE" != sqlite ] && [ "$DB" != sqlite ] && [ "$LEGACY" = legacy ]; then
 	[ "$(sql restore "select count(*) from information_schema.tables where table_name = 'oc_deck_boards'")" = 0 ] || fail "a table of unknown structure was created"
 	[ "$(sql restore "select count(*) from oc_mail_accounts where drafts_mailbox_id is not null")" = 1 ] || fail "the mail account was not restored"
 	ok "older backup: tables of the disabled app left out, Mail restored"
-elif [ "$DB" != sqlite ]; then
+elif [ "$ORIGIN_DBTYPE" != sqlite ] && [ "$DB" != sqlite ]; then
 	[ "$(sql restore "select count(*) from information_schema.tables where table_name = 'oc_deck_boards'")" = 1 ] || fail "the tables of the disabled app were not created"
 	[ "$(sql restore "select count(*) from oc_mail_accounts where drafts_mailbox_id is not null")" = 1 ] || fail "the mail account was not restored"
 	[ "$(sql restore "select count(*) from information_schema.table_constraints where constraint_type = 'FOREIGN KEY' and table_name like 'oc_mail_%'")" -gt 0 ] \
