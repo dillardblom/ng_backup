@@ -95,7 +95,10 @@ HELP);
 			if (\OCP\Server::get(\OCP\IConfig::class)->getSystemValueBool('maintenance', false)) {
 				$output->writeln('The restore had started: the instance may be partly restored, and maintenance mode stays on so that nobody uses it like that.');
 				$output->writeln('Fix the cause, then switch maintenance mode off and run the same command again with --force, in one line:');
-				$output->writeln('  occ maintenance:mode --off && occ backup:restore:full ' . (string)$input->getArgument('target') . ' ' . (string)$input->getArgument('snapshot') . ' --force ...');
+				$again = 'occ backup:restore:full ' . escapeshellarg((string)$input->getArgument('target')) . ' ' . escapeshellarg((string)$input->getArgument('snapshot'))
+					. ($input->getOption('skip-missing-tables') ? ' --skip-missing-tables' : '') . ' --force --no-interaction';
+				$output->writeln('  occ maintenance:mode --off && ' . $again);
+				$output->writeln('(Without --install-apps: the apps are installed already, and the instance is open again only for the seconds until the restore starts.)');
 			} else {
 				$output->writeln('If this happened after the restore had started, the instance may be partly restored: fix the cause and run the same command again with --force.');
 			}

@@ -89,10 +89,6 @@ final class RestoreFullService {
 
 	/** @return array{dbReport:array, dataFiles:int, configKeys:int, dbConsistent:bool, missingApps:list<string>, maintenanceLeftOn:bool} */
 	public function restoreFull(Target $target, string $snapshotId, bool $skipMissingTables = false): array {
-		$check = $this->checkCompatibility($target, $snapshotId, $skipMissingTables);
-		if (!$check['ok']) {
-			throw new \RuntimeException($this->describeBlockers($check));
-		}
 		// Maintenance mode for the whole restore: background jobs (cron.php stops in maintenance
 		// mode), page visits (AJAX cron) and users must not write into tables or the data
 		// directory while they are being replaced; a row written in between would collide with a
@@ -100,8 +96,24 @@ final class RestoreFullService {
 		// error it stays on: the instance may be partly restored, and must not be used like that.
 		// occ only offers app commands outside maintenance mode, so the admin switches it off
 		// right before running the restore again (see RestoreFull). Already on before: left on.
+		// On before the checks below, so that a run again after an error leaves the partly
+		// restored instance open for seconds at most; off again when they refuse (nothing changed).
 		$wasInMaintenance = $this->config->getSystemValueBool('maintenance', false);
 		$this->config->setSystemValue('maintenance', true);
+		try {
+			$check = $this->checkCompatibility($target, $snapshotId, $skipMissingTables);
+		} catch (\Throwable $e) {
+			if (!$wasInMaintenance) {
+				$this->config->setSystemValue('maintenance', false);
+			}
+			throw $e;
+		}
+		if (!$check['ok']) {
+			if (!$wasInMaintenance) {
+				$this->config->setSystemValue('maintenance', false);
+			}
+			throw new \RuntimeException($this->describeBlockers($check));
+		}
 		$result = $this->restoreInMaintenance($target, $snapshotId, $skipMissingTables, $check);
 		if (!$wasInMaintenance) {
 			$this->config->setSystemValue('maintenance', false);
