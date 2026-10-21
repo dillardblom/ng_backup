@@ -234,9 +234,10 @@ final class BlobIndex {
 	 * pack ids) is usually a connection that failed quietly; taken as is, it would empty the
 	 * index and the cache, make a check report every blob missing, or make a cleanup wipe the
 	 * cache. So the connection is checked (the repository's config must be there) and the folder
-	 * listed once more. Empty again, a few of the known index files are looked up one by one:
-	 * only when they are gone too is the repository really empty (another server removed its
-	 * last snapshot and cleaned up).
+	 * listed once more. Empty again, three of the known index files are looked up one by one:
+	 * only when they are gone too is the repository taken as empty (another server removed its
+	 * last snapshot and cleaned up). Even when that is wrong, nothing on the location is lost:
+	 * only this index and the cache are empty until the next load.
 	 *
 	 * @param list<string> $known
 	 * @return list<string>
@@ -254,7 +255,10 @@ final class BlobIndex {
 		if ($paths !== []) {
 			return $paths;
 		}
-		foreach (array_slice($known, 0, 3) as $packId) {
+		// spread over the list: first, middle and last (another server's cleanup removes packs
+		// here and there, not in this order)
+		$n = count($known);
+		foreach (array_unique([$known[0], $known[intdiv($n, 2)], $known[$n - 1]]) as $packId) {
 			if ($this->backend->exists('index/' . $packId)) {
 				throw new BackendException('The location listed no index files, while index/' . $packId . ' is there: not trusting that listing');
 			}
