@@ -75,7 +75,7 @@ final class Repository {
 		// No config, but backup data: the config is missing (or could not be seen just now, a
 		// connection that failed). A new repository here would write a config over the one that
 		// opens this data; refuse instead.
-		foreach (['index', 'snapshots'] as $dir) {
+		foreach (['index', 'snapshots', 'trash/snapshots', 'catalog'] as $dir) {
 			if ($backend->listFiles($dir) !== []) {
 				throw new RepositoryException("This location holds backup data ($dir/) but no repository config could be read: not creating a new repository over it. Check the connection and the folder; a missing config can be restored from the recovery kit.");
 			}
