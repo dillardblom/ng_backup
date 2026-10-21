@@ -88,11 +88,17 @@ HELP);
 					$this->installApp($app, $output);
 				}
 			}
-			$output->writeln('Nextcloud is in maintenance mode while the restore runs (switched off again at the end, also after an error).');
+			$output->writeln('Nextcloud is in maintenance mode while the restore runs; it is switched off when the restore completes.');
 			$result = $this->restoreFull->restoreFull($target, $snapshot, $skipMissingTables);
 		} catch (\Throwable $e) {
 			$output->writeln('<error>' . $e->getMessage() . '</error>');
-			$output->writeln('If this happened after the restore had started, the instance may be partly restored: fix the cause and run the same command again with --force.');
+			if (\OCP\Server::get(\OCP\IConfig::class)->getSystemValueBool('maintenance', false)) {
+				$output->writeln('The restore had started: the instance may be partly restored, and maintenance mode stays on so that nobody uses it like that.');
+				$output->writeln('Fix the cause, then switch maintenance mode off and run the same command again with --force, in one line:');
+				$output->writeln('  occ maintenance:mode --off && occ backup:restore:full ' . (string)$input->getArgument('target') . ' ' . (string)$input->getArgument('snapshot') . ' --force ...');
+			} else {
+				$output->writeln('If this happened after the restore had started, the instance may be partly restored: fix the cause and run the same command again with --force.');
+			}
 			$output->writeln('If occ then says that Nextcloud needs an upgrade (the database is already the old server\'s), run occ upgrade first.');
 			return 1;
 		}
@@ -121,6 +127,9 @@ HELP);
 		}
 		if (!$result['dbConsistent']) {
 			$output->writeln('<comment>Warning: this snapshot\'s database dump was made over several steps (web cron), so it is not one consistent point in time. Check the instance carefully; prefer a snapshot made with system cron.</comment>');
+		}
+		if ($result['maintenanceLeftOn']) {
+			$output->writeln('<comment>Maintenance mode was on before the restore and stays on: switch it off with occ maintenance:mode --off when the instance is ready.</comment>');
 		}
 		$output->writeln('Next: check trusted_domains and overwritehost/overwriteprotocol match this server, then occ maintenance:repair.');
 		return 0;
