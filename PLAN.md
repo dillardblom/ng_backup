@@ -395,7 +395,8 @@ in README "Known limitations":
 - **1.0.1:**
   1. (Naar rc4: herstelsnelheid over SFTP.) S3 leest al 16 tegelijk bij index en tree, maar een
      restore leest de packs nog één voor één: ook vooruitlezen via de S3-client.
-  2. Achtergrondjobs zonder systeem-cron (issue #13; besluit 2026-10-19):
+  2. Achtergrondjobs zonder systeem-cron (issue #13; besluit 2026-10-19). De PR die dit
+     oplost zegt "Fixes #13" (bevestigd: #13 was de cron; besluit 2026-10-21):
      a. **Waarschuwen** in de beheerpagina en `backup:status`: modus uit `core backgroundjobs_mode`
         (`ajax`/`webcron`/`cron`) en de laatste run uit `core lastcron`. Niet op `cron`, of de
         laatste run te lang geleden: melding met de cron-regel erbij ("Backups only move while
