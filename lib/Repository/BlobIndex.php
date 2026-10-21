@@ -94,7 +94,6 @@ final class BlobIndex {
 	 */
 	public function load(bool $verify = false, ?callable $progress = null): void {
 		$hadIndex = $this->blobs !== [];
-		$this->blobs = [];
 		$cached = $verify ? [] : ($this->cache?->all($this->repositoryId) ?? []);
 		$present = [];
 		$this->downloaded = 0;
@@ -114,6 +113,8 @@ final class BlobIndex {
 		if ($present === [] && ($hadIndex || $cached !== [] || ($verify && ($this->cache?->all($this->repositoryId) ?? []) !== []))) {
 			throw new BackendException('The location listed no index files, while some are known: not trusting that listing');
 		}
+		// only now: an empty listing that was refused above leaves the index as it was
+		$this->blobs = [];
 		$this->loaded = $present;
 		// The rest is downloaded several at a time where the location allows it: on a large
 		// repository these are tens of thousands of small files. getMany() keeps their order, so

@@ -216,7 +216,8 @@ final class DbDumper {
 				}
 				$report['restored'][] = $table;
 			}
-			$this->restoreSequences($manifest['sequences'] ?? [], $report['missing'], $report['restored']);
+			// unchanged tables too: a restore that stopped earlier may have left their counters at 1
+			$this->restoreSequences($manifest['sequences'] ?? [], $report['missing'], array_merge($report['restored'], $report['skipped']));
 			$this->resumeForeignKeys($foreignKeys);
 			$this->db->commit();
 			// Foreign keys of the tables created above, now their rows are in. Not inside the
@@ -575,7 +576,7 @@ final class DbDumper {
 
 	/**
 	 * @param list<string> $leftOut tables not restored (--skip-missing-tables): they do not exist here
-	 * @param list<string> $restored tables restored: their other counters go after their data
+	 * @param list<string> $restored tables restored or unchanged: their other counters go after their data
 	 */
 	private function restoreSequences(array $sequences, array $leftOut = [], array $restored = []): void {
 		if (!$this->db->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\PostgreSQLPlatform) {
@@ -616,7 +617,12 @@ final class DbDumper {
 			}
 			$max = (int)$this->db->fetchOne(sprintf('SELECT COALESCE(MAX(%s), 0) FROM %s',
 				$this->db->quoteIdentifier($r['column_name']), $this->db->quoteIdentifier($r['table_name'])));
-			$this->db->executeQuery('SELECT setval(CAST(? AS regclass), ?, false)', [$r['seq'], $max + 1]);
+			// never backwards: a counter already past the data stays where it is
+			$state = $this->db->fetchAssociative('SELECT last_value, is_called FROM ' . self::sequenceIdentifier($r['seq']));
+			$next = $state === false ? 1 : (int)$state['last_value'] + ($state['is_called'] ? 1 : 0);
+			if ($next <= $max) {
+				$this->db->executeQuery('SELECT setval(CAST(? AS regclass), ?, false)', [$r['seq'], $max + 1]);
+			}
 		}
 	}
 }
