@@ -7,7 +7,7 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
-## [1.0.0-rc.5] - 2026-10-20
+## [1.0.0-rc.5] - 2026-10-21
 
 Fifth release candidate for 1.0.0; the app version is 0.9.11. A full restore of 1 TB over SFTP
 stopped after 13 hours with "Blob not in index"; the backup itself was fine.
