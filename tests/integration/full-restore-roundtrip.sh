@@ -174,6 +174,7 @@ OUT=$(run_on ngb-frt-restore backup:restore:full offsite "$SNAP" "${RESTORE_OPTS
 }
 printf '%s\n' "$OUT" | grep -q "maintenance mode while the restore runs" || fail "the restore did not say it runs in maintenance mode"
 run_on ngb-frt-restore status 2>&1 | grep -q "maintenance: false" || fail "maintenance mode is still on after the restore"
+run_on ngb-frt-restore config:app:get ng_backup restore_full_started >/dev/null 2>&1 && fail "the restore left its 'started' marker behind"
 ok "backup:restore:full completed, in maintenance mode and out of it again"
 
 # Everything below must work in a FRESH occ process (a new PHP process per docker exec), since

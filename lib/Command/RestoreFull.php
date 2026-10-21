@@ -98,7 +98,7 @@ HELP);
 				$again = 'occ backup:restore:full ' . escapeshellarg((string)$input->getArgument('target')) . ' ' . escapeshellarg((string)$input->getArgument('snapshot'))
 					. ($input->getOption('skip-missing-tables') ? ' --skip-missing-tables' : '') . ' --force --no-interaction';
 				$output->writeln('  occ maintenance:mode --off && ' . $again);
-				$output->writeln('(Without --install-apps: the apps are installed already, and the instance is open again only for the seconds until the restore starts.)');
+				$output->writeln('(Without --install-apps, so the instance is open only for the seconds until the restore starts again. Apps the first run could not install are listed at the end: install those afterwards.)');
 			} else {
 				$output->writeln('If this happened after the restore had started, the instance may be partly restored: fix the cause and run the same command again with --force.');
 			}

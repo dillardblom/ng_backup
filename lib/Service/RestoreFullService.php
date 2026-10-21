@@ -27,6 +27,9 @@ final class RestoreFullService {
 	 * Config keys that must keep pointing at THIS installation's actual, already-working
 	 * database and data directory (set by occ maintenance:install), never at the old server's.
 	 */
+	/** App setting: when a full restore started that has not completed (see restoreFull()). */
+	private const INTERRUPTED_KEY = 'restore_full_started';
+
 	private const CONNECTION_KEYS = [
 		'dbtype', 'dbhost', 'dbport', 'dbname', 'dbuser', 'dbpassword', 'dbpersistent',
 		'dbtableprefix', 'dbdriveroptions', 'datadirectory',
@@ -98,23 +101,31 @@ final class RestoreFullService {
 		// right before running the restore again (see RestoreFull). Already on before: left on.
 		// On before the checks below, so that a run again after an error leaves the partly
 		// restored instance open for seconds at most; off again when they refuse (nothing changed).
+		// A marker in ng_backup's own app settings (which the restore keeps) says a restore started
+		// and did not complete: then the instance may be partly restored, and a check that refuses
+		// a run again must not open it.
+		$appConfig = \OCP\Server::get(\OCP\IAppConfig::class);
+		$interrupted = $appConfig->getValueInt(\OCA\NgBackup\AppInfo\Application::APP_ID, self::INTERRUPTED_KEY, 0) > 0;
 		$wasInMaintenance = $this->config->getSystemValueBool('maintenance', false);
 		$this->config->setSystemValue('maintenance', true);
+		$reopen = function () use ($wasInMaintenance, $interrupted): void {
+			if (!$wasInMaintenance && !$interrupted) {
+				$this->config->setSystemValue('maintenance', false);
+			}
+		};
 		try {
 			$check = $this->checkCompatibility($target, $snapshotId, $skipMissingTables);
 		} catch (\Throwable $e) {
-			if (!$wasInMaintenance) {
-				$this->config->setSystemValue('maintenance', false);
-			}
+			$reopen();
 			throw $e;
 		}
 		if (!$check['ok']) {
-			if (!$wasInMaintenance) {
-				$this->config->setSystemValue('maintenance', false);
-			}
+			$reopen();
 			throw new \RuntimeException($this->describeBlockers($check));
 		}
+		$appConfig->setValueInt(\OCA\NgBackup\AppInfo\Application::APP_ID, self::INTERRUPTED_KEY, time());
 		$result = $this->restoreInMaintenance($target, $snapshotId, $skipMissingTables, $check);
+		$appConfig->deleteKey(\OCA\NgBackup\AppInfo\Application::APP_ID, self::INTERRUPTED_KEY);
 		if (!$wasInMaintenance) {
 			$this->config->setSystemValue('maintenance', false);
 		}
