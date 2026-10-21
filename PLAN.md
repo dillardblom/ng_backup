@@ -456,6 +456,8 @@ in README "Known limitations":
      2,6 MiB/s, omdat SMB per blok op het antwoord wacht. Grotere schrijfblokken, en vooruitlezen
      bij een restore zoals SFTP (IReadsAhead) of meerdere packs tegelijk. Een NAS met 1 Gbit haalt
      ~110 MB/s: daar is winst.
+     Ook de index: `target:add` over SMB vanaf Canada haalt ~1 indexbestand per seconde (4.927
+     bestanden ~85 min), want SMB krijgt geen `getMany()` met verzoeken tegelijk zoals S3 en SFTP.
   6. **Notitie achteraf bij een restorepunt**, te wijzigen in de lijst. Het label in de snapshot
      is versleuteld en ligt vast; de notitie apart op de locatie bewaren (bijv. in de catalogus),
      zodat een nieuwe server na een DR hem ook ziet.
