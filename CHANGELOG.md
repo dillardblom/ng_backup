@@ -23,6 +23,9 @@ stopped after 13 hours with "Blob not in index"; the backup itself was fine.
   backups record no ID counters, and they stayed at 1. Every counter of a restored table now goes
   after its data. Found in a disaster recovery simulation of 138 GB from MariaDB to PostgreSQL,
   where all 15,772 files and every count were identical.
+- Adding a location whose repository config could not be read, while backup data is there,
+  no longer creates a new repository over it: it stops with an explanation. A snapshot that
+  cannot be taken over when a location is added is now logged instead of left out silently.
 - An SFTP connection that a Hetzner Storage Box dropped without phpseclib noticing is now
   recognised and replaced: the check asks the server and counts its answer.
 - The extra connection a full restore reads ahead on is replaced when it breaks (up to 20 times),

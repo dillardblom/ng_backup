@@ -72,6 +72,14 @@ final class Repository {
 		if ($backend->exists('config')) {
 			throw new RepositoryException('A repository already exists at this location');
 		}
+		// No config, but backup data: the config is missing (or could not be seen just now, a
+		// connection that failed). A new repository here would write a config over the one that
+		// opens this data; refuse instead.
+		foreach (['index', 'snapshots'] as $dir) {
+			if ($backend->listFiles($dir) !== []) {
+				throw new RepositoryException("This location holds backup data ($dir/) but no repository config could be read: not creating a new repository over it. Check the connection and the folder; a missing config can be restored from the recovery kit.");
+			}
+		}
 		$id = bin2hex(random_bytes(16));
 		$config = ['format' => self::FORMAT, 'id' => $id, 'created' => gmdate('c'), 'key' => $wrappedKey,
 			'check' => base64_encode((new StreamCipher($keys))->encryptString($id, 'config-check'))];
