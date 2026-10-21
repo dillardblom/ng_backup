@@ -228,7 +228,8 @@ final class TargetService {
 				$s->setFiles((int)($meta['stats']['files'] ?? 0));
 				$s->setBytes((int)($meta['stats']['bytes'] ?? 0));
 				$this->snapshots->insert($s);
-			} catch (\Throwable) {
+			} catch (\Throwable $e) {
+				Server::get(\Psr\Log\LoggerInterface::class)->warning('NG Backup: snapshot ' . $snapshotId . ' on ' . $target->getName() . ' not listed: ' . $e->getMessage(), ['exception' => $e]);
 			}
 		}
 	}

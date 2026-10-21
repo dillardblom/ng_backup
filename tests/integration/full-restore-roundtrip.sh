@@ -146,8 +146,14 @@ docker cp /tmp/ngb-frt-pass ngb-frt-restore:/tmp/pass
 ok "fresh restore instance up"
 
 run_on ngb-frt-restore backup:key:import /tmp/kit.json --passphrase-file=/tmp/pass >/dev/null || fail "key import"
-run_on ngb-frt-restore backup:target:add offsite "${LOCATION[@]}" --path=repo >/dev/null || fail "target add on the restore instance"
-run_on ngb-frt-restore backup:list offsite | grep -q "$SNAP" || fail "the origin's snapshot is not listed after connecting the location"
+ADD_OUT=$(run_on ngb-frt-restore backup:target:add offsite "${LOCATION[@]}" --path=repo 2>&1) || { printf '%s\n' "$ADD_OUT"; fail "target add on the restore instance"; }
+LIST_OUT=$(run_on ngb-frt-restore backup:list offsite 2>&1)
+printf '%s\n' "$LIST_OUT" | grep -q "$SNAP" || {
+	printf 'target:add said:\n%s\nbackup:list said:\n%s\n' "$ADD_OUT" "$LIST_OUT"
+	docker exec ngb-frt-restore sh -c 'grep -h ng_backup /var/www/html/data/nextcloud.log | tail -5' || true
+	docker exec ngb-frt-restore sh -c 'ls -la /mnt/shared/repo /mnt/shared/repo/snapshots' || true
+	fail "the origin's snapshot is not listed after connecting the location"
+}
 ok "recovery kit imported, existing repository adopted, snapshot visible"
 
 RESTORE_OPTS=(--no-interaction --install-apps)
