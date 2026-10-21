@@ -450,6 +450,11 @@ in README "Known limitations":
      bestaande locatie (voor bestaande gebruikers verandert er niets).
   5. **Locaties na elkaar laten starten** in plaats van tegelijk: twee runs die dezelfde schijven
      lezen zijn samen niet sneller (gezien op nc01); wachtende runs zichtbaar als "queued".
+  7. **SMB sneller** (gemeten 2026-10-21): lokaal netwerk zonder vertraging (Samba-container op de
+     laptop, 1,8 GB) back-up 24,9 MB/s, restore 27,6 MiB/s; vanaf Canada naar de Storage Box (130 ms)
+     2,6 MiB/s, omdat SMB per blok op het antwoord wacht. Grotere schrijfblokken, en vooruitlezen
+     bij een restore zoals SFTP (IReadsAhead) of meerdere packs tegelijk. Een NAS met 1 Gbit haalt
+     ~110 MB/s: daar is winst.
   6. **Notitie achteraf bij een restorepunt**, te wijzigen in de lijst. Het label in de snapshot
      is versleuteld en ligt vast; de notitie apart op de locatie bewaren (bijv. in de catalogus),
      zodat een nieuwe server na een DR hem ook ziet.
