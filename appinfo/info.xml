@@ -36,6 +36,7 @@ All-in-One and hosted Nextcloud.
 - One user (account, files, calendars, contacts) via user_migration.
 - The whole server onto a fresh installation (disaster recovery).
 
+NG Backup needs Nextcloud's background jobs on system cron (a real cron line, not only the setting).
 Read "Known limitations" in the README before you rely on it, and test a restore. Feedback is very
 welcome: use the "Share your experience" link on the admin page.
 

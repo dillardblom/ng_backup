@@ -33,6 +33,26 @@ Need help restoring a backup after a crash? Ensembia offers paid restore assista
 - Restores go through Nextcloud, so overwritten files keep their old content as a version and
   removed files go to the trash.
 
+## Requirements
+
+- **Background jobs on system cron.** NG Backup runs backups in steps from Nextcloud's
+  background job, so a backup only moves forward when that job runs. Choosing "Cron" under
+  **Administration settings → Basic settings → Background jobs** is not enough on its own: it
+  tells Nextcloud that the system will call it, so you also need a cron line that does. Without
+  it a backup stays at "running (db)", and so does one started with "Back up now".
+  `occ backup:run` in a terminal works without cron (it runs in the foreground).
+  - Regular server: `crontab -u www-data -e` and add
+    `*/5 * * * * php -f /var/www/nextcloud/cron.php` (your Nextcloud path).
+  - Docker (the official `nextcloud` image): on the host, `crontab -e` as root and add
+    `*/5 * * * * docker exec -u www-data <container> php -f /var/www/html/cron.php`, or add a
+    service with the same image and `entrypoint: /cron.sh` to your `docker-compose.yml`.
+  - Nextcloud All-in-One already runs cron.
+
+  After a few minutes, the Background jobs section shows that the last job ran just now. See the
+  [Nextcloud documentation on background jobs](https://docs.nextcloud.com/server/latest/admin_manual/configuration_server/background_jobs_configuration.html).
+- A storage location: S3 or compatible, SFTP, WebDAV, SMB (needs the PHP `smbclient` extension,
+  see below), FTP or a local path.
+
 ## Quick start
 
 ```
