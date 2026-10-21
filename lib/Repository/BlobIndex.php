@@ -99,7 +99,7 @@ final class BlobIndex {
 		$this->downloaded = 0;
 		$order = []; // pack ids in listing order: where a blob is in two packs, the last listed wins
 		$fetch = [];
-		$known = $hadIndex || $cached !== [] || ($verify && ($this->cache?->all($this->repositoryId) ?? []) !== []);
+		$known = array_keys($this->loaded + $cached + ($verify ? ($this->cache?->all($this->repositoryId) ?? []) : []));
 		foreach ($this->listIndex($known) as $path) {
 			$packId = basename($path);
 			$present[$packId] = true;
@@ -208,7 +208,7 @@ final class BlobIndex {
 	public function refresh(): void {
 		$fetch = [];
 		$listed = 0;
-		foreach ($this->listIndex($this->loaded !== []) as $path) {
+		foreach ($this->listIndex(array_keys($this->loaded)) as $path) {
 			$listed++;
 			if (!isset($this->loaded[basename($path)])) {
 				$fetch[] = $path;
@@ -230,25 +230,36 @@ final class BlobIndex {
 	}
 
 	/**
-	 * The index files on the location. An empty listing while index files are known ($known) is
-	 * usually a connection that failed quietly; taken as is, it would empty the index and the
-	 * cache, make a check report every blob missing, or make a cleanup wipe the cache. So the
-	 * connection is checked (the repository's config must be there) and the folder listed once
-	 * more: empty again on a working connection, the repository really is empty (another server
-	 * removed its last snapshot and cleaned up).
+	 * The index files on the location. An empty listing while index files are known ($known,
+	 * pack ids) is usually a connection that failed quietly; taken as is, it would empty the
+	 * index and the cache, make a check report every blob missing, or make a cleanup wipe the
+	 * cache. So the connection is checked (the repository's config must be there) and the folder
+	 * listed once more. Empty again, a few of the known index files are looked up one by one:
+	 * only when they are gone too is the repository really empty (another server removed its
+	 * last snapshot and cleaned up).
 	 *
+	 * @param list<string> $known
 	 * @return list<string>
 	 * @throws BackendException when the location does not answer as it should
 	 */
-	private function listIndex(bool $known): array {
+	private function listIndex(array $known): array {
 		$paths = $this->backend->listFiles('index');
-		if ($paths !== [] || !$known) {
+		if ($paths !== [] || $known === []) {
 			return $paths;
 		}
 		if (!$this->backend->exists('config')) {
 			throw new BackendException('The location listed no index files and has no repository config: not trusting that listing');
 		}
-		return $this->backend->listFiles('index');
+		$paths = $this->backend->listFiles('index');
+		if ($paths !== []) {
+			return $paths;
+		}
+		foreach (array_slice($known, 0, 3) as $packId) {
+			if ($this->backend->exists('index/' . $packId)) {
+				throw new BackendException('The location listed no index files, while index/' . $packId . ' is there: not trusting that listing');
+			}
+		}
+		return [];
 	}
 
 	/** @return array<string, list<array{id:string, offset:int, length:int}>> packId => blobs currently located in that pack */

@@ -115,6 +115,22 @@ class IndexListingTest extends TestCase {
 		$this->assertSame(12, $again->restore($this->snapshot, $this->tempDir()));
 	}
 
+	public function testAListingThatStaysEmptyWhileIndexFilesAreThereIsNotTaken(): void {
+		$cache = self::cache();
+		$backend = new FlakyBackend(new LocalBackend($this->root));
+		Repository::openWithKey($backend, $this->keys, $cache);
+		$cached = $cache->data;
+		$backend->emptyIndexListings = 5; // the config answers, the listing keeps lying
+
+		try {
+			Repository::openWithKey($backend, $this->keys, $cache);
+			$this->fail('index files are there');
+		} catch (BackendException $e) {
+			$this->assertStringContainsString('is there', $e->getMessage());
+		}
+		$this->assertSame($cached, $cache->data);
+	}
+
 	public function testARepositoryThatReallyBecameEmptyIsTakenAsEmpty(): void {
 		$cache = self::cache();
 		$backend = new FlakyBackend(new LocalBackend($this->root));
