@@ -265,7 +265,7 @@ a 👍 on its issue helps decide what comes first.
   system cron, with how to set one up. Without cron, a backup started with "Back up now" moves on
   while the NG Backup page is open ([#13](https://github.com/dillardblom/ng_backup/issues/13)).
 - An optional label for a backup started with "Back up now".
-- Faster full restores from S3, reading ahead as restores over SFTP do since 1.0.0-rc.4.
+- Faster full restores from S3 and SMB, reading ahead as restores over SFTP do since 1.0.0-rc.4.
 
 **1.1.0**
 - Restore without the recovery kit: the backup key from the location itself, opened with one of
@@ -278,7 +278,9 @@ a 👍 on its issue helps decide what comes first.
 - Faster backups: reading and uploading at the same time.
 
 **Later**
-- A full restore onto the existing installation, without first installing a fresh Nextcloud.
+- A full restore onto the existing installation, without first installing a fresh Nextcloud, in a
+  restore mode of its own instead of maintenance mode, so that it can also run from the web
+  interface (for hosted Nextcloud without shell access).
 - Users restoring their own files from the Files app.
 - Primary object storage and External Storage mounts (see Known limitations).
 - An option not to keep the backup key on the location (the recovery kit is then the only copy).

@@ -7,6 +7,21 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
+## [Unreleased]
+
+### Fixed
+- A full restore onto MySQL/MariaDB stopped with "Incorrect string value" when it created a table
+  (of an app that is not installed here) whose rows hold emoji or other 4-byte characters: the
+  table got 3-byte utf8. Tables the restore creates now get this installation's character set and
+  collation (utf8mb4). Found in a disaster recovery simulation onto MariaDB.
+
+### Changed
+- README: a roadmap, the tested disaster recoveries, measurements for OVH S3, the Storage Box over
+  SFTP and SMB, how to build the SMB extension when PECL is down, and what works without shell
+  access. The guide lists shell access among what you need.
+- The full-restore integration test checks a 4-byte character in a table the restore creates, and
+  retries app installs from the app store.
+
 ## [1.0.0-rc.5] - 2026-10-22
 
 Fifth release candidate for 1.0.0; the app version is 0.9.11. A full restore of 1 TB over SFTP
