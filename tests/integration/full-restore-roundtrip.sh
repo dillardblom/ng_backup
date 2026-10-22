@@ -119,6 +119,8 @@ if [ "$DB" != sqlite ]; then
 		|| fail "the mail account does not point at its mailboxes"
 	# Deck installed and then switched off: its tables stay in the database and in the backup
 	run_on ngb-frt-origin app:install deck >/dev/null || fail "install deck on the origin"
+	# a 4-byte character (emoji) in a table the restore has to create: utf8mb4 on MySQL/MariaDB
+	sql origin "insert into oc_deck_boards (title, owner, color, archived, deleted_at, last_modified) values ('Plan 📌', 'frtest', '0087C5', 0, 0, 0)" >/dev/null
 	run_on ngb-frt-origin app:disable deck >/dev/null
 	ok "origin has a synced Mail account and the tables of a disabled app"
 fi
@@ -202,6 +204,7 @@ if [ "$ORIGIN_DBTYPE" != sqlite ] && [ "$DB" != sqlite ] && [ "$LEGACY" = legacy
 	ok "older backup: tables of the disabled app left out, Mail restored"
 elif [ "$ORIGIN_DBTYPE" != sqlite ] && [ "$DB" != sqlite ]; then
 	[ "$(sql restore "select count(*) from information_schema.tables where table_name = 'oc_deck_boards'")" = 1 ] || fail "the tables of the disabled app were not created"
+	[ "$(sql restore "select title from oc_deck_boards")" = "Plan 📌" ] || fail "a 4-byte character did not survive in a created table"
 	[ "$(sql restore "select count(*) from oc_mail_accounts where drafts_mailbox_id is not null")" = 1 ] || fail "the mail account was not restored"
 	[ "$(sql restore "select count(*) from information_schema.table_constraints where constraint_type = 'FOREIGN KEY' and table_name like 'oc_mail_%'")" -gt 0 ] \
 		|| fail "the foreign keys of Mail are missing after the restore"
