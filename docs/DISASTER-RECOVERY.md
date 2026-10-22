@@ -94,7 +94,16 @@ tables that do not exist here, install the apps they belong to and run it again,
 out with `--skip-missing-tables`.
 
 **8. Let the restore run.** It restores the database, then the data directory, and takes hours for
-a large backup. If it stops halfway, fix the cause and run the same command again with `--force`.
+a large backup. Nextcloud is in maintenance mode meanwhile, so nobody and no background job
+writes into it; the restore switches it off when it completes. (If you had switched maintenance
+mode on yourself before, it stays on: switch it off with `occ maintenance:mode --off` when ready.)
+
+If it stops halfway, maintenance mode stays on (the instance may be partly restored). Fix the cause,
+then switch maintenance mode off and run the restore again with `--force`, in one line (the message
+prints it): `occ maintenance:mode --off && occ backup:restore:full <location> <snapshot> --force`.
+Leave out `--install-apps` this time, so that the instance is open only for the seconds until the
+restore has switched maintenance mode on again; apps the first run could not install are listed at
+the end of the restore, install those afterwards.
 If occ then says that Nextcloud or one of the apps requires an upgrade, the database is already
 the old server's: run `occ upgrade` first, then the same command with `--force`.
 

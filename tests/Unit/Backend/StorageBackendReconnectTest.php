@@ -77,6 +77,24 @@ class StorageBackendReconnectTest extends TestCase {
 		$this->assertSame(1, $backend->reconnects);
 	}
 
+	public function testASilentlyDroppedConnectionIsReplacedAfterAPause(): void {
+		$backend = $this->backend();
+		$this->connections[0]->dropped = true;
+		$this->connections[0]->silent = true; // phpseclib still says connected
+		self::idle($backend);
+		$this->assertTrue($backend->exists('config'));
+		$this->assertSame(1, $backend->reconnects, 'the check failed, so the connection was replaced');
+	}
+
+	public function testAFailureOnASilentlyDroppedConnectionIsRepeated(): void {
+		$backend = $this->backend();
+		$this->connections[0]->dropped = true;
+		$this->connections[0]->silent = true;
+		$fh = $backend->get('config');
+		$this->assertSame('config', stream_get_contents($fh));
+		$this->assertSame(1, $backend->reconnects);
+	}
+
 	public function testAMissingFileOnALiveConnectionIsJustMissing(): void {
 		$backend = $this->backend();
 		$this->assertFalse($backend->exists('nothing'));
@@ -121,6 +139,8 @@ interface SftpLikeStorage extends IStorage {
 /** The public phpseclib calls the backend uses to tell a dead connection. */
 final class ReconnectFakeSftp {
 	public bool $dropped = false;
+	/** Dropped without phpseclib noticing (as a Hetzner Storage Box does): it still says connected. */
+	public bool $silent = false;
 	private bool $connected = true;
 	public int $requests = 0;
 
@@ -139,6 +159,9 @@ final class ReconnectFakeSftp {
 	public function request(): bool {
 		$this->requests++;
 		if ($this->dropped) {
+			if ($this->silent) {
+				return false;
+			}
 			$this->connected = false;
 		}
 		return $this->connected;

@@ -216,7 +216,8 @@ final class DbDumper {
 				}
 				$report['restored'][] = $table;
 			}
-			$this->restoreSequences($manifest['sequences'] ?? [], $report['missing']);
+			// unchanged tables too: a restore that stopped earlier may have left their counters at 1
+			$this->restoreSequences($manifest['sequences'] ?? [], $report['missing'], array_merge($report['restored'], $report['skipped']));
 			$this->resumeForeignKeys($foreignKeys);
 			$this->db->commit();
 			// Foreign keys of the tables created above, now their rows are in. Not inside the
@@ -573,16 +574,21 @@ final class DbDumper {
 		return $name;
 	}
 
-	/** @param list<string> $leftOut tables not restored (--skip-missing-tables): they do not exist here */
-	private function restoreSequences(array $sequences, array $leftOut = []): void {
+	/**
+	 * @param list<string> $leftOut tables not restored (--skip-missing-tables): they do not exist here
+	 * @param list<string> $restored tables restored or unchanged: their other counters go after their data
+	 */
+	private function restoreSequences(array $sequences, array $leftOut = [], array $restored = []): void {
 		if (!$this->db->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\PostgreSQLPlatform) {
 			return;
 		}
 		$leftOut = array_flip($leftOut);
+		$set = [];
 		foreach ($sequences as $info) {
 			if (isset($leftOut[$info['table']])) {
 				continue;
 			}
+			$set[$info['table'] . '.' . $info['column']] = true;
 			$seq = $this->db->fetchOne('SELECT pg_get_serial_sequence(quote_ident(?), ?)', [$info['table'], $info['column']]);
 			if ($seq === false || $seq === null) {
 				continue;
@@ -595,6 +601,27 @@ final class DbDumper {
 			} else {
 				$this->db->executeQuery('SELECT setval(CAST(? AS regclass), ?, ?)', [$seq, $info['last'], $info['called']],
 					[\Doctrine\DBAL\ParameterType::STRING, \Doctrine\DBAL\ParameterType::INTEGER, \Doctrine\DBAL\ParameterType::BOOLEAN]);
+			}
+		}
+		// A backup from MySQL/MariaDB or SQLite records no counters (those derive them from the
+		// data): every other counter of a restored table goes after its data, or new rows (a new
+		// file, an activity) would collide with restored ones.
+		$restored = array_flip($restored);
+		$rows = $this->db->fetchAllAssociative(
+			"SELECT c.table_name, c.column_name, pg_get_serial_sequence(quote_ident(c.table_name), c.column_name) AS seq
+			 FROM information_schema.columns c
+			 WHERE c.table_schema = current_schema() AND pg_get_serial_sequence(quote_ident(c.table_name), c.column_name) IS NOT NULL");
+		foreach ($rows as $r) {
+			if (!isset($restored[$r['table_name']]) || isset($set[$r['table_name'] . '.' . $r['column_name']])) {
+				continue;
+			}
+			$max = (int)$this->db->fetchOne(sprintf('SELECT COALESCE(MAX(%s), 0) FROM %s',
+				$this->db->quoteIdentifier($r['column_name']), $this->db->quoteIdentifier($r['table_name'])));
+			// never backwards: a counter already past the data stays where it is
+			$state = $this->db->fetchAssociative('SELECT last_value, is_called FROM ' . self::sequenceIdentifier($r['seq']));
+			$next = $state === false ? 1 : (int)$state['last_value'] + ($state['is_called'] ? 1 : 0);
+			if ($next <= $max) {
+				$this->db->executeQuery('SELECT setval(CAST(? AS regclass), ?, false)', [$r['seq'], $max + 1]);
 			}
 		}
 	}

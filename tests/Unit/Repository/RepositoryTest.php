@@ -99,6 +99,20 @@ class RepositoryTest extends TestCase {
 		Repository::init($this->backend, 'pw');
 	}
 
+	public function testInitRefusesALocationWithBackupDataButNoConfig(): void {
+		$repo = Repository::init($this->backend, 'pw');
+		$repo->backupDirectory($this->src);
+		$this->backend->delete('config'); // missing, or not seen for a moment
+
+		try {
+			Repository::init($this->backend, 'pw');
+			$this->fail('a new repository over existing backup data');
+		} catch (RepositoryException $e) {
+			$this->assertStringContainsString('holds backup data', $e->getMessage());
+		}
+		$this->assertFalse($this->backend->exists('config'), 'no new config written');
+	}
+
 	public function testTamperedPackIsDetected(): void {
 		$repo = Repository::init($this->backend, 'pw');
 		$r = $repo->backupDirectory($this->src);

@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace OCA\NgBackup\Repository;
 
+use OCA\NgBackup\Backend\BackendException;
 use OCA\NgBackup\Backend\IBackend;
 use OCA\NgBackup\Crypto\StreamCipher;
 
@@ -32,6 +33,8 @@ final class BlobIndex {
 	private const CACHE_LOT = 256;
 	/** @var int index files downloaded by the last load() (for tests and diagnostics) */
 	public int $downloaded = 0;
+	/** @var array<string, true> packs whose index file is loaded (refresh() fetches only others) */
+	private array $loaded = [];
 
 	public function __construct(
 		private IBackend $backend,
@@ -90,13 +93,14 @@ final class BlobIndex {
 	 * longer exist on the backend are dropped from the cache.
 	 */
 	public function load(bool $verify = false, ?callable $progress = null): void {
-		$this->blobs = [];
+		$hadIndex = $this->blobs !== [];
 		$cached = $verify ? [] : ($this->cache?->all($this->repositoryId) ?? []);
 		$present = [];
 		$this->downloaded = 0;
 		$order = []; // pack ids in listing order: where a blob is in two packs, the last listed wins
 		$fetch = [];
-		foreach ($this->backend->listFiles('index') as $path) {
+		$known = array_keys($this->loaded + $cached + ($verify ? ($this->cache?->all($this->repositoryId) ?? []) : []));
+		foreach ($this->listIndex($known) as $path) {
 			$packId = basename($path);
 			$present[$packId] = true;
 			$order[] = $packId;
@@ -104,6 +108,9 @@ final class BlobIndex {
 				$fetch[] = $path;
 			}
 		}
+		// only now: an empty listing that listIndex() refused leaves the index as it was
+		$this->blobs = [];
+		$this->loaded = $present;
 		// The rest is downloaded several at a time where the location allows it: on a large
 		// repository these are tens of thousands of small files. getMany() keeps their order, so
 		// the cached packs listed before each one are added first.
@@ -185,10 +192,78 @@ final class BlobIndex {
 		rewind($stream);
 		$this->backend->put('index/' . $packId, $stream);
 		$this->cachePut($packId, $entries);
+		$this->loaded[$packId] = true;
 		foreach ($entries as $e) {
 			$this->blobs[$e['id']] = [$packId, $e['offset'], $e['length'], $e['raw'], $e['flags']];
 			unset($this->pending[$e['id']]);
 		}
+	}
+
+	/**
+	 * Add the index files that appeared on the location since load(), such as those of packs
+	 * another server's cleanup wrote while a restore runs. Only adds and updates: a blob is
+	 * never dropped, as a listing that misses files (a connection that failed) must not make a
+	 * restore lose blobs it knows. A blob in a new pack takes that pack's place.
+	 */
+	public function refresh(): void {
+		$fetch = [];
+		$listed = 0;
+		foreach ($this->listIndex(array_keys($this->loaded)) as $path) {
+			$listed++;
+			if (!isset($this->loaded[basename($path)])) {
+				$fetch[] = $path;
+			}
+		}
+		$toCache = [];
+		foreach ($this->backend->getMany($fetch) as $path => $data) {
+			$packId = basename($path);
+			/** @var list<array{id:string, offset:int, length:int, raw:int, flags:int}> $entries authenticated: written by NG Backup */
+			$entries = json_decode($this->cipher->decryptString($data, 'index:' . $packId), true, 512, JSON_THROW_ON_ERROR);
+			$this->downloaded++;
+			$this->add($packId, $entries);
+			$this->loaded[$packId] = true;
+			$toCache[$packId] = $entries;
+		}
+		if ($toCache !== []) {
+			$this->cache?->putMany($this->repositoryId, $toCache);
+		}
+	}
+
+	/**
+	 * The index files on the location. An empty listing while index files are known ($known,
+	 * pack ids) is usually a connection that failed quietly; taken as is, it would empty the
+	 * index and the cache, make a check report every blob missing, or make a cleanup wipe the
+	 * cache. So the connection is checked (the repository's config must be there) and the folder
+	 * listed once more. Empty again, three of the known index files are looked up one by one:
+	 * only when they are gone too is the repository taken as empty (another server removed its
+	 * last snapshot and cleaned up). Even when that is wrong, nothing on the location is lost:
+	 * only this index and the cache are empty until the next load.
+	 *
+	 * @param list<string> $known
+	 * @return list<string>
+	 * @throws BackendException when the location does not answer as it should
+	 */
+	private function listIndex(array $known): array {
+		$paths = $this->backend->listFiles('index');
+		if ($paths !== [] || $known === []) {
+			return $paths;
+		}
+		if (!$this->backend->exists('config')) {
+			throw new BackendException('The location listed no index files and has no repository config: not trusting that listing');
+		}
+		$paths = $this->backend->listFiles('index');
+		if ($paths !== []) {
+			return $paths;
+		}
+		// spread over the list: first, middle and last (another server's cleanup removes packs
+		// here and there, not in this order)
+		$n = count($known);
+		foreach (array_unique([$known[0], $known[intdiv($n, 2)], $known[$n - 1]]) as $packId) {
+			if ($this->backend->exists('index/' . $packId)) {
+				throw new BackendException('The location listed no index files, while index/' . $packId . ' is there: not trusting that listing');
+			}
+		}
+		return [];
 	}
 
 	/** @return array<string, list<array{id:string, offset:int, length:int}>> packId => blobs currently located in that pack */
@@ -204,6 +279,7 @@ final class BlobIndex {
 	public function removePack(string $packId): void {
 		$this->backend->delete('index/' . $packId);
 		$this->cacheRemove([$packId]);
+		unset($this->loaded[$packId]);
 		foreach ($this->blobs as $id => $loc) {
 			if ($loc[0] === $packId) {
 				unset($this->blobs[$id]);

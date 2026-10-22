@@ -27,9 +27,14 @@ final class RestoreFullService {
 	 * Config keys that must keep pointing at THIS installation's actual, already-working
 	 * database and data directory (set by occ maintenance:install), never at the old server's.
 	 */
+	/** App setting: when a full restore started that has not completed (see restoreFull()). */
+	private const INTERRUPTED_KEY = 'restore_full_started';
+
 	private const CONNECTION_KEYS = [
 		'dbtype', 'dbhost', 'dbport', 'dbname', 'dbuser', 'dbpassword', 'dbpersistent',
 		'dbtableprefix', 'dbdriveroptions', 'datadirectory',
+		// set by restoreFull() itself for the length of the restore
+		'maintenance',
 	];
 
 	public function __construct(
@@ -85,12 +90,50 @@ final class RestoreFullService {
 		];
 	}
 
-	/** @return array{dbReport:array, dataFiles:int, configKeys:int, dbConsistent:bool, missingApps:list<string>} */
+	/** @return array{dbReport:array, dataFiles:int, configKeys:int, dbConsistent:bool, missingApps:list<string>, maintenanceLeftOn:bool} */
 	public function restoreFull(Target $target, string $snapshotId, bool $skipMissingTables = false): array {
-		$check = $this->checkCompatibility($target, $snapshotId, $skipMissingTables);
+		// Maintenance mode for the whole restore: background jobs (cron.php stops in maintenance
+		// mode), page visits (AJAX cron) and users must not write into tables or the data
+		// directory while they are being replaced; a row written in between would collide with a
+		// restored one or be silently lost. Switched off after a restore that completed. After an
+		// error it stays on: the instance may be partly restored, and must not be used like that.
+		// occ only offers app commands outside maintenance mode, so the admin switches it off
+		// right before running the restore again (see RestoreFull). Already on before: left on.
+		// On before the checks below, so that a run again after an error leaves the partly
+		// restored instance open for seconds at most; off again when they refuse (nothing changed).
+		// A marker in ng_backup's own app settings (which the restore keeps) says a restore started
+		// and did not complete: then the instance may be partly restored, and a check that refuses
+		// a run again must not open it.
+		$appConfig = \OCP\Server::get(\OCP\IAppConfig::class);
+		$interrupted = $appConfig->getValueInt(\OCA\NgBackup\AppInfo\Application::APP_ID, self::INTERRUPTED_KEY, 0) > 0;
+		$wasInMaintenance = $this->config->getSystemValueBool('maintenance', false);
+		$this->config->setSystemValue('maintenance', true);
+		$reopen = function () use ($wasInMaintenance, $interrupted): void {
+			if (!$wasInMaintenance && !$interrupted) {
+				$this->config->setSystemValue('maintenance', false);
+			}
+		};
+		try {
+			$check = $this->checkCompatibility($target, $snapshotId, $skipMissingTables);
+		} catch (\Throwable $e) {
+			$reopen();
+			throw $e;
+		}
 		if (!$check['ok']) {
+			$reopen();
 			throw new \RuntimeException($this->describeBlockers($check));
 		}
+		$appConfig->setValueInt(\OCA\NgBackup\AppInfo\Application::APP_ID, self::INTERRUPTED_KEY, time());
+		$result = $this->restoreInMaintenance($target, $snapshotId, $skipMissingTables, $check);
+		$appConfig->deleteKey(\OCA\NgBackup\AppInfo\Application::APP_ID, self::INTERRUPTED_KEY);
+		if (!$wasInMaintenance) {
+			$this->config->setSystemValue('maintenance', false);
+		}
+		return $result + ['maintenanceLeftOn' => $wasInMaintenance];
+	}
+
+	/** @return array{dbReport:array, dataFiles:int, configKeys:int, dbConsistent:bool, missingApps:list<string>} */
+	private function restoreInMaintenance(Target $target, string $snapshotId, bool $skipMissingTables, array $check): array {
 		return $this->withSharedLock($target, function (callable $refresh) use ($target, $snapshotId, $skipMissingTables, $check) {
 			$beat = LeaseService::throttled($refresh);
 			$repo = $this->targets->repository($target);

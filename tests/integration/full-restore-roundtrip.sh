@@ -2,10 +2,13 @@
 # Disaster recovery: occ backup:key:import + backup:target:add + backup:restore:full on a
 # SECOND, fresh Nextcloud instance that never saw the first one, sharing only the backup
 # location (a local directory, bind-mounted into both containers) -- see PLAN.md 3.7.
-# Usage: full-restore-roundtrip.sh <nextcloud-image-tag> [sqlite|pgsql|mysql] [legacy|sftp]
+# Usage: full-restore-roundtrip.sh <nextcloud-image-tag> [sqlite|pgsql|mysql] [legacy|sftp|to-pgsql|to-mysql|to-sqlite]
 #   e.g. full-restore-roundtrip.sh 35-apache pgsql
 # With "sftp" the location is an SFTP server instead of a shared directory, and the origin has a
 # file spread over several packs: the restore reads them ahead on connections of its own.
+# With "to-<db>" the restore instance runs that database whatever the origin runs (a MySQL or
+# SQLite backup records no ID counters; after the restore new rows must not collide with restored
+# ones, whatever the database on either side).
 # With "legacy" the origin runs NG Backup 1.0.0-rc.1 (0.9.7), whose backups do not record the
 # structure of their tables: the restore must then leave the tables of the disabled app out
 # with --skip-missing-tables, as for a real backup made before 1.0.0-rc.2.
@@ -127,6 +130,8 @@ ok "test data backed up, snapshot $SNAP"
 
 docker cp ngb-frt-origin:/tmp/kit.json /tmp/ngb-frt-kit.json
 docker exec ngb-frt-origin sh -c "cat /tmp/pass" > /tmp/ngb-frt-pass
+ORIGIN_DBTYPE=$DB
+case "$MODE" in to-*) DB=${MODE#to-} ;; esac
 RESTORE_DB=$(db_env restore)
 # shellcheck disable=SC2086
 docker run -d --name ngb-frt-restore --network "$NET" $RESTORE_DB \
@@ -141,8 +146,14 @@ docker cp /tmp/ngb-frt-pass ngb-frt-restore:/tmp/pass
 ok "fresh restore instance up"
 
 run_on ngb-frt-restore backup:key:import /tmp/kit.json --passphrase-file=/tmp/pass >/dev/null || fail "key import"
-run_on ngb-frt-restore backup:target:add offsite "${LOCATION[@]}" --path=repo >/dev/null || fail "target add on the restore instance"
-run_on ngb-frt-restore backup:list offsite | grep -q "$SNAP" || fail "the origin's snapshot is not listed after connecting the location"
+ADD_OUT=$(run_on ngb-frt-restore backup:target:add offsite "${LOCATION[@]}" --path=repo 2>&1) || { printf '%s\n' "$ADD_OUT"; fail "target add on the restore instance"; }
+LIST_OUT=$(run_on ngb-frt-restore backup:list offsite 2>&1)
+printf '%s\n' "$LIST_OUT" | grep -q "$SNAP" || {
+	printf 'target:add said:\n%s\nbackup:list said:\n%s\n' "$ADD_OUT" "$LIST_OUT"
+	docker exec ngb-frt-restore sh -c 'grep -h ng_backup /var/www/html/data/nextcloud.log | tail -5' || true
+	docker exec ngb-frt-restore sh -c 'ls -la /mnt/shared/repo /mnt/shared/repo/snapshots' || true
+	fail "the origin's snapshot is not listed after connecting the location"
+}
 ok "recovery kit imported, existing repository adopted, snapshot visible"
 
 RESTORE_OPTS=(--no-interaction --install-apps)
@@ -161,7 +172,10 @@ OUT=$(run_on ngb-frt-restore backup:restore:full offsite "$SNAP" "${RESTORE_OPTS
 	docker exec ngb-frt-restore sh -c 'tail -c 6000 /var/www/html/data/nextcloud.log' || true
 	fail "restore:full"
 }
-ok "backup:restore:full completed"
+printf '%s\n' "$OUT" | grep -q "maintenance mode while the restore runs" || fail "the restore did not say it runs in maintenance mode"
+run_on ngb-frt-restore status 2>&1 | grep -q "maintenance: false" || fail "maintenance mode is still on after the restore"
+run_on ngb-frt-restore config:app:get ng_backup restore_full_started >/dev/null 2>&1 && fail "the restore left its 'started' marker behind"
+ok "backup:restore:full completed, in maintenance mode and out of it again"
 
 # Everything below must work in a FRESH occ process (a new PHP process per docker exec), since
 # earlier bugs here only showed up after config.php's secret was rewritten mid-restore.
@@ -170,13 +184,23 @@ run_on ngb-frt-restore user:list | grep -q frtest || fail "the backed-up user is
 docker exec ngb-frt-restore test -f /var/www/html/data/frtest/files/Docs/note.txt || fail "restored file is missing"
 [ "$(docker exec ngb-frt-restore cat /var/www/html/data/frtest/files/Docs/note.txt)" = "hello disaster recovery" ] || fail "restored file content differs"
 run_on ngb-frt-restore files:scan frtest >/dev/null || fail "files:scan fails after restore"
+# New rows after the restore: a new file (file cache) and a new user must not collide with
+# restored rows (ID counters after the data).
+docker exec ngb-frt-restore sh -c "echo new > /var/www/html/data/frtest/files/Docs/after-restore.txt && chown www-data /var/www/html/data/frtest/files/Docs/after-restore.txt"
+run_on ngb-frt-restore files:scan frtest >/dev/null || fail "a new file cannot be added after the restore"
+if [ "$DB" != sqlite ]; then
+	[ "$(sql restore "select count(*) from oc_filecache where path = 'files/Docs/after-restore.txt'")" = 1 ] \
+		|| fail "a new file did not make it into the file cache after the restore (ID counters?)"
+fi
+docker exec -u www-data -e OC_PASS="$NC_PASS" ngb-frt-restore php occ user:add --password-from-env frnew >/dev/null || fail "a new user cannot be added after the restore"
 ok "database, files and ng_backup's own state are all intact and usable after the restore"
 
-if [ "$DB" != sqlite ] && [ "$LEGACY" = legacy ]; then
+# Mail and Deck were only set up on an origin with a database server (see above)
+if [ "$ORIGIN_DBTYPE" != sqlite ] && [ "$DB" != sqlite ] && [ "$LEGACY" = legacy ]; then
 	[ "$(sql restore "select count(*) from information_schema.tables where table_name = 'oc_deck_boards'")" = 0 ] || fail "a table of unknown structure was created"
 	[ "$(sql restore "select count(*) from oc_mail_accounts where drafts_mailbox_id is not null")" = 1 ] || fail "the mail account was not restored"
 	ok "older backup: tables of the disabled app left out, Mail restored"
-elif [ "$DB" != sqlite ]; then
+elif [ "$ORIGIN_DBTYPE" != sqlite ] && [ "$DB" != sqlite ]; then
 	[ "$(sql restore "select count(*) from information_schema.tables where table_name = 'oc_deck_boards'")" = 1 ] || fail "the tables of the disabled app were not created"
 	[ "$(sql restore "select count(*) from oc_mail_accounts where drafts_mailbox_id is not null")" = 1 ] || fail "the mail account was not restored"
 	[ "$(sql restore "select count(*) from information_schema.table_constraints where constraint_type = 'FOREIGN KEY' and table_name like 'oc_mail_%'")" -gt 0 ] \
@@ -197,4 +221,4 @@ fi
 run_on ngb-frt-restore backup:run offsite -l post-restore-check >/dev/null || fail "a new backup after the restore fails"
 ok "the restored instance can run a new backup of its own"
 
-echo "FULL RESTORE ROUNDTRIP PASS ($DB${MODE:+, $MODE})"
+echo "FULL RESTORE ROUNDTRIP PASS ($ORIGIN_DBTYPE${MODE:+, $MODE})"

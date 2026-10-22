@@ -282,10 +282,19 @@ final class StorageBackend implements IBackend, IReadsAhead {
 		if ($connections === []) {
 			return null;
 		}
-		return (static function () use ($storages, $connections, $root, $abs, $spool): \Generator {
+		// in place of a connection that broke: a new storage, kept like the others
+		$connect = static function () use ($reconnect, &$storages): ?object {
+			$storage = $reconnect();
+			$sftp = SftpReadStream::connection($storage);
+			if ($sftp !== null) {
+				$storages[] = $storage;
+			}
+			return $sftp;
+		};
+		return (static function () use (&$storages, $connections, $root, $abs, $spool, $connect): \Generator {
 			// the storages hold their connections: kept until the fetcher is done
 			try {
-				yield from SftpRangeFetcher::fetch($connections, $root, $abs, $spool);
+				yield from SftpRangeFetcher::fetch($connections, $root, $abs, $spool, $connect);
 			} finally {
 				unset($storages);
 			}
@@ -478,8 +487,9 @@ final class StorageBackend implements IBackend, IReadsAhead {
 		$this->lastUsed = microtime(true);
 	}
 
+	/** After a failed request: ask the server (one round trip), as phpseclib may not know it is gone. */
 	private function reopenIfDead(): bool {
-		if ($this->reconnect === null || !$this->sftpReads || $this->alive(false) !== false) {
+		if ($this->reconnect === null || !$this->sftpReads || $this->alive(true) !== false) {
 			return false;
 		}
 		$this->reopen();
@@ -508,8 +518,9 @@ final class StorageBackend implements IBackend, IReadsAhead {
 			if (is_callable([$sftp, 'clearStatCache'])) {
 				$sftp->clearStatCache(); // or stat() answers from memory
 			}
-			$sftp->stat('.');
-			return (bool)$sftp->isConnected();
+			// A Storage Box drops a quiet connection without phpseclib noticing: it still says
+			// connected, and every request fails. So the answer counts, not what it says after.
+			return $sftp->stat('.') !== false && (bool)$sftp->isConnected();
 		} catch (\Throwable) {
 			return false;
 		}

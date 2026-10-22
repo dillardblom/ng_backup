@@ -7,6 +7,39 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
+## [1.0.0-rc.5] - 2026-10-22
+
+Fifth release candidate for 1.0.0; the app version is 0.9.11. A full restore of 1 TB over SFTP
+stopped after 13 hours with "Blob not in index"; the backup itself was fine.
+
+### Changed
+- README and app store description: NG Backup needs background jobs on system cron, with how to
+  set that up (issues #13, #17).
+
+### Fixed
+- A full restore no longer stops with "Blob not in index" after a pack could not be read for a
+  moment. Reading the index again then got an empty listing (from a connection the location had
+  dropped) and emptied the index. Reading the index again now only adds, an empty listing of a
+  location that has an index is an error instead of an empty index, and a pack that could not be
+  read is read once more before the restore gives up.
+- After a full restore of a MySQL/MariaDB or SQLite backup onto PostgreSQL, new files, users or
+  activities could not be added ("duplicate key", "File entry could not be inserted"): such
+  backups record no ID counters, and they stayed at 1. Every counter of a restored table now goes
+  after its data. Found in a disaster recovery simulation of 138 GB from MariaDB to PostgreSQL,
+  where all 15,772 files and every count were identical.
+- A full restore now runs in maintenance mode: a background job, a page visit or a user writing
+  into the instance meanwhile could collide with restored rows ("duplicate key") or be lost. It
+  is switched off when the restore completes; after an error it stays on, and the message gives
+  the one line to switch it off and run the restore again. Maintenance mode that was on before
+  the restore stays on.
+- Adding a location whose repository config could not be read, while backup data is there,
+  no longer creates a new repository over it: it stops with an explanation. A snapshot that
+  cannot be taken over when a location is added is now logged instead of left out silently.
+- An SFTP connection that a Hetzner Storage Box dropped without phpseclib noticing is now
+  recognised and replaced: the check asks the server and counts its answer.
+- The extra connection a full restore reads ahead on is replaced when it breaks (up to 20 times),
+  instead of reading the rest of the restore the slow way.
+
 ## [1.0.0-rc.4] - 2026-10-19
 
 Fourth release candidate for 1.0.0; the app version is 0.9.10. 1.0.0-rc.3 (0.9.9) was not
