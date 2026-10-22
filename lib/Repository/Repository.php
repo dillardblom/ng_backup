@@ -895,8 +895,27 @@ final class Repository {
 			} catch (BackendException) {
 				throw $e;
 			}
+			$pack = $moved;
 		}
-		return $this->decodeBlob($id, $encrypted);
+		try {
+			return $this->decodeBlob($id, $encrypted);
+		} catch (\Exception $damaged) {
+			// Bytes that do not decrypt: damaged on the location, or a read that went wrong on the
+			// way (a stream that lost its place: an SMB restore stopped after 17 hours like this).
+			// Read exactly this blob once more, on a request of its own; only a second failure
+			// means the data itself is damaged.
+			$this->packReader->close();
+			try {
+				$again = $this->backend->getRange('packs/' . substr($pack, 0, 2) . '/' . $pack, $offset, $length);
+			} catch (\Exception) {
+				throw $damaged;
+			}
+			$data = $this->decodeBlob($id, $again);
+			if (function_exists('OCP\Log\logger')) {
+				\OCP\Log\logger('ng_backup')->warning('NG Backup: blob ' . $id . ' did not decrypt as first read from pack ' . $pack . '; read again, it is fine');
+			}
+			return $data;
+		}
 	}
 
 	/** Decrypts and checks a blob read from its pack; throws when it is corrupted or tampered with. */
