@@ -88,7 +88,9 @@ final class Schedule {
 	}
 
 	/**
-	 * The server's default_timezone when set, else the first administrator's, else UTC.
+	 * The server's default_timezone when set, else the first administrator's, else UTC. A server
+	 * zone of UTC is passed over on purpose: it is mostly what an image or installer left there,
+	 * while the administrator who set the time read it as their own (#19).
 	 *
 	 * @return non-empty-string
 	 */
