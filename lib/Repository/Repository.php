@@ -918,10 +918,29 @@ final class Repository {
 			}
 			$data = $this->decodeBlob($id, $again);
 			if (function_exists('OCP\Log\logger')) {
-				\OCP\Log\logger('ng_backup')->warning('NG Backup: blob ' . $id . ' did not decrypt as first read from pack ' . $pack . '; read again, it is fine');
+				\OCP\Log\logger('ng_backup')->warning('NG Backup: blob ' . $id . ' did not decrypt as first read from pack ' . $pack . ' at ' . $offset . '; read again, it is fine. First read: ' . self::howItDiffered($encrypted, $again));
 			}
 			return $data;
 		}
+	}
+
+	/**
+	 * What a read that went wrong looked like next to the right bytes, for the log: where it starts
+	 * to differ, and whether the rest is zeros or the right bytes from another place (a stream that
+	 * lost its place).
+	 */
+	private static function howItDiffered(string $wrong, string $right): string {
+		$at = strspn($wrong ^ $right, "\0");
+		$text = strlen($wrong) . ' bytes, differ from byte ' . $at . ' of ' . strlen($right);
+		$tail = substr($wrong, $at, 64);
+		if ($tail === '') {
+			return $text . ' (too short)';
+		}
+		if (trim($tail, "\0") === '') {
+			return $text . ' (zeros)';
+		}
+		$found = strpos($right, $tail);
+		return $text . ($found !== false ? ' (the right bytes from ' . ($found - $at) . ' bytes further on)' : ' (other bytes)');
 	}
 
 	/** Decrypts and checks a blob read from its pack; throws when it is corrupted or tampered with. */
