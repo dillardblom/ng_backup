@@ -126,7 +126,7 @@ if [ "$DB" != sqlite ]; then
 	# Deck installed and then switched off: its tables stay in the database and in the backup
 	install_app ngb-frt-origin deck || fail "install deck on the origin (app store unreachable?)"
 	# a 4-byte character (emoji) in a table the restore has to create: utf8mb4 on MySQL/MariaDB
-	sql origin "insert into oc_deck_boards (title, owner, color, archived, deleted_at, last_modified) values ('Plan 📌', 'frtest', '0087C5', 0, 0, 0)" >/dev/null
+	sql origin "insert into oc_deck_boards (title, owner, color, archived, deleted_at, last_modified) values ('Plan 📌', 'frtest', '0087C5', false, 0, 0)" >/dev/null
 	run_on ngb-frt-origin app:disable deck >/dev/null
 	ok "origin has a synced Mail account and the tables of a disabled app"
 fi
