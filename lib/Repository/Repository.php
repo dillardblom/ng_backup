@@ -850,6 +850,8 @@ final class Repository {
 					} catch (\Exception) {
 						// a read that went wrong on the way (see loadBlob()): this blob on its own
 						$blob = $this->loadBlob($id);
+						// its pack stream is closed before the next range is read on the same connection
+						$this->packReader->close();
 					}
 					yield $blob;
 					$done++;
