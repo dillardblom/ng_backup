@@ -146,9 +146,30 @@ What you should do on the location (strongly recommended):
 - **Files and folders** of a user: in the web interface or `occ backup:restore`, into a new folder
   ("Restored <date>"), merged into the original place, or replacing it.
 - **Raw restore** of any path (for example `config/`) to a local directory: `occ backup:restore ... --to-directory=DIR`.
-- **Whole server** (disaster recovery onto a fresh installation): `occ backup:restore:full`, see the how-to.
+- **Whole server** (disaster recovery onto a fresh installation): `occ backup:restore:full`, see
+  [docs/DISASTER-RECOVERY.md](docs/DISASTER-RECOVERY.md). It runs in maintenance mode, so that
+  nobody and no background job writes into the instance while it is being replaced.
 - **One user** (account, settings, files, calendars, contacts via user_migration): `occ backup:user:backup` and
   `occ backup:user:restore`, replacing the account or restoring it as `<uid>-bak`. See the how-to.
+
+**Without shell access** (a hosted Nextcloud where you cannot run `occ`): files and folders can be
+restored in the web interface. Restoring a whole user or the whole server needs `occ`, so on such
+hosting it is something your provider (or whoever has shell access) runs. A restore mode that
+works without maintenance mode, and so from the web interface, is on the roadmap.
+
+## Tested disaster recoveries
+
+Full restores onto a fresh server, following only [the guide](docs/DISASTER-RECOVERY.md):
+
+| Backup | Location | Database | Result |
+|---|---|---|---|
+| Production, about 1 TB, 150,000 files (Nextcloud All-in-One) | Hetzner Storage Box (SFTP), Germany → Canada | PostgreSQL → PostgreSQL | 150,622 files restored in about 25 h (13-14 MiB/s), sample identical |
+| 138 GB simulation: 20 users, calendars, contacts, mail, shares, team folders with an ACL, versions, trash | OVH S3, Warsaw → Canada | MariaDB → PostgreSQL | all 15,772 files and every database count identical |
+| The same | OVH S3 | MariaDB → MariaDB | all 15,772 files and every database count identical |
+| The same | Hetzner Storage Box (SMB) | MariaDB → SQLite | running |
+| 51 GB test instance | OVH S3 | PostgreSQL → PostgreSQL | 23,519/23,519 checksums identical |
+
+The integration tests restore across every pair of PostgreSQL, MariaDB and SQLite.
 
 ## Storage backend experiences
 
@@ -206,6 +227,27 @@ Contributions welcome via PR — add what you ran into with your own provider.
   can be read on more connections: `occ config:app:set ng_backup restore_sftp_connections
   --value=4` (at most 8; the server must allow that many plus one at once for the user).
 
+- **OVH Object Storage (S3, Warsaw, 2026-10):** works with the `amazons3` backend (path style,
+  region `waw`). A full backup of 1 TB from Germany ran at about 7 MiB/s, from Canada about
+  6 MiB/s with BBR; a check of a 1 TB backup took 3.5 minutes (index files are fetched 16 at a
+  time); a restore of 138 GB from Warsaw to Canada took about 6 hours. Turn on versioning and
+  Object Lock on the bucket (see above); OVH charges no egress.
+
+- **Hetzner Storage Box over SFTP, full restore:** about 13-14 MiB/s from Germany to Canada
+  (122 ms) with the read-ahead of 1.0.0-rc.4; without it about 2.8 MiB/s. A Storage Box gets
+  slower with several connections reading at once (4-6 MiB/s for 2-4 connections, it reads from
+  disks), so one extra connection is the default. A Storage Box drops an SFTP connection that
+  stayed quiet for a while without telling the client; NG Backup checks and replaces it.
+
+- **SMB speed:** on a local network (Samba, no delay) a backup ran at about 25 MB/s and a
+  restore at about 28 MiB/s. Over a long line SMB waits for an answer to each request: from
+  Canada to a Storage Box in Germany (130 ms) about 2.6 MiB/s for a backup and 1.6 MiB/s for a
+  restore, and connecting a location with an existing backup reads its index at about one file a
+  second. SMB is meant for a local network; use SFTP or S3 for a location far away. When
+  `pecl install smbclient` fails (pecl.php.net was unreachable for hours on 2026-10-21), the
+  extension builds from its source: `libsmbclient-php` on GitHub, `phpize && ./configure && make
+  && make install`, then `docker-php-ext-enable smbclient`.
+
 - **NFS is not a files_external backend at all.** Mount the NFS export on the server yourself
   (e.g. via `/etc/fstab` or a systemd `.mount` unit) and point ng_backup's `local` backend at the
   mount point; ng_backup never mounts or unmounts anything on its own, so an NFS mount dropping
@@ -236,8 +278,11 @@ On the backlog; none of these block the beta or 1.0.0, but know them before you 
 - Location passwords passed with `-o password=...` are visible in the process list and shell
   history while the command runs.
 - Temporary files of a restore into a user's files end up in that user's trash.
-- Restoring the database does not order tables by foreign keys; apps with cascading foreign keys
-  could lose rows (Nextcloud core does not use them).
+- **Restoring a whole user or the whole server needs `occ`** (shell access); see "Without shell
+  access" above.
+- **`--install-apps` depends on the app store.** Nextcloud downloads the whole app list (about
+  38 MB) and gives up after 120 seconds; on a slow day apps are not installed. The restore then
+  lists them: install them afterwards with `occ app:install`, their data is restored already.
 - A pack whose index upload failed stays on the location until removed by hand.
 
 ## Commands

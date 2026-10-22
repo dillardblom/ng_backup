@@ -10,6 +10,8 @@ Nextcloud back from an NG Backup location. Do them in this order.
 - [ ] A new server with the **same Nextcloud major version** as the old one (for example 34),
       a database (PostgreSQL, MySQL/MariaDB or SQLite; it may differ from the old one) and room for
       the whole backup plus a margin.
+- [ ] **Shell access** to the new server, to run `occ` (on a hosted Nextcloud without it, your
+      provider runs these steps).
 - [ ] A list of the apps that are **not in the app store** (your own builds, apps copied in by
       hand). Keep their packages somewhere safe beforehand.
 
