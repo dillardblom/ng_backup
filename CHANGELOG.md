@@ -10,6 +10,14 @@ instead carried by the app description, the git tag, the release, and this file.
 ## [Unreleased]
 
 ### Fixed
+- The daily backup time was taken as UTC (Nextcloud runs PHP in UTC): 03:00 ran at 05:00 in
+  Berlin (#19). The time is now saved with the administrator's time zone and shown with it. A time
+  saved before is converted once to the zone of the server or an administrator, so it shows as it
+  effectively ran (02:30 UTC becomes 04:30 Europe/Berlin in summer) and nothing moves.
+- A full restore over SMB stopped after 17 hours with "Decryption failed": a read over a long
+  line handed out wrong bytes (the backup itself was fine, the same files restored identically
+  afterwards). A blob that does not decrypt as first read is now read once more on a request of
+  its own, and only a second failure stops the restore.
 - A full restore onto MySQL/MariaDB stopped with "Incorrect string value" when it created a table
   (of an app that is not installed here) whose rows hold emoji or other 4-byte characters: the
   table got 3-byte utf8. Tables the restore creates now get this installation's character set and

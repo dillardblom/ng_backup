@@ -26,3 +26,24 @@ export function formatSize(bytes) {
 	}
 	return i === 0 ? `${b} B` : `${b.toFixed(1)} ${units[i]}`
 }
+
+/**
+ * A time of day "HH:MM" in zone `from`, as "HH:MM" in zone `to`, at today's offsets.
+ *
+ * @param {string} hhmm the time
+ * @param {string} from IANA zone it is in
+ * @param {string} to IANA zone to show it in
+ * @return {string}
+ */
+export function toZone(hhmm, from, to) {
+	const [h, m] = hhmm.split(':').map(Number)
+	const parts = (zone, date) => Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
+		timeZone: zone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+	}).formatToParts(date).map((p) => [p.type, p.value]))
+	const today = parts(from, new Date())
+	const guess = Date.UTC(+today.year, +today.month - 1, +today.day, h, m)
+	const seen = parts(from, new Date(guess))
+	const offset = Date.UTC(+seen.year, +seen.month - 1, +seen.day, +seen.hour, +seen.minute) - guess
+	const there = parts(to, new Date(guess - offset))
+	return `${there.hour}:${there.minute}`
+}

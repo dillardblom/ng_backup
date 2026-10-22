@@ -47,6 +47,7 @@ final class AdminApiController extends Controller {
 		private \OCA\NgBackup\Service\AlertService $alerts,
 		private \OCA\NgBackup\Service\KeySlotService $slots,
 		private \OCA\NgBackup\Service\PruneService $prune,
+		private \OCA\NgBackup\Service\Schedule $schedule,
 	) {
 		parent::__construct(Application::APP_ID, $request);
 	}
@@ -72,7 +73,8 @@ final class AdminApiController extends Controller {
 			'runs' => $runs,
 			'olderRuns' => $allRuns ? 0 : $this->runs->countAll() - count($shown),
 			'recentDays' => \OCA\NgBackup\Command\Status::RECENT_DAYS,
-			'schedule' => $this->appConfig->getValueString(Application::APP_ID, 'schedule_time', ''),
+			'schedule' => $this->schedule->get()['time'],
+			'scheduleTimezone' => $this->schedule->get()['timezone'],
 		]);
 	}
 
@@ -240,12 +242,14 @@ final class AdminApiController extends Controller {
 		return new JSONResponse($this->runJson($run));
 	}
 
-	public function setSchedule(string $time): JSONResponse {
-		if ($time !== '' && !preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $time)) {
-			return new JSONResponse(['error' => 'Use HH:MM or empty'], Http::STATUS_BAD_REQUEST);
+	/** @param string $timezone the administrator's zone (the browser's); empty: keep the current one */
+	public function setSchedule(string $time, string $timezone = ''): JSONResponse {
+		try {
+			$this->schedule->set($time, $timezone !== '' ? $timezone : $this->schedule->get()['timezone']);
+		} catch (\InvalidArgumentException $e) {
+			return new JSONResponse(['error' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
 		}
-		$this->appConfig->setValueString(Application::APP_ID, 'schedule_time', $time);
-		return new JSONResponse(['schedule' => $time]);
+		return new JSONResponse(['schedule' => $time, 'scheduleTimezone' => $this->schedule->get()['timezone']]);
 	}
 
 	public function snapshots(int $targetId): JSONResponse {
