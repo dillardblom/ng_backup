@@ -47,6 +47,12 @@ if [ "$LEGACY" = legacy ]; then
 fi
 
 run_on() { docker exec -u www-data "$1" php occ "${@:2}"; }
+# The app store sends the whole app list (~38 MB) and Nextcloud gives up after 120 s: on a slow day
+# an install fails for reasons outside this test. Up to three tries.
+install_app() { # container app
+	for i in 1 2 3; do run_on "$1" app:install "$2" >/dev/null 2>&1 && return 0; sleep 20; done
+	return 1
+}
 
 # Database settings for an instance: SQLite inside the container, or its own PostgreSQL container
 db_env() {
@@ -109,7 +115,7 @@ if [ "$DB" != sqlite ]; then
 	# while the restore loads tables in name order, accounts before mailboxes.
 	docker run -d --name ngb-frt-imap --network "$NET" -e MAILNAME=mail.domain.tld -e MAIL_ADDRESS=user@domain.tld \
 		-e MAIL_PASS=mypassword ghcr.io/christophwurst/docker-imap-devel:latest >/dev/null
-	run_on ngb-frt-origin app:install mail >/dev/null || fail "install mail on the origin"
+	install_app ngb-frt-origin mail || fail "install mail on the origin (app store unreachable?)"
 	run_on ngb-frt-origin config:system:set app.mail.verify-tls-peer --type=boolean --value=false >/dev/null
 	sleep 10
 	run_on ngb-frt-origin mail:account:create frtest Test user@domain.tld ngb-frt-imap 993 ssl user@domain.tld mypassword \
@@ -118,7 +124,7 @@ if [ "$DB" != sqlite ]; then
 	[ "$(sql origin 'select count(*) from oc_mail_accounts where drafts_mailbox_id is not null')" = 1 ] \
 		|| fail "the mail account does not point at its mailboxes"
 	# Deck installed and then switched off: its tables stay in the database and in the backup
-	run_on ngb-frt-origin app:install deck >/dev/null || fail "install deck on the origin"
+	install_app ngb-frt-origin deck || fail "install deck on the origin (app store unreachable?)"
 	# a 4-byte character (emoji) in a table the restore has to create: utf8mb4 on MySQL/MariaDB
 	sql origin "insert into oc_deck_boards (title, owner, color, archived, deleted_at, last_modified) values ('Plan 📌', 'frtest', '0087C5', 0, 0, 0)" >/dev/null
 	run_on ngb-frt-origin app:disable deck >/dev/null
