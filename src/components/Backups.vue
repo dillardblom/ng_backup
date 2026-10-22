@@ -91,7 +91,7 @@ const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 const shown = (s) => (s && props.status.scheduleTimezone && props.status.scheduleTimezone !== browserZone) ? toZone(s, props.status.scheduleTimezone, browserZone) : s
 const schedule = ref(shown(props.status.schedule))
 const error = ref('')
-watch(() => props.status.schedule, (s) => { schedule.value = shown(s) })
+watch(() => [props.status.schedule, props.status.scheduleTimezone], ([s]) => { schedule.value = shown(s) })
 
 const trash = reactive({})
 async function loadTrash() {

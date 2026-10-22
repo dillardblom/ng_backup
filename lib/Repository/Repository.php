@@ -845,7 +845,13 @@ final class Repository {
 		try {
 			foreach ($this->backend->getRanges($ranges) as $i => $data) {
 				foreach ($parts[$i] as [$id, $at, $length]) {
-					yield $this->decodeBlob($id, substr($data, $at, $length));
+					try {
+						$blob = $this->decodeBlob($id, substr($data, $at, $length));
+					} catch (\Exception) {
+						// a read that went wrong on the way (see loadBlob()): this blob on its own
+						$blob = $this->loadBlob($id);
+					}
+					yield $blob;
 					$done++;
 				}
 			}

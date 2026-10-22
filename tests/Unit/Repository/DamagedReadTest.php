@@ -45,6 +45,23 @@ class DamagedReadTest extends TestCase {
 		$this->assertSame(0, $backend->streams, 'the damaged read happened');
 	}
 
+	public function testATableDumpThatCameInDamagedOnceIsReadAgain(): void {
+		$repo = Repository::openWithKey(new LocalBackend($this->root), $this->keys);
+		$stats = [];
+		$writer = $repo->blobWriter($stats);
+		$lines = [];
+		for ($i = 0; $i < 20000; $i++) {
+			$lines[] = json_encode(['i' => $i, 'pad' => str_repeat('x', $i % 400)]);
+		}
+		$writer->write(implode("\n", $lines) . "\n");
+		$blobs = $writer->finish();
+		$repo->flushPacks();
+		$backend = new GarblingBackend(new LocalBackend($this->root), ranges: 1);
+
+		$this->assertSame($lines, iterator_to_array(Repository::openWithKey($backend, $this->keys)->readLines($blobs), false));
+		$this->assertSame(0, $backend->ranges, 'the damaged read happened');
+	}
+
 	public function testDataDamagedOnTheLocationStillStopsTheRestore(): void {
 		$backend = new GarblingBackend(new LocalBackend($this->root), streams: 1000, ranges: 1000);
 
