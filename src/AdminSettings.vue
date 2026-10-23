@@ -89,8 +89,10 @@ onBeforeUnmount(() => clearTimeout(timer))
 </script>
 
 <style scoped>
+/* NcSettingsSection sets its own width (at most 900px): the runs table needs more */
 .ng-backup :deep(.settings-section) {
-	max-width: 1400px;
+	width: min(1400px, 100% - var(--default-grid-baseline) * 7 * 2);
+	max-width: none;
 }
 .ngb-feedback {
 	color: var(--color-text-maxcontrast);
