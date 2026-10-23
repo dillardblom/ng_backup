@@ -90,7 +90,7 @@ onBeforeUnmount(() => clearTimeout(timer))
 
 <style scoped>
 .ng-backup :deep(.settings-section) {
-	max-width: 900px;
+	max-width: 1400px;
 }
 .ngb-feedback {
 	color: var(--color-text-maxcontrast);
