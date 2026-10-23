@@ -166,7 +166,7 @@ Full restores onto a fresh server, following only [the guide](docs/DISASTER-RECO
 | Production, about 1 TB, 150,000 files (Nextcloud All-in-One) | Hetzner Storage Box (SFTP), Germany → Canada | PostgreSQL → PostgreSQL | 150,622 files restored in about 25 h (13-14 MiB/s), sample identical |
 | 138 GB simulation: 20 users, calendars, contacts, mail, shares, team folders with an ACL, versions, trash | OVH S3, Warsaw → Canada | MariaDB → PostgreSQL | all 15,772 files and every database count identical |
 | The same | OVH S3 | MariaDB → MariaDB | all 15,772 files and every database count identical |
-| The same | Hetzner Storage Box (SMB) | MariaDB → SQLite | running |
+| The same | Hetzner Storage Box (SMB), Germany → Canada | MariaDB → SQLite | all 15,772 files and every database count identical (27.6 h, about 1.5 MB/s) |
 | 51 GB test instance | OVH S3 | PostgreSQL → PostgreSQL | 23,519/23,519 checksums identical |
 
 The integration tests restore across every pair of PostgreSQL, MariaDB and SQLite.

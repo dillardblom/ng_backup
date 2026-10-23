@@ -7,7 +7,11 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
-## [Unreleased]
+## [1.0.0-rc.6] - 2026-10-24
+
+Sixth release candidate for 1.0.0; the app version is 0.9.12. Fixes from two disaster recovery
+simulations and a user report. If no problems are reported for about a week, 1.0.0 will be this
+same code.
 
 ### Fixed
 - The daily backup time was taken as UTC (Nextcloud runs PHP in UTC): 03:00 ran at 05:00 in
@@ -24,6 +28,8 @@ instead carried by the app description, the git tag, the release, and this file.
   collation (utf8mb4). Found in a disaster recovery simulation onto MariaDB.
 
 ### Changed
+- The admin page uses more of the screen (sections up to 1400 pixels instead of 900), so the
+  list of backup runs fits without scrolling sideways.
 - README: a roadmap, the tested disaster recoveries, measurements for OVH S3, the Storage Box over
   SFTP and SMB, how to build the SMB extension when PECL is down, and what works without shell
   access. The guide lists shell access among what you need.

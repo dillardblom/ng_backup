@@ -425,6 +425,15 @@ in README "Known limitations":
      tekst gaat als label van de snapshot mee (nu kan dat alleen met `occ backup:run -l`; de knop
      stuurt een leeg label, geplande runs krijgen "scheduled"). Raakt alleen de UI en een
      bestaande parameter.
+  5. **`--salvage`** voor `backup:restore` en `backup:restore:full` (besluit 2026-10-22): terughalen
+     wat kan, een bestand dat niet te lezen of te ontsleutelen is overslaan en aan het eind
+     opsommen, in plaats van stoppen.
+  6. **Tijdelijke bestanden van een afgebroken restore opruimen** (gevonden in de SMB-DR van
+     rc6, 2026-10-24): de rc5-poging die stopte liet `VID_0009.mp4.ngb-restore-<id>` staan; de
+     geslaagde restore daarna haalde het niet weg, en `files:scan` maakte het zichtbaar in Files.
+     Een restore ruimt `*.ngb-restore-*` in de mappen die hij terugzet op.
+  7. **Eén bestand terugzetten met `backup:restore`**: een pad naar een bestand zet 0 bestanden
+     terug (er komt een `/` achter); nu werkt alleen een map.
 - **DR-tests over databasegrenzen** (besluit 2026-10-20; productie nc01 draait PostgreSQL): na
   de MariaDB→PostgreSQL-fout (tellers, rc5) elke overstap in de integratietest (`to-pgsql`,
   `to-mysql`, `to-sqlite`, ook in CI). Volle DR-tests met echte data: vóór 1.0.0 de S3-simulatie
