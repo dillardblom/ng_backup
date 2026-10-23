@@ -159,7 +159,7 @@ final class DbDumper {
 		// everywhere); tables it does not know are left out, as asked.
 		foreach ($missing as $table) {
 			if (isset($manifest['tables'][$table]['schema'])) {
-				$this->db->createSchemaManager()->createTable(self::tableFromStructure($table, $manifest['tables'][$table]['schema']));
+				$this->db->createSchemaManager()->createTable(self::tableFromStructure($table, $manifest['tables'][$table]['schema'], $this->tableOptions()));
 				$report['created'][] = $table;
 			} else {
 				$report['missing'][] = $table;
@@ -319,8 +319,31 @@ final class DbDumper {
 			'foreignKeys' => $foreignKeys];
 	}
 
-	private static function tableFromStructure(string $name, array $structure): \Doctrine\DBAL\Schema\Table {
-		$table = new \Doctrine\DBAL\Schema\Table($name);
+	/**
+	 * Table options for a table the restore creates: those of this installation's own tables.
+	 * On MySQL/MariaDB that is the character set and collation, as Nextcloud's tables have them
+	 * (utf8mb4, so emoji and other 4-byte characters fit); DBAL alone would use 3-byte utf8.
+	 *
+	 * @return array<string, mixed>
+	 * @psalm-suppress UndefinedClass the DBAL classes come with Nextcloud, not with this app
+	 */
+	private function tableOptions(): array {
+		$options = $this->db->createSchemaManager()->createSchemaConfig()->getDefaultTableOptions();
+		if ($this->db->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\AbstractMySQLPlatform) {
+			$collation = $this->db->fetchOne('SELECT TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+				[$this->prefix . 'appconfig']);
+			if (is_string($collation) && $collation !== '') {
+				$options['collation'] = $collation;
+				$options['charset'] = explode('_', $collation, 2)[0];
+				unset($options['collate']);
+			}
+		}
+		return $options;
+	}
+
+	/** @param array<string, mixed> $options table options (see tableOptions()) */
+	private static function tableFromStructure(string $name, array $structure, array $options = []): \Doctrine\DBAL\Schema\Table {
+		$table = new \Doctrine\DBAL\Schema\Table($name, [], [], [], [], $options);
 		foreach ($structure['columns'] as $c) {
 			$table->addColumn($c['name'], $c['type'], array_filter([
 				'length' => $c['length'], 'precision' => $c['precision'], 'scale' => $c['scale'],

@@ -395,11 +395,53 @@ in README "Known limitations":
 - **1.0.1:**
   1. (Naar rc4: herstelsnelheid over SFTP.) S3 leest al 16 tegelijk bij index en tree, maar een
      restore leest de packs nog één voor één: ook vooruitlezen via de S3-client.
-  2. Waarschuwing in de beheerpagina en `backup:status` als achtergrondjobs niet op systeem-cron
-     staan, en "waiting for background jobs" als een lopende backup lang geen stap zette (issue
-     #13). Cron zelf aanzetten kan de app niet: zonder echte cron-regel stopt dan alles.
+  2. Achtergrondjobs zonder systeem-cron (issue #13; besluit 2026-10-19). De PR die dit
+     oplost zegt "Fixes #13" (bevestigd: #13 was de cron; besluit 2026-10-21):
+     a. **Waarschuwen** in de beheerpagina en `backup:status`: modus uit `core backgroundjobs_mode`
+        (`ajax`/`webcron`/`cron`) en de laatste run uit `core lastcron`. Niet op `cron`, of de
+        laatste run te lang geleden: melding met de cron-regel erbij ("Backups only move while
+        someone has Nextcloud open"), en "waiting for background jobs" als een lopende backup lang
+        geen stap zette.
+     b. **De pagina laat de backup lopen** zolang ze openstaat: in `ajax`/`webcron` voert de
+        statusaanroep die de pagina toch al herhaalt ook een korte, begrensde stap uit (zoals de
+        korte stappen die AJAX-cron nu al krijgt). "Back up now" werkt dan ook zonder cron zolang
+        het tabblad openstaat; de melding zegt dat geplande backups echte cron nodig hebben.
+        De melding zegt (zonder werkende systeem-cron): backups hebben systeem-cron nodig, ook de
+        gewone nachtelijke; zo stel je cron in (link naar de Nextcloud-documentatie over
+        achtergrondjobs voor de versie van de server, nu
+        https://docs.nextcloud.com/server/34/admin_manual/configuration_server/background_jobs_configuration.html,
+        versienummer uit de server, niet vast); zolang er geen cron is, loopt een backup die je
+        met de knop start alleen door terwijl de NG Backup-pagina openstaat.
+     c. **Voortgang in de databasefase** (issue #13): nu staat er alleen "running (db)", wat er
+        hetzelfde uitziet als vastzitten. Toon "running (db: 47/183 tables)" zoals de bestandsfase
+        een percentage toont, en "waiting for background jobs (last ran 12 min ago)" als een run
+        een tijd geen stap zette, ook bij een cron die is blijven staan.
+     Niet doen: de cron-modus vanuit de app omzetten (zonder echte cron-regel stopt alles, en
+     `cron.php` zet de modus zelf op `cron`), en geen `exec php occ backup:run &` vanuit de knop
+     (vaak uitgeschakeld, niet op hosted, buiten Nextcloud om lastig te volgen en te stoppen).
   3. Volledige DR-test met een backup die al de tabelstructuur bevat (gemaakt met rc2 of later),
      zonder `--skip-missing-tables`: dat pad is op 1 TB nog niet getest.
+  4. **Label bij "Back up now"** (besluit 2026-10-19): een optioneel tekstveld naast de knop; de
+     tekst gaat als label van de snapshot mee (nu kan dat alleen met `occ backup:run -l`; de knop
+     stuurt een leeg label, geplande runs krijgen "scheduled"). Raakt alleen de UI en een
+     bestaande parameter.
+  5. **`--salvage`** voor `backup:restore` en `backup:restore:full` (besluit 2026-10-22): terughalen
+     wat kan, een bestand dat niet te lezen of te ontsleutelen is overslaan en aan het eind
+     opsommen, in plaats van stoppen.
+  6. **Tijdelijke bestanden van een afgebroken restore opruimen** (gevonden in de SMB-DR van
+     rc6, 2026-10-24): de rc5-poging die stopte liet `VID_0009.mp4.ngb-restore-<id>` staan; de
+     geslaagde restore daarna haalde het niet weg, en `files:scan` maakte het zichtbaar in Files.
+     Een restore ruimt `*.ngb-restore-*` in de mappen die hij terugzet op.
+  7. **Eén bestand terugzetten met `backup:restore`**: een pad naar een bestand zet 0 bestanden
+     terug (er komt een `/` achter); nu werkt alleen een map.
+- **DR-tests over databasegrenzen** (besluit 2026-10-20; productie nc01 draait PostgreSQL): na
+  de MariaDB→PostgreSQL-fout (tellers, rc5) elke overstap in de integratietest (`to-pgsql`,
+  `to-mysql`, `to-sqlite`, ook in CI). Volle DR-tests met echte data: vóór 1.0.0 de S3-simulatie
+  (MariaDB-bron, 138 GB) nogmaals naar een MariaDB-doel en de SMB-simulatie naar een SQLite-doel;
+  **na 1.0.0** de 1 TB van nc01 (PostgreSQL) naar een MariaDB-doel.
+- **Polish:** `target:add` toonde bij het eerste indexbestand al "about 642 min left" (S3,
+  4.568 bestanden, daarna binnen een minuut klaar): een schatting pas na ~5% of na meer dan
+  een paar bestanden.
 - **1.1.0:**
   1. `backup:key:import` zonder kit: de sleutel-slots van de locatie (`config`) lezen, met de kit
      als reserve als `config` ontbreekt of niet opent. Vergt een andere volgorde van
@@ -412,6 +454,22 @@ in README "Known limitations":
   3. Snelheid: lezen en uploaden laten overlappen, meerdere bestanden tegelijk lezen, eventueel
      een eigen worker (`occ background-job:worker`). Gemeten op nc01: 55% wachten op de schijf,
      33% op de SMB-upload, ~7% CPU. Vergt extra PHP-processen; botst mogelijk met uitgangspunt 1.
+  4. **Schema per locatie** (besluit 2026-10-19): in de instellingen van een locatie "uit",
+     "dagelijks om HH:MM" of "elke N uur (vanaf HH:MM)". Nu is er één `schedule_time` voor alle
+     locaties, één keer per dag. Bij de update wordt de huidige tijd het schema van elke
+     bestaande locatie (voor bestaande gebruikers verandert er niets).
+  5. **Locaties na elkaar laten starten** in plaats van tegelijk: twee runs die dezelfde schijven
+     lezen zijn samen niet sneller (gezien op nc01); wachtende runs zichtbaar als "queued".
+  7. **SMB sneller** (gemeten 2026-10-21): lokaal netwerk zonder vertraging (Samba-container op de
+     laptop, 1,8 GB) back-up 24,9 MB/s, restore 27,6 MiB/s; vanaf Canada naar de Storage Box (130 ms)
+     2,6 MiB/s, omdat SMB per blok op het antwoord wacht. Grotere schrijfblokken, en vooruitlezen
+     bij een restore zoals SFTP (IReadsAhead) of meerdere packs tegelijk. Een NAS met 1 Gbit haalt
+     ~110 MB/s: daar is winst.
+     Ook de index: `target:add` over SMB vanaf Canada haalt ~1 indexbestand per seconde (4.927
+     bestanden ~85 min), want SMB krijgt geen `getMany()` met verzoeken tegelijk zoals S3 en SFTP.
+  6. **Notitie achteraf bij een restorepunt**, te wijzigen in de lijst. Het label in de snapshot
+     is versleuteld en ligt vast; de notitie apart op de locatie bewaren (bijv. in de catalogus),
+     zodat een nieuwe server na een DR hem ook ziet.
 - **Bevindingen DR-test op PVE02 (2026-10-17, snapshot van nc01, 1 TB, AIO → gewone NC 34 met
   PostgreSQL 18)** — voor **1.0.0-rc.2**:
   1. Tabellen van apps die bij de backup **niet aanstonden** (restanten: Deck, ONLYOFFICE,

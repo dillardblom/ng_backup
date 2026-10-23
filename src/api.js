@@ -33,7 +33,7 @@ export default {
 	testTarget: (id) => call('post', `/targets/${id}/test`),
 	setTargetLimit: (id, maxGb) => call('put', `/targets/${id}/limit`, { maxGb }),
 	startBackup: (targetId, label) => call('post', '/backups', { targetId, label }),
-	setSchedule: (time) => call('put', '/schedule', { time }),
+	setSchedule: (time, timezone) => call('put', '/schedule', { time, timezone }),
 	snapshots: (targetId) => call('get', `/targets/${targetId}/snapshots`),
 	browse: (targetId, snapshotId, path) => call('get', `/targets/${targetId}/snapshots/${snapshotId}/browse`, { path }),
 	startRestore: (targetId, snapshotId, path, mode) => call('post', '/restores', { targetId, snapshotId, path, mode }),

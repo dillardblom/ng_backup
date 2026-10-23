@@ -6,8 +6,8 @@
 	<NcSettingsSection :name="t('ng_backup', 'Backups')"
 		:description="t('ng_backup', 'Backups run in the background through Nextcloud\'s cron. Unchanged files are not read again; only new data is uploaded.')">
 		<div class="ngb-row">
-			<NcTextField v-model="schedule" class="ngb-time" :label="t('ng_backup', 'Daily at (HH:MM, empty = off)')" />
-			<NcButton :disabled="schedule === status.schedule" @click="saveSchedule">{{ t('ng_backup', 'Save') }}</NcButton>
+			<NcTextField v-model="schedule" class="ngb-time" :label="t('ng_backup', 'Daily at (HH:MM, {zone}, empty = off)', { zone: browserZone })" />
+			<NcButton :disabled="schedule === status.schedule && browserZone === status.scheduleTimezone" @click="saveSchedule">{{ t('ng_backup', 'Save') }}</NcButton>
 		</div>
 		<div class="ngb-row">
 			<NcButton v-for="target in status.targets" :key="target.id" :disabled="isRunning(target.id)" @click="start(target)">
@@ -79,15 +79,19 @@ import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import NcSettingsSection from '@nextcloud/vue/components/NcSettingsSection'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
 import api from '../api.js'
-import { formatDateTime, formatDate, formatSize } from '../format.js'
+import { formatDateTime, formatDate, formatSize, toZone } from '../format.js'
 import { confirmPassword } from '@nextcloud/password-confirmation'
 import { reactive } from 'vue'
 
 const props = defineProps({ status: { type: Object, required: true }, allRuns: { type: Boolean, default: false } })
 const emit = defineEmits(['changed', 'show-all-runs'])
-const schedule = ref(props.status.schedule)
+// The time is saved in the administrator's own zone (the browser's); a schedule saved in another
+// zone is shown in this one, so it reads as the moment it runs here.
+const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+const shown = (s) => (s && props.status.scheduleTimezone && props.status.scheduleTimezone !== browserZone) ? toZone(s, props.status.scheduleTimezone, browserZone) : s
+const schedule = ref(shown(props.status.schedule))
 const error = ref('')
-watch(() => props.status.schedule, (s) => { schedule.value = s })
+watch(() => [props.status.schedule, props.status.scheduleTimezone], ([s]) => { schedule.value = shown(s) })
 
 const trash = reactive({})
 async function loadTrash() {
@@ -131,7 +135,7 @@ async function start(target) {
 async function saveSchedule() {
 	error.value = ''
 	try {
-		await api.setSchedule(schedule.value.trim())
+		await api.setSchedule(schedule.value.trim(), browserZone)
 		emit('changed')
 	} catch (e) {
 		error.value = e.message

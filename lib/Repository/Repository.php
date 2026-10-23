@@ -845,7 +845,15 @@ final class Repository {
 		try {
 			foreach ($this->backend->getRanges($ranges) as $i => $data) {
 				foreach ($parts[$i] as [$id, $at, $length]) {
-					yield $this->decodeBlob($id, substr($data, $at, $length));
+					try {
+						$blob = $this->decodeBlob($id, substr($data, $at, $length));
+					} catch (\Exception) {
+						// a read that went wrong on the way (see loadBlob()): this blob on its own
+						$blob = $this->loadBlob($id);
+						// its pack stream is closed before the next range is read on the same connection
+						$this->packReader->close();
+					}
+					yield $blob;
 					$done++;
 				}
 			}
@@ -895,8 +903,46 @@ final class Repository {
 			} catch (BackendException) {
 				throw $e;
 			}
+			$pack = $moved;
 		}
-		return $this->decodeBlob($id, $encrypted);
+		try {
+			return $this->decodeBlob($id, $encrypted);
+		} catch (\Exception $damaged) {
+			// Bytes that do not decrypt: damaged on the location, or a read that went wrong on the
+			// way (a stream that lost its place: an SMB restore stopped after 17 hours like this).
+			// Read exactly this blob once more, on a request of its own; only a second failure
+			// means the data itself is damaged.
+			$this->packReader->close();
+			try {
+				$again = $this->backend->getRange('packs/' . substr($pack, 0, 2) . '/' . $pack, $offset, $length);
+			} catch (\Exception) {
+				throw $damaged;
+			}
+			$data = $this->decodeBlob($id, $again);
+			if (function_exists('OCP\Log\logger')) {
+				\OCP\Log\logger('ng_backup')->warning('NG Backup: blob ' . $id . ' did not decrypt as first read from pack ' . $pack . ' at ' . $offset . '; read again, it is fine. First read: ' . self::howItDiffered($encrypted, $again));
+			}
+			return $data;
+		}
+	}
+
+	/**
+	 * What a read that went wrong looked like next to the right bytes, for the log: where it starts
+	 * to differ, and whether the rest is zeros or the right bytes from another place (a stream that
+	 * lost its place).
+	 */
+	private static function howItDiffered(string $wrong, string $right): string {
+		$at = strspn($wrong ^ $right, "\0");
+		$text = strlen($wrong) . ' bytes, differ from byte ' . $at . ' of ' . strlen($right);
+		$tail = substr($wrong, $at, 64);
+		if ($tail === '') {
+			return $text . ' (too short)';
+		}
+		if (trim($tail, "\0") === '') {
+			return $text . ' (zeros)';
+		}
+		$found = strpos($right, $tail);
+		return $text . ($found !== false ? ' (the right bytes from ' . ($found - $at) . ' bytes further on)' : ' (other bytes)');
 	}
 
 	/** Decrypts and checks a blob read from its pack; throws when it is corrupted or tampered with. */

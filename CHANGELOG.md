@@ -7,6 +7,35 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
+## [1.0.0-rc.6] - 2026-10-24
+
+Sixth release candidate for 1.0.0; the app version is 0.9.12. Fixes from two disaster recovery
+simulations and a user report. If no problems are reported for about a week, 1.0.0 will be this
+same code.
+
+### Fixed
+- The daily backup time was taken as UTC (Nextcloud runs PHP in UTC): 03:00 ran at 05:00 in
+  Berlin (#19). The time is now saved with the administrator's time zone and shown with it. A time
+  saved before is converted once to the zone of the server or an administrator, so it shows as it
+  effectively ran (02:30 UTC becomes 04:30 Europe/Berlin in summer) and nothing moves.
+- A full restore over SMB stopped after 17 hours with "Decryption failed": a read over a long
+  line handed out wrong bytes (the backup itself was fine, the same files restored identically
+  afterwards). A blob that does not decrypt as first read, of a file or of the database, is now
+  read once more on a request of its own, and only a second failure stops the restore.
+- A full restore onto MySQL/MariaDB stopped with "Incorrect string value" when it created a table
+  (of an app that is not installed here) whose rows hold emoji or other 4-byte characters: the
+  table got 3-byte utf8. Tables the restore creates now get this installation's character set and
+  collation (utf8mb4). Found in a disaster recovery simulation onto MariaDB.
+
+### Changed
+- The admin page uses more of the screen (sections up to 1400 pixels instead of 900), so the
+  list of backup runs fits without scrolling sideways.
+- README: a roadmap, the tested disaster recoveries, measurements for OVH S3, the Storage Box over
+  SFTP and SMB, how to build the SMB extension when PECL is down, and what works without shell
+  access. The guide lists shell access among what you need.
+- The full-restore integration test checks a 4-byte character in a table the restore creates, and
+  retries app installs from the app store.
+
 ## [1.0.0-rc.5] - 2026-10-22
 
 Fifth release candidate for 1.0.0; the app version is 0.9.11. A full restore of 1 TB over SFTP

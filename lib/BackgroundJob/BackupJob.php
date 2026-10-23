@@ -32,6 +32,7 @@ final class BackupJob extends TimedJob {
 		private RunMapper $runs,
 		private IAppConfig $appConfig,
 		private LoggerInterface $logger,
+		private \OCA\NgBackup\Service\Schedule $schedule,
 	) {
 		parent::__construct($time);
 		// Well below the usual 5-minute cron interval: the last run is stamped a moment after cron
@@ -101,14 +102,10 @@ final class BackupJob extends TimedJob {
 		$this->appConfig->setValueString(Application::APP_ID, 'last_prune_week', $due);
 	}
 
-	/** Daily schedule: appconfig ng_backup/schedule_time "HH:MM" (server time); empty = no schedule. */
+	/** Daily schedule: "HH:MM" in the schedule's time zone (see Schedule); empty = no schedule. */
 	private function startScheduled(): void {
-		$at = $this->appConfig->getValueString(Application::APP_ID, 'schedule_time', '');
-		if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $at)) {
-			return;
-		}
-		$todayAt = (int)strtotime(date('Y-m-d') . ' ' . $at);
-		if (time() < $todayAt) {
+		$todayAt = $this->schedule->todayAt();
+		if ($todayAt === null || time() < $todayAt) {
 			return;
 		}
 		foreach ($this->targets->list() as $t) {

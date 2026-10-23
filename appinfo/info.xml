@@ -42,7 +42,7 @@ welcome: use the "Share your experience" link on the admin page.
 
 Developed and sponsored by [Ensembia](https://www.ensembia.com). We can offer (paid) assistance if
 you need help with restoring a backup after a crash.]]></description>
-    <version>0.9.11</version>
+    <version>0.9.12</version>
     <licence>agpl</licence>
     <author mail="dillard.blom@ensembia.com">Dillard Blom</author>
     <namespace>NgBackup</namespace>
@@ -53,9 +53,9 @@ you need help with restoring a backup after a crash.]]></description>
     <website>https://github.com/dillardblom/ng_backup</website>
     <bugs>https://github.com/dillardblom/ng_backup/issues</bugs>
     <repository type="git">https://github.com/dillardblom/ng_backup</repository>
-    <screenshot>https://raw.githubusercontent.com/dillardblom/ng_backup/v1.0.0-rc.5/screenshots/1-backups.png</screenshot>
-    <screenshot>https://raw.githubusercontent.com/dillardblom/ng_backup/v1.0.0-rc.5/screenshots/2-restore.png</screenshot>
-    <screenshot>https://raw.githubusercontent.com/dillardblom/ng_backup/v1.0.0-rc.5/screenshots/3-settings.png</screenshot>
+    <screenshot>https://raw.githubusercontent.com/dillardblom/ng_backup/v1.0.0-rc.6/screenshots/1-backups.png</screenshot>
+    <screenshot>https://raw.githubusercontent.com/dillardblom/ng_backup/v1.0.0-rc.6/screenshots/2-restore.png</screenshot>
+    <screenshot>https://raw.githubusercontent.com/dillardblom/ng_backup/v1.0.0-rc.6/screenshots/3-settings.png</screenshot>
     <dependencies>
         <php min-version="8.1"/>
         <lib>sodium</lib>
