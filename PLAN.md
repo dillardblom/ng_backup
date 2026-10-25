@@ -434,6 +434,15 @@ in README "Known limitations":
      Een restore ruimt `*.ngb-restore-*` in de mappen die hij terugzet op.
   7. **Eén bestand terugzetten met `backup:restore`**: een pad naar een bestand zet 0 bestanden
      terug (er komt een `/` achter); nu werkt alleen een map.
+  8. **Uitleg (i) bij de prullenbak van herstelpunten** (besluit 2026-10-25): bij "removed by
+     retention policy" een infoknop met wat het betekent: het bewaarbeleid houdt voor oudere dagen
+     één herstelpunt per dag (het laatste), weken en maanden; de rest gaat naar de prullenbak en
+     wordt pas na de ingestelde wachttijd (`delete_delay_days`, standaard 30) echt verwijderd, en is
+     tot die datum terug te zetten. Aanleiding: de beheerder zag "19-10 13:12 – after rc4 upgrade
+     removed by retention policy" en dacht dat er iets was weggegooid.
+  9. **Tijdzone in `occ backup:status`**: de tabel toont de servertijd (UTC), de webinterface de
+     tijd van de beheerder; dat leest als een verkeerde starttijd. Zet de zone in de kolomkop
+     ("started (UTC)") of toon de tijden in de zone van het schema.
 - **DR-tests over databasegrenzen** (besluit 2026-10-20; productie nc01 draait PostgreSQL): na
   de MariaDB→PostgreSQL-fout (tellers, rc5) elke overstap in de integratietest (`to-pgsql`,
   `to-mysql`, `to-sqlite`, ook in CI). Volle DR-tests met echte data: vóór 1.0.0 de S3-simulatie
@@ -470,6 +479,10 @@ in README "Known limitations":
   6. **Notitie achteraf bij een restorepunt**, te wijzigen in de lijst. Het label in de snapshot
      is versleuteld en ligt vast; de notitie apart op de locatie bewaren (bijv. in de catalogus),
      zodat een nieuwe server na een DR hem ook ziet.
+  8. **Herstelpunt vastpinnen** (besluit 2026-10-25): een herstelpunt dat het bewaarbeleid
+     nooit opruimt (bijv. "vóór de upgrade naar NC 35"), in de lijst en met
+     `occ backup:pin <snapshot>` / `--unpin`. Op de locatie bewaren (catalogus), zodat de
+     opschoning het ziet, ook na een DR; vastgepinde punten tellen niet mee in last/daily/weekly.
 - **Bevindingen DR-test op PVE02 (2026-10-17, snapshot van nc01, 1 TB, AIO → gewone NC 34 met
   PostgreSQL 18)** — voor **1.0.0-rc.2**:
   1. Tabellen van apps die bij de backup **niet aanstonden** (restanten: Deck, ONLYOFFICE,

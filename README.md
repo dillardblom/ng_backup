@@ -265,6 +265,8 @@ a 👍 on its issue helps decide what comes first.
   system cron, with how to set one up. Without cron, a backup started with "Back up now" moves on
   while the NG Backup page is open ([#13](https://github.com/dillardblom/ng_backup/issues/13)).
 - An optional label for a backup started with "Back up now".
+- An explanation in the trash of restore points of what "removed by retention policy" means and
+  until when a restore point can be brought back.
 - Faster full restores from S3 and SMB, reading ahead as restores over SFTP do since 1.0.0-rc.4.
 
 **1.1.0**
@@ -273,6 +275,8 @@ a 👍 on its issue helps decide what comes first.
 - A schedule per location, also "every N hours".
 - Locations backed up one after the other instead of at the same time.
 - A note on a restore point that you can change afterwards.
+- Pinning a restore point, so the retention policy never removes it (for example the one from
+  before an upgrade).
 - An option to pause heavy background jobs (such as Memories, Recognize or the Preview
   Generator) while a backup runs.
 - Faster backups: reading and uploading at the same time.
