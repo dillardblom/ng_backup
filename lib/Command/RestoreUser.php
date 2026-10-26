@@ -33,7 +33,7 @@ final class RestoreUser extends Command {
 		$this->setName('backup:user:restore')
 			->setDescription('Restore a user from a user_migration export (see backup:user:backup)')
 			->addArgument('target', InputArgument::REQUIRED, 'Location name or id')
-			->addArgument('manifest', InputArgument::REQUIRED, 'Manifest path printed by backup:user:backup (users/<uid>/<exportId>)')
+			->addArgument('manifest', InputArgument::REQUIRED, 'Manifest path printed by backup:user:backup (users/<uid>/<exportId>), or a user id with exactly one export')
 			->addOption('mode', 'm', InputOption::VALUE_REQUIRED, 'replace or as-backup', UserRestoreService::MODE_REPLACE)
 			->addOption('force', null, InputOption::VALUE_NONE, 'Replace an existing account without asking (required when not interactive)')
 			->addOption('install-user-migration', null, InputOption::VALUE_NONE, 'Install and enable user_migration if it is missing (non-interactive consent)')
@@ -45,16 +45,31 @@ Never imports over a live account. Modes:
              compare and transfer by hand; Nextcloud cannot rename a user id, so the backup gets
              the new name, never the existing account
 
+occ backup:user:list shows the exports on a location. A user id alone works when that user
+has exactly one export there; with more, the command lists them and you pass one.
+
 Example:
   occ backup:user:restore offsite users/alice/20261005T120000Z-ab12cd34
+  occ backup:user:restore offsite alice
   occ backup:user:restore offsite users/alice/20261005T120000Z-ab12cd34 --mode=as-backup
 HELP);
 	}
 
 	protected function execute(InputInterface $input, OutputInterface $output): int {
 		$mode = (string)$input->getOption('mode');
-		$uid = explode('/', (string)$input->getArgument('manifest'))[1] ?? '';
-		if ($mode === UserRestoreService::MODE_REPLACE && $uid !== '' && $this->userManager->userExists($uid) && !$input->getOption('force')) {
+		try {
+			$target = $this->targets->get($input->getArgument('target'));
+			$ref = (string)$input->getArgument('manifest');
+			$manifest = $this->targets->repository($target)->resolveUserExport($ref);
+		} catch (\Throwable $e) {
+			$output->writeln('<error>' . $e->getMessage() . '</error>');
+			return 1;
+		}
+		if ($manifest !== $ref) {
+			$output->writeln("Using $manifest.");
+		}
+		$uid = explode('/', $manifest)[1];
+		if ($mode === UserRestoreService::MODE_REPLACE && $this->userManager->userExists($uid) && !$input->getOption('force')) {
 			// Replace deletes the live account (after a safety export). Shares to others and data of
 			// apps without a user_migration migrator do not come back, so never do it unasked.
 			if (!$input->isInteractive()) {
@@ -69,9 +84,8 @@ HELP);
 		}
 		try {
 			$output->writeln('<comment>Note: on restore, user_migration only imports the app settings on its own allowlist (e.g. calendar view and reminder settings); other app settings of this user are skipped. Reason: NG Backup uses user_migration\'s importer; widening the list would mean building a settings importer of our own.</comment>');
-			$target = $this->targets->get($input->getArgument('target'));
 			$this->installer->ensureEnabled($input, $output);
-			$user = $this->userRestore->restoreUser($target, (string)$input->getArgument('manifest'), $mode);
+			$user = $this->userRestore->restoreUser($target, $manifest, $mode);
 		} catch (\Throwable $e) {
 			$output->writeln('<error>' . $e->getMessage() . '</error>');
 			return 1;

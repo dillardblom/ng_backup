@@ -334,4 +334,4 @@ On the backlog; none of these block the beta or 1.0.0, but know them before you 
 | `backup:verify` | checksum audit of a restore point (`--deep` downloads and decrypts everything) |
 | `backup:restore:full` | whole-server restore onto a fresh installation (after `backup:key:import`) |
 | `backup:key:import` | import a recovery kit on a fresh installation |
-| `backup:user:backup`, `backup:user:restore` | one user via user_migration (asks before installing it) |
+| `backup:user:backup`, `backup:user:list`, `backup:user:restore` | one user via user_migration (asks before installing it); list the exports |

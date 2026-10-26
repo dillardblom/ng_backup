@@ -36,8 +36,13 @@ MANIFEST=$(occ backup:user:backup ci "$U" | sed -n 's/.* to \(.*\)\.$/\1/p')
 [ -n "$MANIFEST" ] || fail "backup:user:backup printed no manifest path"
 ok "backed up $U to $MANIFEST"
 
-# as-backup: restore into <uid>-bak; the original account must stay untouched.
-occ backup:user:restore ci "$MANIFEST" --mode=as-backup >/dev/null || fail "restore as-backup"
+occ backup:user:list ci "$U" | grep -qF "$MANIFEST" || fail "backup:user:list does not show $MANIFEST"
+ok "backup:user:list shows the export"
+
+# as-backup: restore into <uid>-bak; the original account must stay untouched. $U has one export,
+# so the bare user id names it (#22).
+OUT=$(occ backup:user:restore ci "$U" --mode=as-backup) || fail "restore as-backup by user id"
+echo "$OUT" | grep -qF "Using $MANIFEST." || fail "restore by user id did not say which export it used"
 occ files:scan "$U-bak" >/dev/null
 SUM_BAK=$($X sh -c "cd $DATA/$U-bak/files && find . -type f -print0 | sort -z | xargs -0 md5sum | md5sum")
 [ "$SUM_BEFORE" = "$SUM_BAK" ] || fail "the <uid>-bak account's files differ from the original"
@@ -54,6 +59,11 @@ occ files:scan "$U" >/dev/null
 SUM_AFTER=$($X sh -c "cd $DATA/$U/files && find . -type f -print0 | sort -z | xargs -0 md5sum | md5sum")
 [ "$SUM_BEFORE" = "$SUM_AFTER" ] || fail "files differ after a replace restore"
 ok "replace restores the original content under the same uid, byte-identical"
+
+# The replace above added a safety export: a bare user id is now ambiguous and must list both.
+if OUT=$(occ backup:user:restore ci "$U" --mode=as-backup 2>&1); then fail "restore by an ambiguous user id ran"; fi
+echo "$OUT" | grep -qF "$U has 2 exports here" && echo "$OUT" | grep -qF "$MANIFEST" || fail "an ambiguous user id did not list the exports"
+ok "an ambiguous user id lists the exports instead of picking one"
 
 # Retention: $U now has the manual export above plus the automatic safety-export the replace
 # restore made of it just before deleting it (4 total after these two more), then --user-last=2

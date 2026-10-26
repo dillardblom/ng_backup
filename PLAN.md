@@ -443,6 +443,11 @@ in README "Known limitations":
   9. **Tijdzone in `occ backup:status`**: de tabel toont de servertijd (UTC), de webinterface de
      tijd van de beheerder; dat leest als een verkeerde starttijd. Zet de zone in de kolomkop
      ("started (UTC)") of toon de tijden in de zone van het schema.
+  10. **User-restore op gebruikersnaam** (issue #22, 2026-10-27): `backup:user:restore <locatie>
+      New_User` gaf alleen "is not a recorded user export"; het argument moet het manifestpad
+      zijn, dat alleen `backup:user:backup` eenmalig toonde. Nu: `backup:user:list` toont de
+      exports, een kale uid werkt bij precies één export, anders een lijst om uit te kiezen —
+      **klaar** (2026-10-27).
 - **DR-tests over databasegrenzen** (besluit 2026-10-20; productie nc01 draait PostgreSQL): na
   de MariaDB→PostgreSQL-fout (tellers, rc5) elke overstap in de integratietest (`to-pgsql`,
   `to-mysql`, `to-sqlite`, ook in CI). Volle DR-tests met echte data: vóór 1.0.0 de S3-simulatie

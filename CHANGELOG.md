@@ -7,6 +7,20 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
+## [Unreleased]
+
+### Added
+- `occ backup:user:list [location] [user]` shows the user exports on a location, with the manifest
+  path `backup:user:restore` expects. Before, that path was only printed once by
+  `backup:user:backup` (#22).
+
+### Changed
+- `occ backup:user:restore` also takes a user id instead of the manifest path, when that user has
+  exactly one export on the location. With more, and for a manifest path that is not on the
+  location, the error lists that user's exports; for a user without exports it names the
+  expected form (#22). Before, `backup:user:restore <location> <uid>` only said "is not a
+  recorded user export for this location".
+
 ## [1.0.0-rc.6] - 2026-10-24
 
 Sixth release candidate for 1.0.0; the app version is 0.9.12. Fixes from two disaster recovery

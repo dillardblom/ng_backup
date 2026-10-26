@@ -114,9 +114,15 @@ Needs the `user_migration` app. NG Backup asks before installing it:
 
 ```
 occ backup:user:backup offsite <uid>
+occ backup:user:list offsite [<uid>]                                  # the exports and their manifest
 occ backup:user:restore offsite users/<uid>/<exportId>               # replace (default)
 occ backup:user:restore offsite users/<uid>/<exportId> --mode=as-backup
 ```
+
+- `backup:user:restore` needs the manifest path that `backup:user:backup` prints at the end
+  (`users/<uid>/<exportId>`); `backup:user:list` shows it again. A user id alone also works when
+  that user has exactly one export on the location. With more (a `replace` restore adds a safety
+  export), the command lists them and you pass one.
 
 - If `user_migration` is missing, the command asks to install and enable it. For non-interactive
   use, add `--install-user-migration` to approve that explicitly. The command stops after the

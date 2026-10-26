@@ -561,6 +561,31 @@ final class Repository {
 		return isset($this->catalog->userExports[$manifestPath]);
 	}
 
+	/**
+	 * The recorded export $ref names: a manifest path (users/<uid>/<exportId>) as is, or a bare
+	 * user id (also "users/<uid>") when that user has exactly one export here. Anything else
+	 * throws, with the exports to choose from in the message.
+	 */
+	public function resolveUserExport(string $ref): string {
+		if ($this->isRecordedUserExport($ref)) {
+			return $ref;
+		}
+		$rest = trim($ref, '/');
+		if (str_starts_with($rest, 'users/')) {
+			$rest = substr($rest, strlen('users/'));
+		}
+		$uid = explode('/', $rest)[0];
+		$exports = $uid !== '' ? $this->listUserExports($uid) : [];
+		if (!str_contains($rest, '/') && count($exports) === 1) {
+			return $exports[0];
+		}
+		if ($exports === []) {
+			throw new RepositoryException("$ref is not a recorded user export for this location, and $uid has no exports here. Expected users/<uid>/<exportId>; occ backup:user:list shows the exports");
+		}
+		$which = str_contains($rest, '/') ? "$ref is not a recorded user export for this location" : "$uid has " . count($exports) . ' exports here';
+		throw new RepositoryException("$which; pass one of these (newest first):\n  " . implode("\n  ", $exports));
+	}
+
 	/** Permanently delete a user export. Its blobs are freed by the next prune() like any other. */
 	public function forgetUserExport(string $manifestPath): void {
 		if (!isset($this->catalog->userExports[$manifestPath])) {

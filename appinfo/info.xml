@@ -92,6 +92,7 @@ you need help with restoring a backup after a crash.]]></description>
         <command>OCA\NgBackup\Command\KeySlotRemove</command>
         <command>OCA\NgBackup\Command\BackupUser</command>
         <command>OCA\NgBackup\Command\RestoreUser</command>
+        <command>OCA\NgBackup\Command\ListUserExports</command>
         <command>OCA\NgBackup\Command\KeyImport</command>
         <command>OCA\NgBackup\Command\RestoreFull</command>
         <command>OCA\NgBackup\Command\Verify</command>
