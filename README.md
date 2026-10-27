@@ -268,6 +268,8 @@ a 👍 on its issue helps decide what comes first.
 - An explanation in the trash of restore points of what "removed by retention policy" means and
   until when a restore point can be brought back.
 - Faster full restores from S3 and SMB, reading ahead as restores over SFTP do since 1.0.0-rc.4.
+- A "Docs" tab on the admin page with links to the how-to, the disaster recovery guide and this
+  roadmap.
 
 **1.1.0**
 - Restore without the recovery kit: the backup key from the location itself, opened with one of

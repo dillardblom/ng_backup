@@ -7,7 +7,7 @@
 		<NcSettingsSection :name="t('ng_backup', 'NG Backup')"
 			:description="t('ng_backup', 'Encrypted, incremental backups of this Nextcloud (database, configuration and data). Backup locations are never mounted and are not visible in Files.')">
 			<p class="ngb-feedback">
-				{{ t('ng_backup', 'NG Backup is in beta. We would like to hear how it works for you, also when everything went fine.') }}
+				{{ t('ng_backup', 'We would like to hear how NG Backup works for you, also when everything went fine.') }}
 				<a :href="feedbackUrl" target="_blank" rel="noopener noreferrer">{{ t('ng_backup', 'Share your experience ↗') }}</a>
 			</p>
 			<NcLoadingIcon v-if="!status" :size="32" />
@@ -18,9 +18,18 @@
 			<div class="ngb-tabs">
 				<NcButton :variant="tab === 'backup' ? 'primary' : 'secondary'" @click="tab = 'backup'">{{ t('ng_backup', 'Backup and restore') }}</NcButton>
 				<NcButton :variant="tab === 'settings' ? 'primary' : 'secondary'" @click="tab = 'settings'">{{ t('ng_backup', 'Settings') }}</NcButton>
+				<NcButton :variant="tab === 'docs' ? 'primary' : 'secondary'" @click="tab = 'docs'">{{ t('ng_backup', 'Docs') }}</NcButton>
 			</div>
 
-			<template v-if="tab === 'settings'">
+			<NcSettingsSection v-if="tab === 'docs'" :name="t('ng_backup', 'Documentation')">
+				<ul class="ngb-docs">
+					<li v-for="doc in docs" :key="doc.url">
+						<a :href="doc.url" target="_blank" rel="noopener noreferrer">{{ doc.name }} ↗</a>
+						<span>{{ doc.description }}</span>
+					</li>
+				</ul>
+			</NcSettingsSection>
+			<template v-else-if="tab === 'settings'">
 				<KeySetup :status="status" @changed="refresh" />
 				<Locations v-if="status.key.everConfirmed" :status="status" @changed="refresh" />
 			</template>
@@ -51,6 +60,25 @@ import RestoreBrowser from './components/RestoreBrowser.vue'
 
 // Opens the experience report form in .github/ISSUE_TEMPLATE
 const feedbackUrl = 'https://github.com/dillardblom/ng_backup/issues/new?template=experience.yml'
+
+const repoUrl = 'https://github.com/dillardblom/ng_backup'
+const docs = [
+	{
+		name: t('ng_backup', 'How-to'),
+		description: t('ng_backup', 'Step by step: from first install to a tested restore.'),
+		url: repoUrl + '/blob/main/docs/HOWTO.md',
+	},
+	{
+		name: t('ng_backup', 'Disaster recovery'),
+		description: t('ng_backup', 'Your server is gone: get Nextcloud back on a new server from a backup location.'),
+		url: repoUrl + '/blob/main/docs/DISASTER-RECOVERY.md',
+	},
+	{
+		name: t('ng_backup', 'Roadmap'),
+		description: t('ng_backup', 'What is planned for the next versions.'),
+		url: repoUrl + '#roadmap',
+	},
+]
 
 const status = ref(null)
 const allRuns = ref(false) // runs older than the last days too
@@ -101,6 +129,17 @@ onBeforeUnmount(() => clearTimeout(timer))
 .ngb-feedback a {
 	color: var(--color-primary-element);
 	text-decoration: underline;
+}
+.ngb-docs li {
+	margin-bottom: 8px;
+}
+.ngb-docs a {
+	color: var(--color-primary-element);
+	text-decoration: underline;
+	margin-right: 8px;
+}
+.ngb-docs span {
+	color: var(--color-text-maxcontrast);
 }
 .ngb-tabs {
 	display: flex;

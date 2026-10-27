@@ -448,6 +448,12 @@ in README "Known limitations":
       zijn, dat alleen `backup:user:backup` eenmalig toonde. Nu: `backup:user:list` toont de
       exports, een kale uid werkt bij precies één export, anders een lijst om uit te kiezen —
       **klaar** (2026-10-27).
+  11. **Tabblad "Docs" in de beheerpagina** (besluit 2026-10-27): een derde knop naast "Backup and
+      restore" en "Settings", met links naar de HOWTO (`docs/HOWTO.md`), de DR-gids
+      (`docs/DISASTER-RECOVERY.md`) en de roadmap (README, `#roadmap`) op GitHub, elk met een
+      regel wat erin staat. Nu zijn ze alleen via de README te vinden. Zichtbaar ook zonder
+      sleutel, zodat de gids vindbaar is vóór de eerste installatie-stap. "NG Backup is in beta"
+      gaat uit de feedbackregel — **klaar** (2026-10-27).
 - **DR-tests over databasegrenzen** (besluit 2026-10-20; productie nc01 draait PostgreSQL): na
   de MariaDB→PostgreSQL-fout (tellers, rc5) elke overstap in de integratietest (`to-pgsql`,
   `to-mysql`, `to-sqlite`, ook in CI). Volle DR-tests met echte data: vóór 1.0.0 de S3-simulatie
@@ -488,6 +494,11 @@ in README "Known limitations":
      nooit opruimt (bijv. "vóór de upgrade naar NC 35"), in de lijst en met
      `occ backup:pin <snapshot>` / `--unpin`. Op de locatie bewaren (catalogus), zodat de
      opschoning het ziet, ook na een DR; vastgepinde punten tellen niet mee in last/daily/weekly.
+  9. **Feedbackvraag weghalen** in 1.1.0 of 1.2.0 (besluit 2026-10-27): de regel "We would like
+     to hear how NG Backup works for you ... Share your experience" in de beheerpagina blijft tot
+     dan staan (de vermelding "in beta" is er in 1.0.1 al af). Zijn er tegen die
+     tijd geen noemenswaardige meldingen, dan werkt het: mensen melden eerder wat niet werkt dan
+     wat gewoon werkt. Het formulier (`experience.yml`) mag blijven voor wie het zelf opzoekt.
 - **Bevindingen DR-test op PVE02 (2026-10-17, snapshot van nc01, 1 TB, AIO → gewone NC 34 met
   PostgreSQL 18)** — voor **1.0.0-rc.2**:
   1. Tabellen van apps die bij de backup **niet aanstonden** (restanten: Deck, ONLYOFFICE,
