@@ -21,6 +21,13 @@ instead carried by the app description, the git tag, the release, and this file.
   expected form (#22). Before, `backup:user:restore <location> <uid>` only said "is not a
   recorded user export for this location".
 
+### Fixed
+- An SFTP location with an RSA key in OpenSSH format ("BEGIN OPENSSH PRIVATE KEY") whose line
+  breaks were lost, e.g. turned into spaces on the way in, stopped working after an upgrade to
+  Nextcloud 35 with "Unable to read key": Nextcloud 35 reads keys with a stricter library. The
+  line breaks are now restored before the key is used, so the stored location works again without
+  re-entering it (#24).
+
 ## [1.0.0-rc.6] - 2026-10-24
 
 Sixth release candidate for 1.0.0; the app version is 0.9.12. Fixes from two disaster recovery

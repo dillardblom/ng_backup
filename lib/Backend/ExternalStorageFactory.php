@@ -72,6 +72,10 @@ final class ExternalStorageFactory {
 			throw new BackendException("Auth mechanism $authId does not fit backend $backendId");
 		}
 
+		if (is_string($options['private_key'] ?? null)) {
+			$options['private_key'] = self::normalizePrivateKey($options['private_key']);
+		}
+
 		$config = new StorageConfig();
 		$config->setBackend($backend);
 		$config->setAuthMechanism($auth);
@@ -85,5 +89,23 @@ final class ExternalStorageFactory {
 		$storage = new $class($config->getBackendOptions());
 		$storage = $backend->wrapStorage($storage);
 		return $auth->wrapStorage($storage);
+	}
+
+	/**
+	 * An OpenSSH-format private key with its line breaks restored. Up to Nextcloud 34
+	 * (phpseclib 2) a key whose newlines were lost or turned into spaces, e.g. on its way through
+	 * a shell or a form, still loaded; Nextcloud 35 (phpseclib 3) refuses it with "Unable to read
+	 * key" (#24). The key itself is not changed, so it is fixed when it is used, not when stored.
+	 * Other formats (PEM, PKCS#8) still load as they are and are returned unchanged.
+	 */
+	public static function normalizePrivateKey(string $key): string {
+		if (!preg_match('/-----BEGIN OPENSSH PRIVATE KEY-----(.*?)-----END OPENSSH PRIVATE KEY-----/s', $key, $m)) {
+			return $key;
+		}
+		$body = (string)preg_replace('/\s+/', '', $m[1]);
+		if (!preg_match('#^[A-Za-z0-9+/]+=*$#', $body)) {
+			return $key;
+		}
+		return "-----BEGIN OPENSSH PRIVATE KEY-----\n" . chunk_split($body, 70, "\n") . "-----END OPENSSH PRIVATE KEY-----\n";
 	}
 }
