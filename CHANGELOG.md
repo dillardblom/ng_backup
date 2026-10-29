@@ -7,6 +7,10 @@ the app store accepts a `-beta` suffix, but Nextcloud servers then only offer th
 beta/daily update channel, which would hide the app from most admins. The stability stage is
 instead carried by the app description, the git tag, the release, and this file.
 
+Each heading starts with that `<version>`, once: the app store shows a release the section(s)
+whose heading starts with its `x.y.z` and ignores anything after it, so `## [1.0.0-rc.6]` would be
+shown under 1.0.0. The git tag of a release candidate goes after the date.
+
 ## [Unreleased]
 
 ### Added
@@ -43,7 +47,7 @@ from the web interface or with occ. Disaster recovery has been tested on real in
 The code is the same as 1.0.0-rc.6 (app version 0.9.12): updating from it changes nothing in your
 backups or settings.
 
-## [1.0.0-rc.6] - 2026-10-24
+## [0.9.12] - 2026-10-24 (1.0.0-rc.6)
 
 Sixth release candidate for 1.0.0; the app version is 0.9.12. Fixes from two disaster recovery
 simulations and a user report.
@@ -71,7 +75,7 @@ simulations and a user report.
 - The full-restore integration test checks a 4-byte character in a table the restore creates, and
   retries app installs from the app store.
 
-## [1.0.0-rc.5] - 2026-10-22
+## [0.9.11] - 2026-10-22 (1.0.0-rc.5)
 
 Fifth release candidate for 1.0.0; the app version is 0.9.11. A full restore of 1 TB over SFTP
 stopped after 13 hours with "Blob not in index"; the backup itself was fine.
@@ -104,7 +108,7 @@ stopped after 13 hours with "Blob not in index"; the backup itself was fine.
 - The extra connection a full restore reads ahead on is replaced when it breaks (up to 20 times),
   instead of reading the rest of the restore the slow way.
 
-## [1.0.0-rc.4] - 2026-10-19
+## [0.9.10] - 2026-10-19 (1.0.0-rc.4)
 
 Fourth release candidate for 1.0.0; the app version is 0.9.10. 1.0.0-rc.3 (0.9.9) was not
 released: its fixes are in here.
@@ -128,7 +132,7 @@ released: its fixes are in here.
 - The app store showed old screenshots: it keeps a copy per URL, and the URLs always pointed at
   `main`. They now point at the release's tag.
 
-## [1.0.0-rc.2] - 2026-10-18
+## [0.9.8] - 2026-10-18 (1.0.0-rc.2)
 
 Second release candidate for 1.0.0; the app version is 0.9.8. Fixes from a full disaster recovery
 test of a production instance (about 1 TB, Nextcloud All-in-One onto a plain Nextcloud with
@@ -169,7 +173,7 @@ PostgreSQL).
 - Removing a location left its cached index in the database (tens of thousands of rows for a large
   backup). It is removed with the location now, and once for locations that are already gone.
 
-## [1.0.0-rc.1] - 2026-10-17
+## [0.9.7] - 2026-10-17 (1.0.0-rc.1)
 
 Release candidate for 1.0.0; the app version is 0.9.7. Only bug fixes until 1.0.0. Tested on a
 production instance (about 1 TB, 150,000 files): full and incremental backups and a verify on
@@ -448,7 +452,12 @@ and not implemented yet.
 - See the "Storage backend experiences" section of the README for provider-specific quirks found
   so far (e.g. Hetzner Storage Box sub-accounts).
 
-[1.0.0-rc.1]: https://github.com/dillardblom/ng_backup/releases/tag/v1.0.0-rc.1
+[1.0.0]: https://github.com/dillardblom/ng_backup/releases/tag/v1.0.0
+[0.9.12]: https://github.com/dillardblom/ng_backup/releases/tag/v1.0.0-rc.6
+[0.9.11]: https://github.com/dillardblom/ng_backup/releases/tag/v1.0.0-rc.5
+[0.9.10]: https://github.com/dillardblom/ng_backup/releases/tag/v1.0.0-rc.4
+[0.9.8]: https://github.com/dillardblom/ng_backup/releases/tag/v1.0.0-rc.2
+[0.9.7]: https://github.com/dillardblom/ng_backup/releases/tag/v1.0.0-rc.1
 [0.9.6-beta.7]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.6-beta.7
 [0.9.5-beta.6]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.5-beta.6
 [0.9.4-beta.5]: https://github.com/dillardblom/ng_backup/releases/tag/v0.9.4-beta.5
