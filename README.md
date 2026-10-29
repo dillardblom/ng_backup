@@ -7,8 +7,8 @@ installations and hosted Nextcloud. (Choosing SMB as a storage backend is the on
 see "Storage backend experiences" below — that requirement comes from files_external, not from
 ng_backup, and applies to any Nextcloud app that writes to an SMB share.)
 
-**Status: release candidate for 1.0.0 (1.0.0-rc.1, app version 0.9.7).** Tested thoroughly, usable
-alongside your current backup, but not yet a drop-in replacement for it. See "Known limitations" below, `PLAN.md` for the design and
+**Status: 1.0.0, stable.** Disaster recovery has been tested on real installations (see "Tested
+disaster recoveries" below). See "Known limitations" below, `PLAN.md` for the design and
 `docs/HOWTO.md` for a step-by-step guide from setup to a tested restore. Server lost? See
 `docs/DISASTER-RECOVERY.md`.
 
@@ -287,7 +287,7 @@ a 👍 on its issue helps decide what comes first.
 
 ## Known limitations
 
-On the backlog; none of these block the beta or 1.0.0, but know them before you rely on it:
+On the backlog; know them before you rely on NG Backup:
 
 - **Only the data directory is backed up.** Object storage as primary storage (`objectstore` in
   `config.php`) is not supported: a backup refuses to start there. Folders mounted through the
