@@ -454,6 +454,16 @@ in README "Known limitations":
       regel wat erin staat. Nu zijn ze alleen via de README te vinden. Zichtbaar ook zonder
       sleutel, zodat de gids vindbaar is vóór de eerste installatie-stap. "NG Backup is in beta"
       gaat uit de feedbackregel — **klaar** (2026-10-27).
+  12. **SFTP-sleutel zonder regeleinden** (issue #24, 2026-10-28): het veld "Private key" op de
+      beheerpagina is één regel, dus een geplakte sleutel verliest zijn regeleinden. NC34
+      (phpseclib 2) las dat nog, NC35 (phpseclib 3) weigert een OpenSSH-sleutel dan met "Unable
+      to read key". De regeleinden worden nu teruggezet vlak voor gebruik — **klaar** (2026-10-28).
+  13. **"database is locked" bij het begin van `backup:restore:full` op SQLite** (CI, 2026-10-26
+      bij #22 en 2026-10-29 op `main` na de merge van 1.0.0): de restore stopt meteen na het
+      aanzetten van de onderhoudsmodus. Niet altijd, dus een tweede proces dat op hetzelfde moment
+      de database gebruikt (cron, een webverzoek of de opstart van de container). Kan ook bij een
+      echte restore naar SQLite gebeuren. Uitzoeken wie de lock vasthoudt; dan wachten en opnieuw
+      proberen (busy timeout) of eerst de andere schrijvers stoppen.
 - **DR-tests over databasegrenzen** (besluit 2026-10-20; productie nc01 draait PostgreSQL): na
   de MariaDB→PostgreSQL-fout (tellers, rc5) elke overstap in de integratietest (`to-pgsql`,
   `to-mysql`, `to-sqlite`, ook in CI). Volle DR-tests met echte data: vóór 1.0.0 de S3-simulatie

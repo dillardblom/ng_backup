@@ -22,11 +22,12 @@ instead carried by the app description, the git tag, the release, and this file.
   recorded user export for this location".
 
 ### Fixed
-- An SFTP location with an RSA key in OpenSSH format ("BEGIN OPENSSH PRIVATE KEY") whose line
-  breaks were lost, e.g. turned into spaces on the way in, stopped working after an upgrade to
-  Nextcloud 35 with "Unable to read key": Nextcloud 35 reads keys with a stricter library. The
-  line breaks are now restored before the key is used, so the stored location works again without
-  re-entering it (#24).
+- An SFTP location with an RSA key in OpenSSH format ("BEGIN OPENSSH PRIVATE KEY") stopped
+  working after an upgrade to Nextcloud 35 with "Unable to read key", and such a key could not be
+  added there at all (#24). The "Private key" field on the admin page is a single line, so a
+  pasted key lost its line breaks; Nextcloud 34 still read it, Nextcloud 35 reads keys with a
+  stricter library. The line breaks are now restored before the key is used, so a stored location
+  works again without re-entering it.
 
 ## [1.0.0] - 2026-10-29
 
