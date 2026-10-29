@@ -35,15 +35,18 @@ instead carried by the app description, the git tag, the release, and this file.
 
 ## [1.0.0] - 2026-10-29
 
-First stable release: the same code as 1.0.0-rc.6, which had no blocking problems reported in its
-week out (about 220 downloads). Only the version number and the README changed. The fixes for
-what was reported (#22, #24) follow in 1.0.1.
+First stable release. NG Backup makes encrypted, incremental backups of your whole Nextcloud
+(files, database and configuration) to S3, SFTP, WebDAV, SMB and other storage, and restores them
+from the web interface or with occ. Disaster recovery has been tested on real installations; see
+"Tested disaster recoveries" in the README, and read "Known limitations" before you rely on it.
+
+The code is the same as 1.0.0-rc.6 (app version 0.9.12): updating from it changes nothing in your
+backups or settings.
 
 ## [1.0.0-rc.6] - 2026-10-24
 
 Sixth release candidate for 1.0.0; the app version is 0.9.12. Fixes from two disaster recovery
-simulations and a user report. If no problems are reported for about a week, 1.0.0 will be this
-same code.
+simulations and a user report.
 
 ### Fixed
 - The daily backup time was taken as UTC (Nextcloud runs PHP in UTC): 03:00 ran at 05:00 in
