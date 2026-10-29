@@ -169,7 +169,7 @@ final class DbDumper {
 		$foreignKeys = [];
 		$this->db->beginTransaction();
 		try {
-			$foreignKeys = $this->suspendForeignKeys();
+			$foreignKeys = $this->suspendForeignKeys(); // first: on SQLite it also takes the write lock
 			foreach ($manifest['tables'] as $table => $info) {
 				if (in_array($table, $report['missing'], true)) {
 					continue;
@@ -412,6 +412,12 @@ final class DbDumper {
 			return $checks;
 		}
 		if ($platform instanceof \Doctrine\DBAL\Platforms\SqlitePlatform) {
+			// SQLite (WAL) starts a transaction as a reader. When another process (a cron job, the
+			// installer still finishing) writes between our first read and our first write, that
+			// write fails at once with "database is locked": no waiting helps a reader whose view
+			// is out of date. Take the write lock first, so we wait for the other writer instead
+			// and it waits for us after that.
+			$this->db->executeStatement('DELETE FROM ' . $this->db->quoteIdentifier($this->prefix . 'appconfig') . ' WHERE 0 = 1');
 			$this->db->executeStatement('PRAGMA defer_foreign_keys = ON'); // checked at commit
 		}
 		return [];

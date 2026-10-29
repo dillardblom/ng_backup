@@ -28,6 +28,10 @@ instead carried by the app description, the git tag, the release, and this file.
   pasted key lost its line breaks; Nextcloud 34 still read it, Nextcloud 35 reads keys with a
   stricter library. The line breaks are now restored before the key is used, so a stored location
   works again without re-entering it.
+- A full restore onto SQLite could stop at once with "database is locked" when another process
+  wrote to the database just as the restore began (a background job that was already running).
+  The restore now takes the write lock first and waits for the other process instead. The
+  full-restore test on SQLite runs with a second process writing alongside.
 
 ## [1.0.0] - 2026-10-29
 

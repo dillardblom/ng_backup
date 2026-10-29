@@ -462,8 +462,12 @@ in README "Known limitations":
       bij #22 en 2026-10-29 op `main` na de merge van 1.0.0): de restore stopt meteen na het
       aanzetten van de onderhoudsmodus. Niet altijd, dus een tweede proces dat op hetzelfde moment
       de database gebruikt (cron, een webverzoek of de opstart van de container). Kan ook bij een
-      echte restore naar SQLite gebeuren. Uitzoeken wie de lock vasthoudt; dan wachten en opnieuw
-      proberen (busy timeout) of eerst de andere schrijvers stoppen.
+      echte restore naar SQLite gebeuren. Oorzaak (2026-10-29): SQLite (WAL) begint een transactie
+      als lezer; schrijft een ander proces tussen ons eerste lezen en ons eerste schrijven, dan
+      faalt dat schrijven direct (geen wachttijd helpt). In CI was dat de installer, die
+      "installed" zet en daarna nog seconden doorschrijft. Nu neemt de restore eerst het
+      schrijfslot en wacht hij op de ander; de SQLite-test draait met een tweede schrijver
+      ernaast — **klaar** (2026-10-29).
 - **DR-tests over databasegrenzen** (besluit 2026-10-20; productie nc01 draait PostgreSQL): na
   de MariaDB→PostgreSQL-fout (tellers, rc5) elke overstap in de integratietest (`to-pgsql`,
   `to-mysql`, `to-sqlite`, ook in CI). Volle DR-tests met echte data: vóór 1.0.0 de S3-simulatie
