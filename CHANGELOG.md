@@ -28,6 +28,12 @@ instead carried by the app description, the git tag, the release, and this file.
   line breaks are now restored before the key is used, so the stored location works again without
   re-entering it (#24).
 
+## [1.0.0] - 2026-10-29
+
+First stable release: the same code as 1.0.0-rc.6, which had no blocking problems reported in its
+week out (about 220 downloads). Only the version number and the README changed. The fixes for
+what was reported (#22, #24) follow in 1.0.1.
+
 ## [1.0.0-rc.6] - 2026-10-24
 
 Sixth release candidate for 1.0.0; the app version is 0.9.12. Fixes from two disaster recovery
