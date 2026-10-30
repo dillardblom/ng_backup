@@ -49,6 +49,16 @@ SUM_AFTER=$($X sh -c "cd $DATA/$U/files && find . -type f -print0 | sort -z | xa
 $X sh -c "ls $DATA/$U/files_trashbin/files/ | grep -q '^extra.txt'" || fail "extra file not in trash"
 ok "restore new-folder and replace: files identical, extra file in the trash"
 
+# One file to a local directory, where a restore that was stopped left its temporary.
+ONE=/tmp/ngb-rt-one/data/$U/files/Docs
+$X sh -c "mkdir -p $ONE && echo partial > $ONE/f2.bin.ngb-restore-0123456789ab"
+occ backup:restore ci "$SNAP" "data/$U/files/Docs/f2.bin" -d /tmp/ngb-rt-one | grep -q "Restored 1 files" || fail "restore of one file to a directory"
+$X sh -c "cmp -s $ONE/f2.bin $DATA/$U/files/Docs/f2.bin" || fail "the file restored to a directory differs"
+$X sh -c "ls -A $ONE | grep -q ngb-restore" && fail "the temporary of a stopped restore was left"
+ok "restore of one file to a directory; the temporary of a stopped restore removed"
+occ backup:status | grep -q "started (" || fail "backup:status does not name the time zone"
+ok "backup:status names the time zone of its times"
+
 # Checksum audit: shallow (index presence) and deep (download, decrypt, verify every blob).
 occ backup:verify ci "$SNAP" | grep -q "^OK$" || fail "shallow verify"
 occ backup:verify ci "$SNAP" --deep | grep -q "^OK$" || fail "deep verify"

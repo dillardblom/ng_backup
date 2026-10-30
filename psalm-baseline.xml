@@ -110,11 +110,6 @@
       <code><![CDATA[ask]]></code>
     </UndefinedInterfaceMethod>
   </file>
-  <file src="lib/Command/Trash.php">
-    <RedundantCastGivenDocblockType>
-      <code><![CDATA[(string)($info['time'] ?? '')]]></code>
-    </RedundantCastGivenDocblockType>
-  </file>
   <file src="lib/Controller/AdminApiController.php">
     <InvalidOperand>
       <code><![CDATA[$maxGb * 1073741824]]></code>

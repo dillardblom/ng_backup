@@ -33,6 +33,9 @@ final class RestoreService {
 	public const MODE_MERGE = 'merge';
 	public const MODE_REPLACE = 'replace';
 
+	/** @var array<string, true> folders of the current restore already cleared of stale temporaries */
+	private array $cleaned = [];
+
 	public function __construct(
 		private TargetService $targets,
 		private IRootFolder $root,
@@ -133,6 +136,7 @@ final class RestoreService {
 		$dest = $this->ensureFolder($userFolder, $parentRel);
 		$names = $single ? [basename($rel) => $entries['']] : $entries;
 
+		$this->cleaned = [];
 		$restored = 0;
 		foreach ($names as $relPath => $entry) {
 			$this->writeFile($repo, $dest, (string)$relPath, $entry);
@@ -178,6 +182,10 @@ final class RestoreService {
 	private function writeFile(Repository $repo, Folder $dest, string $relPath, array $entry): void {
 		$dir = dirname($relPath);
 		$folder = $dir === '.' ? $dest : $this->ensureFolder($dest, $dir);
+		if (!isset($this->cleaned[$folder->getPath()])) {
+			$this->removeStaleTemporaries($folder);
+			$this->cleaned[$folder->getPath()] = true;
+		}
 		$name = basename($relPath);
 		// Stage under a temporary name; only rename into place after every blob was verified.
 		$tmpName = '.' . $name . '.ngb-restore-' . bin2hex(random_bytes(3));
@@ -220,6 +228,19 @@ final class RestoreService {
 			} catch (\Throwable) {
 			}
 			throw $e;
+		}
+	}
+
+	/** See Repository::removeStaleTemporaries(): what a restore that was stopped left in this folder. */
+	private function removeStaleTemporaries(Folder $folder): void {
+		foreach ($folder->getDirectoryListing() as $node) {
+			if ($node instanceof File && Repository::isRestoreTemporary($node->getName())) {
+				try {
+					$node->delete();
+				} catch (\Throwable) {
+					// in the way of nothing: the new temporary gets a name of its own
+				}
+			}
 		}
 	}
 

@@ -7,7 +7,9 @@ declare(strict_types=1);
 
 namespace OCA\NgBackup\Command;
 
+use OCA\NgBackup\Format;
 use OCA\NgBackup\Service\RestoreService;
+use OCA\NgBackup\Service\Schedule;
 use OCA\NgBackup\Service\TargetService;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\Table;
@@ -19,6 +21,7 @@ final class Browse extends Command {
 	public function __construct(
 		private TargetService $targets,
 		private RestoreService $restore,
+		private Schedule $schedule,
 	) {
 		parent::__construct();
 	}
@@ -43,9 +46,10 @@ final class Browse extends Command {
 			$output->writeln('Nothing here.');
 			return 0;
 		}
+		$zone = $this->schedule->get()['timezone'];
 		$rows = array_map(fn ($i) => [$i['type'] === 'dir' ? $i['name'] . '/' : $i['name'], $this->size($i['size']),
-			$i['type'] === 'dir' ? $i['files'] . ' files' : date('Y-m-d H:i', (int)$i['mtime'])], $items);
-		(new Table($output))->setHeaders(['name', 'size', 'files / modified'])->setRows($rows)->render();
+			$i['type'] === 'dir' ? $i['files'] . ' files' : Format::time((int)$i['mtime'], $zone)], $items);
+		(new Table($output))->setHeaders(['name', 'size', "files / modified ($zone)"])->setRows($rows)->render();
 		return 0;
 	}
 

@@ -8,6 +8,8 @@ declare(strict_types=1);
 namespace OCA\NgBackup\Command;
 
 use OCA\NgBackup\Db\SnapshotMapper;
+use OCA\NgBackup\Format;
+use OCA\NgBackup\Service\Schedule;
 use OCA\NgBackup\Service\TargetService;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\Table;
@@ -19,6 +21,7 @@ final class ListSnapshots extends Command {
 	public function __construct(
 		private TargetService $targets,
 		private SnapshotMapper $snapshots,
+		private Schedule $schedule,
 	) {
 		parent::__construct();
 	}
@@ -32,10 +35,11 @@ final class ListSnapshots extends Command {
 	protected function execute(InputInterface $input, OutputInterface $output): int {
 		$name = $input->getArgument('target');
 		$targets = $name === null ? $this->targets->list() : [$this->targets->get($name)];
+		$zone = $this->schedule->get()['timezone'];
 		$rows = [];
 		foreach ($targets as $t) {
 			foreach ($this->snapshots->findForTarget($t->getId()) as $s) {
-				$rows[] = [$t->getName(), $s->getSnapshotId(), date('Y-m-d H:i', $s->getCreatedAt()), $s->getKind(),
+				$rows[] = [$t->getName(), $s->getSnapshotId(), Format::time($s->getCreatedAt(), $zone), $s->getKind(),
 					$s->getFiles(), sprintf('%.1f GiB', ($s->getBytes() ?? 0) / 1073741824), $s->getLabel() ?? ''];
 			}
 		}
@@ -43,7 +47,7 @@ final class ListSnapshots extends Command {
 			$output->writeln('No snapshots yet (occ backup:run).');
 			return 0;
 		}
-		(new Table($output))->setHeaders(['location', 'snapshot', 'date', 'kind', 'files', 'size', 'label'])->setRows($rows)->render();
+		(new Table($output))->setHeaders(['location', 'snapshot', "date ($zone)", 'kind', 'files', 'size', 'label'])->setRows($rows)->render();
 		return 0;
 	}
 }

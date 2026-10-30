@@ -7,7 +7,9 @@ declare(strict_types=1);
 
 namespace OCA\NgBackup\Command;
 
+use OCA\NgBackup\Format;
 use OCA\NgBackup\Service\KeyService;
+use OCA\NgBackup\Service\Schedule;
 use OCA\NgBackup\Service\TargetService;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\Table;
@@ -19,6 +21,7 @@ final class Trash extends Command {
 	public function __construct(
 		private TargetService $targets,
 		private KeyService $keys,
+		private Schedule $schedule,
 	) {
 		parent::__construct();
 	}
@@ -32,11 +35,14 @@ final class Trash extends Command {
 	protected function execute(InputInterface $input, OutputInterface $output): int {
 		$name = $input->getArgument('target');
 		$delay = $this->keys->deleteDelayDays() * 86400;
+		$zone = $this->schedule->get()['timezone'];
 		$rows = [];
 		foreach ($name === null ? $this->targets->list() : [$this->targets->get($name)] as $t) {
 			foreach ($this->targets->repository($t)->trash() as $id => $info) {
-				$rows[] = [$t->getName(), $id, (string)($info['time'] ?? ''), $info['label'], date('Y-m-d H:i', $info['forgottenAt']), $info['by'],
-					date('Y-m-d H:i', $info['forgottenAt'] + $delay)];
+				$time = $info['time'] ?? null;
+				$made = is_string($time) ? strtotime($time) : false;
+				$rows[] = [$t->getName(), $id, $made !== false ? Format::time($made, $zone) : '', $info['label'], Format::time($info['forgottenAt'], $zone), $info['by'],
+					Format::time($info['forgottenAt'] + $delay, $zone)];
 			}
 		}
 		if ($rows === []) {
@@ -44,6 +50,7 @@ final class Trash extends Command {
 			return 0;
 		}
 		(new Table($output))->setHeaders(['location', 'snapshot', 'made', 'label', 'removed', 'by', 'deleted after'])->setRows($rows)->render();
+		$output->writeln("Times in $zone. The retention policy keeps the newest snapshots and the last of each recent day, week and month; it moves the others here, and they are deleted permanently after " . $this->keys->deleteDelayDays() . ' days.');
 		return 0;
 	}
 }

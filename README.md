@@ -261,15 +261,22 @@ What is planned, without dates. Ideas and votes are welcome in the
 a 👍 on its issue helps decide what comes first.
 
 **1.0.1**
-- A warning on the admin page and in `occ backup:status` when background jobs do not run on a
-  system cron, with how to set one up. Without cron, a backup started with "Back up now" moves on
-  while the NG Backup page is open ([#13](https://github.com/dillardblom/ng_backup/issues/13)).
 - An optional label for a backup started with "Back up now".
 - An explanation in the trash of restore points of what "removed by retention policy" means and
   until when a restore point can be brought back.
-- Faster full restores from S3 and SMB, reading ahead as restores over SFTP do since 1.0.0-rc.4.
 - A "Docs" tab on the admin page with links to the how-to, the disaster recovery guide and this
   roadmap.
+- Times in `occ` in the administrator's time zone, as on the admin page; restoring a single file
+  with `occ backup:restore --to-directory`.
+
+**1.0.2**
+- A warning on the admin page and in `occ backup:status` when background jobs do not run on a
+  system cron, with how to set one up. Without cron, a backup started with "Back up now" moves on
+  while the NG Backup page is open, and the database phase of a backup shows its progress
+  ([#13](https://github.com/dillardblom/ng_backup/issues/13)).
+- Faster full restores from S3 and SMB, reading ahead as restores over SFTP do since 1.0.0-rc.4.
+- `--salvage` for a restore: restore what can be read, skip a file that cannot, and list those at
+  the end instead of stopping.
 
 **1.1.0**
 - Restore without the recovery kit: the backup key from the location itself, opened with one of

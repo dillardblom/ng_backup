@@ -214,7 +214,8 @@ final class Repository {
 	}
 
 	/**
-	 * Restore a snapshot (or only paths starting with $prefix) into a local directory.
+	 * Restore a snapshot (or only paths starting with $prefix) into a local directory. A $prefix
+	 * "dir/file/" also restores the file "dir/file" itself.
 	 *
 	 * @param bool $stripPrefix write "$target/<path without $prefix>" instead of
 	 *             "$target/<full logical path>" (disaster recovery: restoring e.g. "data/" or
@@ -253,7 +254,7 @@ final class Repository {
 		$plan = new ReadAheadPlan(rtrim($target, '/') . '/.ngb-restore-spool-' . bin2hex(random_bytes(4)));
 		try {
 			foreach ($this->streamEntries($snapshotId) as $entry) {
-				if ($prefix !== '' && !str_starts_with($entry['p'], $prefix)) {
+				if (!self::underPrefix($entry['p'], $prefix)) {
 					continue;
 				}
 				foreach ($entry['b'] as $id) {
@@ -286,11 +287,15 @@ final class Repository {
 
 	private function restoreEntries(string $snapshotId, string $target, string $prefix, bool $stripPrefix, ?callable $heartbeat, ?ReadAheadPlan $plan): int {
 		$count = 0;
+		$cleaned = [];
 		foreach ($this->streamEntries($snapshotId) as $entry) {
-			if ($prefix !== '' && !str_starts_with($entry['p'], $prefix)) {
+			if (!self::underPrefix($entry['p'], $prefix)) {
 				continue;
 			}
-			$relPath = ($stripPrefix && $prefix !== '') ? substr($entry['p'], strlen(rtrim($prefix, '/')) + 1) : $entry['p'];
+			$relPath = $entry['p'];
+			if ($stripPrefix && $prefix !== '') {
+				$relPath = $entry['p'] === rtrim($prefix, '/') ? basename($entry['p']) : substr($entry['p'], strlen($prefix));
+			}
 			$dest = rtrim($target, '/') . '/' . $relPath;
 			if (!is_dir(dirname($dest))) {
 				mkdir(dirname($dest), 0700, true);
@@ -300,6 +305,10 @@ final class Repository {
 			$dir = realpath(dirname($dest));
 			if ($base === false || $dir === false || ($dir !== $base && !str_starts_with($dir, $base . '/')) || is_link($dest)) {
 				throw new RepositoryException('Refusing to write outside the restore directory: ' . $entry['p']);
+			}
+			if (!isset($cleaned[$dir])) {
+				self::removeStaleTemporaries($dir);
+				$cleaned[$dir] = true;
 			}
 			// Write next to the destination and rename after all blobs verified: at most one file
 			// is ever present twice.
@@ -329,6 +338,30 @@ final class Repository {
 			$count++;
 		}
 		return $count;
+	}
+
+	/** $prefix is "" (everything) or ends with "/"; the path without that "/" is a file to restore too. */
+	private static function underPrefix(string $path, string $prefix): bool {
+		return $prefix === '' || str_starts_with($path, $prefix) || $path === rtrim($prefix, '/');
+	}
+
+	/**
+	 * Remove what a restore that was stopped left in a directory this restore writes to:
+	 * "<name>.ngb-restore-<hex>" from here, ".<name>.ngb-restore-<hex>" from a restore through
+	 * Nextcloud. A files:scan would otherwise make them show up in Files.
+	 */
+	public static function removeStaleTemporaries(string $dir): void {
+		$names = scandir($dir);
+		foreach ($names === false ? [] : $names as $name) {
+			$path = $dir . '/' . $name;
+			if (self::isRestoreTemporary($name) && is_file($path) && !is_link($path)) {
+				@unlink($path);
+			}
+		}
+	}
+
+	public static function isRestoreTemporary(string $name): bool {
+		return preg_match('/.\.ngb-restore-[0-9a-f]{6}(?:[0-9a-f]{6})?$/', $name) === 1;
 	}
 
 	/**

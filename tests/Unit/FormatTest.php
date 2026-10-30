@@ -14,4 +14,11 @@ class FormatTest extends TestCase {
 		$this->assertSame('1d 00:00:00', Format::duration(86400));
 		$this->assertSame('1d 12:10:13', Format::duration(86400 + 12 * 3600 + 10 * 60 + 13));
 	}
+
+	public function testTimeInZone(): void {
+		$t = (int)strtotime('2026-10-19 13:12:00 UTC');
+		$this->assertSame('2026-10-19 13:12', Format::time($t, 'UTC'));
+		$this->assertSame('2026-10-19 15:12', Format::time($t, 'Europe/Berlin')); // summer time
+		$this->assertSame('2026-12-01 01:00', Format::time((int)strtotime('2026-12-01 00:00:00 UTC'), 'Europe/Amsterdam'));
+	}
 }

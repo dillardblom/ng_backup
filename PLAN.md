@@ -392,10 +392,12 @@ in README "Known limitations":
   gids (SFTP, Storage Box) → rc4 uitbrengen en om tests vragen → zelf een volledige DR van een
   productie-instantie van ~250 GB via S3 en via SMB. Drie volledige DR-restores vóór 1.0.0.
   Problemen of meldingen van gebruikers: rc5.
-- **1.0.1:**
-  1. (Naar rc4: herstelsnelheid over SFTP.) S3 leest al 16 tegelijk bij index en tree, maar een
+- **1.0.1:** alleen de kleine punten (besluit 2026-10-30): 4, 6–13. Punten 1, 2 en 5 gaan naar
+  1.0.2 (README-roadmap aangepast); punt 3 is een test, ingepland voor de week van 2 november,
+  niet aangekondigd en los van de release.
+  1. **Naar 1.0.2.** (Naar rc4: herstelsnelheid over SFTP.) S3 leest al 16 tegelijk bij index en tree, maar een
      restore leest de packs nog één voor één: ook vooruitlezen via de S3-client.
-  2. Achtergrondjobs zonder systeem-cron (issue #13; besluit 2026-10-19). De PR die dit
+  2. **Naar 1.0.2.** Achtergrondjobs zonder systeem-cron (issue #13; besluit 2026-10-19). De PR die dit
      oplost zegt "Fixes #13" (bevestigd: #13 was de cron; besluit 2026-10-21):
      a. **Waarschuwen** in de beheerpagina en `backup:status`: modus uit `core backgroundjobs_mode`
         (`ajax`/`webcron`/`cron`) en de laatste run uit `core lastcron`. Niet op `cron`, of de
@@ -424,25 +426,29 @@ in README "Known limitations":
   4. **Label bij "Back up now"** (besluit 2026-10-19): een optioneel tekstveld naast de knop; de
      tekst gaat als label van de snapshot mee (nu kan dat alleen met `occ backup:run -l`; de knop
      stuurt een leeg label, geplande runs krijgen "scheduled"). Raakt alleen de UI en een
-     bestaande parameter.
+     bestaande parameter. Ten hoogste 100 tekens — **klaar** (2026-10-30).
   5. **`--salvage`** voor `backup:restore` en `backup:restore:full` (besluit 2026-10-22): terughalen
      wat kan, een bestand dat niet te lezen of te ontsleutelen is overslaan en aan het eind
-     opsommen, in plaats van stoppen.
+     opsommen, in plaats van stoppen. **Naar 1.0.2** (besluit 2026-10-30).
   6. **Tijdelijke bestanden van een afgebroken restore opruimen** (gevonden in de SMB-DR van
      rc6, 2026-10-24): de rc5-poging die stopte liet `VID_0009.mp4.ngb-restore-<id>` staan; de
      geslaagde restore daarna haalde het niet weg, en `files:scan` maakte het zichtbaar in Files.
-     Een restore ruimt `*.ngb-restore-*` in de mappen die hij terugzet op.
+     Een restore ruimt `*.ngb-restore-*` in de mappen die hij terugzet op (alleen bestanden met
+     precies dat achtervoegsel en 6 of 12 hextekens) — **klaar** (2026-10-30).
   7. **Eén bestand terugzetten met `backup:restore`**: een pad naar een bestand zet 0 bestanden
-     terug (er komt een `/` achter); nu werkt alleen een map.
+     terug (er komt een `/` achter); nu werkt alleen een map. Gold alleen voor `--to-directory`;
+     naar de bestanden van een gebruiker werkte een los bestand al — **klaar** (2026-10-30).
   8. **Uitleg (i) bij de prullenbak van herstelpunten** (besluit 2026-10-25): bij "removed by
      retention policy" een infoknop met wat het betekent: het bewaarbeleid houdt voor oudere dagen
      één herstelpunt per dag (het laatste), weken en maanden; de rest gaat naar de prullenbak en
      wordt pas na de ingestelde wachttijd (`delete_delay_days`, standaard 30) echt verwijderd, en is
      tot die datum terug te zetten. Aanleiding: de beheerder zag "19-10 13:12 – after rc4 upgrade
-     removed by retention policy" en dacht dat er iets was weggegooid.
+     removed by retention policy" en dacht dat er iets was weggegooid. `occ backup:trash` zegt
+     hetzelfde onder de lijst — **klaar** (2026-10-30).
   9. **Tijdzone in `occ backup:status`**: de tabel toont de servertijd (UTC), de webinterface de
      tijd van de beheerder; dat leest als een verkeerde starttijd. Zet de zone in de kolomkop
-     ("started (UTC)") of toon de tijden in de zone van het schema.
+     ("started (UTC)") of toon de tijden in de zone van het schema. Gedaan: beide, en ook in
+     `backup:list`, `backup:trash` en `backup:browse` — **klaar** (2026-10-30).
   10. **User-restore op gebruikersnaam** (issue #22, 2026-10-27): `backup:user:restore <locatie>
       New_User` gaf alleen "is not a recorded user export"; het argument moet het manifestpad
       zijn, dat alleen `backup:user:backup` eenmalig toonde. Nu: `backup:user:list` toont de

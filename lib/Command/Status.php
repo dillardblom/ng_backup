@@ -8,7 +8,9 @@ declare(strict_types=1);
 namespace OCA\NgBackup\Command;
 
 use OCA\NgBackup\Db\RunMapper;
+use OCA\NgBackup\Format;
 use OCA\NgBackup\Service\KeyService;
+use OCA\NgBackup\Service\Schedule;
 use OCA\NgBackup\Service\TargetService;
 use OCA\NgBackup\Service\VerifyService;
 use Symfony\Component\Console\Command\Command;
@@ -26,6 +28,7 @@ final class Status extends Command {
 		private TargetService $targets,
 		private RunMapper $runs,
 		private VerifyService $verify,
+		private Schedule $schedule,
 	) {
 		parent::__construct();
 	}
@@ -36,12 +39,13 @@ final class Status extends Command {
 	}
 
 	protected function execute(InputInterface $input, OutputInterface $output): int {
+		$zone = $this->schedule->get()['timezone'];
 		if (!$this->keys->isInitialized()) {
 			$output->writeln('Key: <error>not created</error> (occ backup:key:init)');
 		} else {
 			$c = $this->keys->recoveryKitConfirmation();
 			$output->writeln('Key: ' . $this->keys->fingerprint() . ', recovery kit '
-				. ($c ? 'confirmed by ' . $c['uid'] . ' on ' . date('Y-m-d H:i', $c['time']) : '<error>not confirmed</error> (occ backup:key:confirm)'));
+				. ($c ? 'confirmed by ' . $c['uid'] . ' on ' . Format::time($c['time'], $zone) . " ($zone)" : '<error>not confirmed</error> (occ backup:key:confirm)'));
 		}
 		$names = [];
 		foreach ($this->targets->list() as $t) {
@@ -54,12 +58,12 @@ final class Status extends Command {
 		foreach ($shown as $r) {
 			$s = json_decode($r->getStats() ?? '{}', true)['files'] ?? [];
 			$rows[] = [$r->getId(), $names[$r->getTargetId()] ?? '#' . $r->getTargetId(), $r->getKind(), $r->getStatus() . ($r->getStatus() === 'running' ? ' (' . $r->getPhase() . self::percent($r) . ')' : ''),
-				date('Y-m-d H:i', $r->getStartedAt()), $r->getFinishedAt() ? \OCA\NgBackup\Format::duration($r->getFinishedAt() - $r->getStartedAt()) : '',
+				Format::time($r->getStartedAt(), $zone), $r->getFinishedAt() ? Format::duration($r->getFinishedAt() - $r->getStartedAt()) : '',
 				$s['files'] ?? '', isset($s['bytes']) ? self::size((int)$s['bytes']) : '',
 				isset($s['uploaded']) ? self::size((int)$s['uploaded']) : '', mb_strimwidth((string)$r->getError(), 0, 50, '…')];
 		}
 		if ($rows !== []) {
-			(new Table($output))->setHeaders(['run', 'location', 'kind', 'status', 'started', 'took', 'files', 'size', 'uploaded', 'error'])->setRows($rows)->render();
+			(new Table($output))->setHeaders(['run', 'location', 'kind', 'status', "started ($zone)", 'took', 'files', 'size', 'uploaded', 'error'])->setRows($rows)->render();
 		}
 		$older = $all ? 0 : $this->runs->countAll() - count($shown);
 		if ($older > 0) {

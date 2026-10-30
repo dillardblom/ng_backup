@@ -34,6 +34,8 @@ use Psr\Log\LoggerInterface;
  */
 final class BackupService {
 	public const KIND_FULL = 'full';
+	/** Characters of a snapshot label (the column holds 255) */
+	public const LABEL_MAX = 100;
 
 	/** @var \WeakMap<Repository, string> the location settings each kept repository was opened with */
 	private \WeakMap $openedWith;
@@ -57,6 +59,10 @@ final class BackupService {
 	}
 
 	public function start(Target $target, string $label = ''): Run {
+		$label = trim($label);
+		if (mb_strlen($label) > self::LABEL_MAX) {
+			throw new \InvalidArgumentException('A label has at most ' . self::LABEL_MAX . ' characters');
+		}
 		if (!$this->keys->everConfirmed()) {
 			throw new \RuntimeException('Confirm the recovery kit first (occ backup:key:confirm)');
 		}

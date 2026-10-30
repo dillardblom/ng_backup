@@ -17,8 +17,20 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
 - `occ backup:user:list [location] [user]` shows the user exports on a location, with the manifest
   path `backup:user:restore` expects. Before, that path was only printed once by
   `backup:user:backup` (#22).
+- A "Docs" tab on the admin page, with links to the how-to, the disaster recovery guide and the
+  roadmap. It also shows before the backup key is set up.
+- A label for a backup started with "Back up now" (optional; `occ backup:run -l` already had one).
+  It shows with the restore point.
+- An explanation in the trash of restore points of what "removed by retention policy" means: the
+  policy keeps the newest restore points and the last one of each recent day, week and month, and
+  moves the others to the trash, where they can be brought back until they are deleted
+  permanently. `occ backup:trash` says the same below its list.
 
 ### Changed
+- `occ backup:status`, `backup:list`, `backup:trash` and `backup:browse` show times in the time
+  zone of the daily schedule and name it, as the admin page shows them in the administrator's.
+  Before, they showed the server's UTC, which read as a wrong start time.
+- The admin page no longer says NG Backup is in beta.
 - `occ backup:user:restore` also takes a user id instead of the manifest path, when that user has
   exactly one export on the location. With more, and for a manifest path that is not on the
   location, the error lists that user's exports; for a user without exports it names the
@@ -36,6 +48,11 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
   wrote to the database just as the restore began (a background job that was already running).
   The restore now takes the write lock first and waits for the other process instead. The
   full-restore test on SQLite runs with a second process writing alongside.
+- `occ backup:restore ... --to-directory` of a single file restored nothing ("Restored 0
+  files"); only a folder worked. A path to a file now restores that file.
+- A restore that was stopped (a crash, a timeout, a restart) left its half-written temporary file
+  (`<name>.ngb-restore-<id>`) next to the file it was restoring, and a `files:scan` then showed it
+  in Files. A restore now removes such leftovers in each folder it writes to.
 
 ## [1.0.0] - 2026-10-29
 
