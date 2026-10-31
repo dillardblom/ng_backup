@@ -36,7 +36,8 @@ MANIFEST=$(occ backup:user:backup ci "$U" | sed -n 's/.* to \(.*\)\.$/\1/p')
 [ -n "$MANIFEST" ] || fail "backup:user:backup printed no manifest path"
 ok "backed up $U to $MANIFEST"
 
-occ backup:user:list ci "$U" | grep -qF "$MANIFEST" || fail "backup:user:list does not show $MANIFEST"
+# not grep -q: it stops reading at the first match, and occ, still writing, then fails (pipefail)
+occ backup:user:list ci "$U" | grep -F "$MANIFEST" >/dev/null || fail "backup:user:list does not show $MANIFEST"
 ok "backup:user:list shows the export"
 
 # as-backup: restore into <uid>-bak; the original account must stay untouched. $U has one export,

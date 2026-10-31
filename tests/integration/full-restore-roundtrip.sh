@@ -195,7 +195,7 @@ OUT=$(run_on ngb-frt-restore backup:restore:full offsite "$SNAP" "${RESTORE_OPTS
 	fail "restore:full"
 }
 printf '%s\n' "$OUT" | grep -q "maintenance mode while the restore runs" || fail "the restore did not say it runs in maintenance mode"
-run_on ngb-frt-restore status 2>&1 | grep -q "maintenance: false" || fail "maintenance mode is still on after the restore"
+run_on ngb-frt-restore status 2>&1 | grep "maintenance: false" >/dev/null || fail "maintenance mode is still on after the restore"
 run_on ngb-frt-restore config:app:get ng_backup restore_full_started >/dev/null 2>&1 && fail "the restore left its 'started' marker behind"
 ok "backup:restore:full completed, in maintenance mode and out of it again"
 if [ "$DB" = sqlite ]; then
@@ -209,7 +209,8 @@ fi
 # Everything below must work in a FRESH occ process (a new PHP process per docker exec), since
 # earlier bugs here only showed up after config.php's secret was rewritten mid-restore.
 run_on ngb-frt-restore backup:status >/dev/null || fail "backup:status fails after restore (own key/target undecryptable?)"
-run_on ngb-frt-restore user:list | grep -q frtest || fail "the backed-up user is missing from the restored database"
+# not grep -q: it stops reading at the first match, and occ, still writing, then fails (pipefail)
+run_on ngb-frt-restore user:list | grep frtest >/dev/null || fail "the backed-up user is missing from the restored database"
 docker exec ngb-frt-restore test -f /var/www/html/data/frtest/files/Docs/note.txt || fail "restored file is missing"
 [ "$(docker exec ngb-frt-restore cat /var/www/html/data/frtest/files/Docs/note.txt)" = "hello disaster recovery" ] || fail "restored file content differs"
 run_on ngb-frt-restore files:scan frtest >/dev/null || fail "files:scan fails after restore"
