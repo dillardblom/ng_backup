@@ -392,10 +392,12 @@ in README "Known limitations":
   gids (SFTP, Storage Box) → rc4 uitbrengen en om tests vragen → zelf een volledige DR van een
   productie-instantie van ~250 GB via S3 en via SMB. Drie volledige DR-restores vóór 1.0.0.
   Problemen of meldingen van gebruikers: rc5.
-- **1.0.1:**
-  1. (Naar rc4: herstelsnelheid over SFTP.) S3 leest al 16 tegelijk bij index en tree, maar een
+- **1.0.1** (klaar voor release 2026-11-01): alleen de kleine punten (besluit 2026-10-30): 4, 6–13. Punten 1, 2 en 5 gaan naar
+  1.0.2 (README-roadmap aangepast); punt 3 is een test, ingepland voor de week van 2 november,
+  niet aangekondigd en los van de release.
+  1. **Naar 1.0.2.** (Naar rc4: herstelsnelheid over SFTP.) S3 leest al 16 tegelijk bij index en tree, maar een
      restore leest de packs nog één voor één: ook vooruitlezen via de S3-client.
-  2. Achtergrondjobs zonder systeem-cron (issue #13; besluit 2026-10-19). De PR die dit
+  2. **Naar 1.0.2.** Achtergrondjobs zonder systeem-cron (issue #13; besluit 2026-10-19). De PR die dit
      oplost zegt "Fixes #13" (bevestigd: #13 was de cron; besluit 2026-10-21):
      a. **Waarschuwen** in de beheerpagina en `backup:status`: modus uit `core backgroundjobs_mode`
         (`ajax`/`webcron`/`cron`) en de laatste run uit `core lastcron`. Niet op `cron`, of de
@@ -424,16 +426,54 @@ in README "Known limitations":
   4. **Label bij "Back up now"** (besluit 2026-10-19): een optioneel tekstveld naast de knop; de
      tekst gaat als label van de snapshot mee (nu kan dat alleen met `occ backup:run -l`; de knop
      stuurt een leeg label, geplande runs krijgen "scheduled"). Raakt alleen de UI en een
-     bestaande parameter.
+     bestaande parameter. Ten hoogste 100 tekens — **klaar** (2026-10-30).
   5. **`--salvage`** voor `backup:restore` en `backup:restore:full` (besluit 2026-10-22): terughalen
      wat kan, een bestand dat niet te lezen of te ontsleutelen is overslaan en aan het eind
-     opsommen, in plaats van stoppen.
+     opsommen, in plaats van stoppen. **Naar 1.0.2** (besluit 2026-10-30).
   6. **Tijdelijke bestanden van een afgebroken restore opruimen** (gevonden in de SMB-DR van
      rc6, 2026-10-24): de rc5-poging die stopte liet `VID_0009.mp4.ngb-restore-<id>` staan; de
      geslaagde restore daarna haalde het niet weg, en `files:scan` maakte het zichtbaar in Files.
-     Een restore ruimt `*.ngb-restore-*` in de mappen die hij terugzet op.
+     Een restore ruimt `*.ngb-restore-*` in de mappen die hij terugzet op (alleen bestanden met
+     precies dat achtervoegsel en 6 of 12 hextekens) — **klaar** (2026-10-30).
   7. **Eén bestand terugzetten met `backup:restore`**: een pad naar een bestand zet 0 bestanden
-     terug (er komt een `/` achter); nu werkt alleen een map.
+     terug (er komt een `/` achter); nu werkt alleen een map. Gold alleen voor `--to-directory`;
+     naar de bestanden van een gebruiker werkte een los bestand al — **klaar** (2026-10-30).
+  8. **Uitleg (i) bij de prullenbak van herstelpunten** (besluit 2026-10-25): bij "removed by
+     retention policy" een infoknop met wat het betekent: het bewaarbeleid houdt voor oudere dagen
+     één herstelpunt per dag (het laatste), weken en maanden; de rest gaat naar de prullenbak en
+     wordt pas na de ingestelde wachttijd (`delete_delay_days`, standaard 30) echt verwijderd, en is
+     tot die datum terug te zetten. Aanleiding: de beheerder zag "19-10 13:12 – after rc4 upgrade
+     removed by retention policy" en dacht dat er iets was weggegooid. `occ backup:trash` zegt
+     hetzelfde onder de lijst — **klaar** (2026-10-30).
+  9. **Tijdzone in `occ backup:status`**: de tabel toont de servertijd (UTC), de webinterface de
+     tijd van de beheerder; dat leest als een verkeerde starttijd. Zet de zone in de kolomkop
+     ("started (UTC)") of toon de tijden in de zone van het schema. Gedaan: beide, en ook in
+     `backup:list`, `backup:trash` en `backup:browse` — **klaar** (2026-10-30).
+  10. **User-restore op gebruikersnaam** (issue #22, 2026-10-27): `backup:user:restore <locatie>
+      New_User` gaf alleen "is not a recorded user export"; het argument moet het manifestpad
+      zijn, dat alleen `backup:user:backup` eenmalig toonde. Nu: `backup:user:list` toont de
+      exports, een kale uid werkt bij precies één export, anders een lijst om uit te kiezen —
+      **klaar** (2026-10-27).
+  11. **Tabblad "Docs" in de beheerpagina** (besluit 2026-10-27): een derde knop naast "Backup and
+      restore" en "Settings", met links naar de HOWTO (`docs/HOWTO.md`), de DR-gids
+      (`docs/DISASTER-RECOVERY.md`) en de roadmap (README, `#roadmap`) op GitHub, elk met een
+      regel wat erin staat. Nu zijn ze alleen via de README te vinden. Zichtbaar ook zonder
+      sleutel, zodat de gids vindbaar is vóór de eerste installatie-stap. "NG Backup is in beta"
+      gaat uit de feedbackregel — **klaar** (2026-10-27).
+  12. **SFTP-sleutel zonder regeleinden** (issue #24, 2026-10-28): het veld "Private key" op de
+      beheerpagina is één regel, dus een geplakte sleutel verliest zijn regeleinden. NC34
+      (phpseclib 2) las dat nog, NC35 (phpseclib 3) weigert een OpenSSH-sleutel dan met "Unable
+      to read key". De regeleinden worden nu teruggezet vlak voor gebruik — **klaar** (2026-10-28).
+  13. **"database is locked" bij het begin van `backup:restore:full` op SQLite** (CI, 2026-10-26
+      bij #22 en 2026-10-29 op `main` na de merge van 1.0.0): de restore stopt meteen na het
+      aanzetten van de onderhoudsmodus. Niet altijd, dus een tweede proces dat op hetzelfde moment
+      de database gebruikt (cron, een webverzoek of de opstart van de container). Kan ook bij een
+      echte restore naar SQLite gebeuren. Oorzaak (2026-10-29): SQLite (WAL) begint een transactie
+      als lezer; schrijft een ander proces tussen ons eerste lezen en ons eerste schrijven, dan
+      faalt dat schrijven direct (geen wachttijd helpt). In CI was dat de installer, die
+      "installed" zet en daarna nog seconden doorschrijft. Nu neemt de restore eerst het
+      schrijfslot en wacht hij op de ander; de SQLite-test draait met een tweede schrijver
+      ernaast — **klaar** (2026-10-29).
 - **DR-tests over databasegrenzen** (besluit 2026-10-20; productie nc01 draait PostgreSQL): na
   de MariaDB→PostgreSQL-fout (tellers, rc5) elke overstap in de integratietest (`to-pgsql`,
   `to-mysql`, `to-sqlite`, ook in CI). Volle DR-tests met echte data: vóór 1.0.0 de S3-simulatie
@@ -470,6 +510,15 @@ in README "Known limitations":
   6. **Notitie achteraf bij een restorepunt**, te wijzigen in de lijst. Het label in de snapshot
      is versleuteld en ligt vast; de notitie apart op de locatie bewaren (bijv. in de catalogus),
      zodat een nieuwe server na een DR hem ook ziet.
+  8. **Herstelpunt vastpinnen** (besluit 2026-10-25): een herstelpunt dat het bewaarbeleid
+     nooit opruimt (bijv. "vóór de upgrade naar NC 35"), in de lijst en met
+     `occ backup:pin <snapshot>` / `--unpin`. Op de locatie bewaren (catalogus), zodat de
+     opschoning het ziet, ook na een DR; vastgepinde punten tellen niet mee in last/daily/weekly.
+  9. **Feedbackvraag weghalen** in 1.1.0 of 1.2.0 (besluit 2026-10-27): de regel "We would like
+     to hear how NG Backup works for you ... Share your experience" in de beheerpagina blijft tot
+     dan staan (de vermelding "in beta" is er in 1.0.1 al af). Zijn er tegen die
+     tijd geen noemenswaardige meldingen, dan werkt het: mensen melden eerder wat niet werkt dan
+     wat gewoon werkt. Het formulier (`experience.yml`) mag blijven voor wie het zelf opzoekt.
 - **Bevindingen DR-test op PVE02 (2026-10-17, snapshot van nc01, 1 TB, AIO → gewone NC 34 met
   PostgreSQL 18)** — voor **1.0.0-rc.2**:
   1. Tabellen van apps die bij de backup **niet aanstonden** (restanten: Deck, ONLYOFFICE,

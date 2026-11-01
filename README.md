@@ -7,10 +7,13 @@ installations and hosted Nextcloud. (Choosing SMB as a storage backend is the on
 see "Storage backend experiences" below — that requirement comes from files_external, not from
 ng_backup, and applies to any Nextcloud app that writes to an SMB share.)
 
-**Status: 1.0.0, stable.** Disaster recovery has been tested on real installations (see "Tested
+**Status: 1.0.1, stable.** Disaster recovery has been tested on real installations (see "Tested
 disaster recoveries" below). See "Known limitations" below, `PLAN.md` for the design and
 `docs/HOWTO.md` for a step-by-step guide from setup to a tested restore. Server lost? See
 `docs/DISASTER-RECOVERY.md`.
+
+If you like NG Backup, don't forget to give the app a star in the
+[app store](https://apps.nextcloud.com/apps/ng_backup) and this repository a star on GitHub!
 
 License: AGPL-3.0-or-later. Developed and sponsored by [Ensembia](https://www.ensembia.com).
 Need help restoring a backup after a crash? Ensembia offers paid restore assistance:
@@ -260,12 +263,14 @@ What is planned, without dates. Ideas and votes are welcome in the
 [issues](https://github.com/dillardblom/ng_backup/issues); if something you need is listed here,
 a 👍 on its issue helps decide what comes first.
 
-**1.0.1**
+**1.0.2**
 - A warning on the admin page and in `occ backup:status` when background jobs do not run on a
   system cron, with how to set one up. Without cron, a backup started with "Back up now" moves on
-  while the NG Backup page is open ([#13](https://github.com/dillardblom/ng_backup/issues/13)).
-- An optional label for a backup started with "Back up now".
+  while the NG Backup page is open, and the database phase of a backup shows its progress
+  ([#13](https://github.com/dillardblom/ng_backup/issues/13)).
 - Faster full restores from S3 and SMB, reading ahead as restores over SFTP do since 1.0.0-rc.4.
+- `--salvage` for a restore: restore what can be read, skip a file that cannot, and list those at
+  the end instead of stopping.
 
 **1.1.0**
 - Restore without the recovery kit: the backup key from the location itself, opened with one of
@@ -273,6 +278,8 @@ a 👍 on its issue helps decide what comes first.
 - A schedule per location, also "every N hours".
 - Locations backed up one after the other instead of at the same time.
 - A note on a restore point that you can change afterwards.
+- Pinning a restore point, so the retention policy never removes it (for example the one from
+  before an upgrade).
 - An option to pause heavy background jobs (such as Memories, Recognize or the Preview
   Generator) while a backup runs.
 - Faster backups: reading and uploading at the same time.
@@ -330,4 +337,4 @@ On the backlog; know them before you rely on NG Backup:
 | `backup:verify` | checksum audit of a restore point (`--deep` downloads and decrypts everything) |
 | `backup:restore:full` | whole-server restore onto a fresh installation (after `backup:key:import`) |
 | `backup:key:import` | import a recovery kit on a fresh installation |
-| `backup:user:backup`, `backup:user:restore` | one user via user_migration (asks before installing it) |
+| `backup:user:backup`, `backup:user:list`, `backup:user:restore` | one user via user_migration (asks before installing it); list the exports |

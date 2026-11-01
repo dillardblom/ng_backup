@@ -173,6 +173,20 @@ if [ "$LEGACY" = legacy ] && [ "$DB" != sqlite ]; then
 	ok "older backup refused without --skip-missing-tables, missing tables named"
 	RESTORE_OPTS+=(--skip-missing-tables)
 fi
+if [ "$DB" = sqlite ]; then
+	# Another process writing while the restore starts (a cron job that was already running, or
+	# the installer still finishing after it says "installed"): the restore must wait for it, not
+	# stop with "database is locked". Short write transactions on a table of its own, until the
+	# restore is done (/tmp/frt-side-stop; Nextcloud's own commands after it are not under test).
+	docker exec -d -u www-data ngb-frt-restore php -r '
+		$p = new PDO("sqlite:/var/www/html/data/nextcloud.db"); $p->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+		$p->exec("CREATE TABLE IF NOT EXISTS frt_side_writer (t REAL)");
+		for ($end = microtime(true) + 300; microtime(true) < $end && !file_exists("/tmp/frt-side-stop");) {
+			$p->beginTransaction(); $p->exec("INSERT INTO frt_side_writer VALUES (" . microtime(true) . ")"); usleep(300000); $p->commit(); usleep(20000);
+		}
+		touch("/tmp/frt-side-done");'
+	sleep 1
+fi
 sftp_logins() { docker logs ngb-frt-sftp 2>&1 | grep -c "Accepted password" || true; }
 [ "$MODE" = sftp ] && LOGINS_BEFORE=$(sftp_logins)
 OUT=$(run_on ngb-frt-restore backup:restore:full offsite "$SNAP" "${RESTORE_OPTS[@]}" 2>&1) || {
@@ -181,14 +195,22 @@ OUT=$(run_on ngb-frt-restore backup:restore:full offsite "$SNAP" "${RESTORE_OPTS
 	fail "restore:full"
 }
 printf '%s\n' "$OUT" | grep -q "maintenance mode while the restore runs" || fail "the restore did not say it runs in maintenance mode"
-run_on ngb-frt-restore status 2>&1 | grep -q "maintenance: false" || fail "maintenance mode is still on after the restore"
+run_on ngb-frt-restore status 2>&1 | grep "maintenance: false" >/dev/null || fail "maintenance mode is still on after the restore"
 run_on ngb-frt-restore config:app:get ng_backup restore_full_started >/dev/null 2>&1 && fail "the restore left its 'started' marker behind"
 ok "backup:restore:full completed, in maintenance mode and out of it again"
+if [ "$DB" = sqlite ]; then
+	docker exec ngb-frt-restore touch /tmp/frt-side-stop
+	for i in $(seq 1 20); do docker exec ngb-frt-restore test -f /tmp/frt-side-done && break; sleep 0.5; done
+	WRITES=$(docker exec -u www-data ngb-frt-restore php -r 'echo (new PDO("sqlite:/var/www/html/data/nextcloud.db"))->query("SELECT COUNT(*) FROM frt_side_writer")->fetchColumn();')
+	[ "${WRITES:-0}" -gt 3 ] || fail "the other writer did not run alongside the restore ($WRITES writes)"
+	ok "the restore waited for another process writing to SQLite ($WRITES writes alongside)"
+fi
 
 # Everything below must work in a FRESH occ process (a new PHP process per docker exec), since
 # earlier bugs here only showed up after config.php's secret was rewritten mid-restore.
 run_on ngb-frt-restore backup:status >/dev/null || fail "backup:status fails after restore (own key/target undecryptable?)"
-run_on ngb-frt-restore user:list | grep -q frtest || fail "the backed-up user is missing from the restored database"
+# not grep -q: it stops reading at the first match, and occ, still writing, then fails (pipefail)
+run_on ngb-frt-restore user:list | grep frtest >/dev/null || fail "the backed-up user is missing from the restored database"
 docker exec ngb-frt-restore test -f /var/www/html/data/frtest/files/Docs/note.txt || fail "restored file is missing"
 [ "$(docker exec ngb-frt-restore cat /var/www/html/data/frtest/files/Docs/note.txt)" = "hello disaster recovery" ] || fail "restored file content differs"
 run_on ngb-frt-restore files:scan frtest >/dev/null || fail "files:scan fails after restore"

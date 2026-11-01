@@ -87,6 +87,46 @@ class RepositoryTest extends TestCase {
 		$this->assertSame(10, $repo->restore($r['snapshot'], $target, 'docs/d1/'));
 	}
 
+	public function testRestoreOfOneFile(): void {
+		$repo = Repository::init($this->backend, 'pw');
+		$r = $repo->backupDirectory($this->src);
+		$target = $this->tempDir();
+		// occ backup:restore --to-directory passes the path with a "/" appended
+		$this->assertSame(1, $repo->restore($r['snapshot'], $target, 'docs/d1/note-1.txt/'));
+		$this->assertSame(file_get_contents($this->src . '/docs/d1/note-1.txt'), file_get_contents($target . '/docs/d1/note-1.txt'));
+		$this->assertSame(0, $repo->restore($r['snapshot'], $this->tempDir(), 'docs/d1/note-1/'), 'a prefix of a name is not that file');
+
+		$stripped = $this->tempDir();
+		$this->assertSame(1, $repo->restore($r['snapshot'], $stripped, 'docs/d1/note-1.txt/', true));
+		$this->assertFileExists($stripped . '/note-1.txt');
+	}
+
+	public function testRestoreRemovesTemporariesOfAStoppedRestore(): void {
+		$repo = Repository::init($this->backend, 'pw');
+		$r = $repo->backupDirectory($this->src);
+		$target = $this->tempDir();
+		mkdir($target . '/docs/d1', 0700, true);
+		mkdir($target . '/elsewhere', 0700, true);
+		$stale = [
+			$target . '/docs/d1/note-1.txt.ngb-restore-0123456789ab', // from a restore to a directory
+			$target . '/docs/d1/.note-4.txt.ngb-restore-a1b2c3', // from a restore through Nextcloud
+		];
+		$kept = [
+			$target . '/docs/d1/notes.ngb-restore-draft.txt', // not a temporary of ours
+			$target . '/elsewhere/x.ngb-restore-0123456789ab', // not a directory this restore writes to
+		];
+		foreach ([...$stale, ...$kept] as $f) {
+			file_put_contents($f, 'partial');
+		}
+		$repo->restore($r['snapshot'], $target, 'docs/');
+		foreach ($stale as $f) {
+			$this->assertFileDoesNotExist($f);
+		}
+		foreach ($kept as $f) {
+			$this->assertFileExists($f);
+		}
+	}
+
 	public function testWrongPassphrase(): void {
 		Repository::init($this->backend, 'pw');
 		$this->expectException(CryptoException::class);

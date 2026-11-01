@@ -41,6 +41,20 @@ jobs:
       - run: composer install --no-interaction --no-progress
       - run: composer psalm
 
+  frontend:
+    # Builds the admin page, so a broken Vue component fails CI instead of showing up after a release.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+
   integration:
     # Full round trip (key, kit, location, backup, incremental, restore modes, database dump and
     # restore, retention, trash) on a fresh Nextcloud per version and database.

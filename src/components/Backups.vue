@@ -10,6 +10,8 @@
 			<NcButton :disabled="schedule === status.schedule && browserZone === status.scheduleTimezone" @click="saveSchedule">{{ t('ng_backup', 'Save') }}</NcButton>
 		</div>
 		<div class="ngb-row">
+			<NcTextField v-model="label" class="ngb-label" :maxlength="100" :label="t('ng_backup', 'Label (optional)')"
+				:placeholder="t('ng_backup', 'e.g. before the upgrade to Nextcloud 35')" />
 			<NcButton v-for="target in status.targets" :key="target.id" :disabled="isRunning(target.id)" @click="start(target)">
 				{{ isRunning(target.id) ? t('ng_backup', 'Backup to {name} running …', { name: target.name }) : t('ng_backup', 'Back up now to {name}', { name: target.name }) }}
 			</NcButton>
@@ -24,9 +26,23 @@
 					<li v-for="item in trash[target.id]" :key="item.id">
 						{{ item.time ? formatDateTime(item.time) : item.id }}{{ item.label ? ' – ' + item.label : '' }}
 						<span class="ngb-muted">{{ t('ng_backup', 'removed by {by}, deleted after {date}', { by: item.by, date: formatDate(item.deleteAfter) }) }}</span>
+						<button v-if="item.by === RETENTION"
+							class="ngb-info"
+							:aria-expanded="retentionInfo ? 'true' : 'false'"
+							:aria-label="t('ng_backup', 'What does this mean?')"
+							:title="t('ng_backup', 'What does this mean?')"
+							@click="retentionInfo = !retentionInfo">
+							ⓘ
+						</button>
 						<NcButton variant="tertiary" @click="untrash(target, item)">{{ t('ng_backup', 'Restore') }}</NcButton>
 					</li>
 				</ul>
+				<NcNoteCard v-if="retentionInfo && trash[target.id].some(item => item.by === RETENTION)" type="info">
+					{{ n('ng_backup',
+						'The retention policy keeps the newest restore points, and for older days, weeks and months only the last restore point of each. It moves the others to this trash, where they stay for %n day before they are deleted permanently. Until then you can bring one back with "Restore". Nothing was lost by accident.',
+						'The retention policy keeps the newest restore points, and for older days, weeks and months only the last restore point of each. It moves the others to this trash, where they stay for %n days before they are deleted permanently. Until then you can bring one back with "Restore". Nothing was lost by accident.',
+						status.key.deleteDelayDays) }}
+				</NcNoteCard>
 			</div>
 		</template>
 
@@ -93,6 +109,10 @@ const schedule = ref(shown(props.status.schedule))
 const error = ref('')
 watch(() => [props.status.schedule, props.status.scheduleTimezone], ([s]) => { schedule.value = shown(s) })
 
+const label = ref('')
+// "by" of a restore point the weekly cleanup removed (PruneService)
+const RETENTION = 'retention policy'
+const retentionInfo = ref(false)
 const trash = reactive({})
 async function loadTrash() {
 	for (const target of props.status.targets) {
@@ -125,7 +145,8 @@ const targetName = (id) => props.status.targets.find(tg => tg.id === id)?.name ?
 async function start(target) {
 	error.value = ''
 	try {
-		await api.startBackup(target.id, '')
+		await api.startBackup(target.id, label.value.trim())
+		label.value = ''
 		emit('changed')
 	} catch (e) {
 		error.value = e.message
@@ -146,6 +167,8 @@ async function saveSchedule() {
 <style scoped>
 .ngb-row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
 .ngb-time { max-width: 260px; }
+.ngb-label { max-width: 360px; }
+.ngb-info { background: none; border: none; padding: 0 4px; min-height: auto; cursor: pointer; color: var(--color-primary-element); }
 .ngb-table-wrap { overflow-x: auto; }
 .ngb-table { width: 100%; border-collapse: collapse; }
 .ngb-table th, .ngb-table td { text-align: start; padding: 4px 8px; border-bottom: 1px solid var(--color-border); }

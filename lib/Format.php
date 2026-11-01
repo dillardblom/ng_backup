@@ -15,4 +15,14 @@ final class Format {
 		$time = gmdate('H:i:s', $seconds % 86400);
 		return $days > 0 ? $days . 'd ' . $time : $time;
 	}
+
+	/**
+	 * "2026-10-29 04:30" in $zone. Nextcloud runs PHP in UTC; occ shows times in the zone of the
+	 * schedule, the administrator's, as the web interface does.
+	 *
+	 * @param non-empty-string $zone
+	 */
+	public static function time(int $timestamp, string $zone): string {
+		return (new \DateTimeImmutable('@' . $timestamp))->setTimezone(new \DateTimeZone($zone))->format('Y-m-d H:i');
+	}
 }

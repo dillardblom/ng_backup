@@ -106,4 +106,51 @@ class UserExportTest extends TestCase {
 		$this->expectExceptionMessage('missing on the location');
 		$repo->listUserExports();
 	}
+
+	public function testResolveTakesARecordedPathAsIs(): void {
+		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'), $this->anchor);
+		$path = 'users/alice/20261005T120000Z-aaaa0001';
+		$this->putManifest($repo, $path);
+
+		$this->assertSame($path, $repo->resolveUserExport($path));
+	}
+
+	public function testResolveTakesAUserIdWithOneExport(): void {
+		// Issue #22: "backup:user:restore <location> New_User" was rejected as not a recorded export.
+		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'), $this->anchor);
+		$path = 'users/alice/20261005T120000Z-aaaa0001';
+		$this->putManifest($repo, $path);
+		$this->putManifest($repo, 'users/alice2/20261005T120000Z-aaaa0002');
+
+		$this->assertSame($path, $repo->resolveUserExport('alice'));
+		$this->assertSame($path, $repo->resolveUserExport('users/alice/'));
+	}
+
+	public function testResolveListsTheExportsOfAUserWithMore(): void {
+		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'), $this->anchor);
+		$this->putManifest($repo, 'users/alice/20261005T120000Z-aaaa0001');
+		$this->putManifest($repo, 'users/alice/20261006T120000Z-aaaa0002');
+
+		$this->expectException(RepositoryException::class);
+		$this->expectExceptionMessage("alice has 2 exports here; pass one of these (newest first):\n  users/alice/20261006T120000Z-aaaa0002\n  users/alice/20261005T120000Z-aaaa0001");
+		$repo->resolveUserExport('alice');
+	}
+
+	public function testResolveListsTheExportsOfTheUserOfAWrongPath(): void {
+		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'), $this->anchor);
+		$this->putManifest($repo, 'users/alice/20261005T120000Z-aaaa0001');
+
+		$this->expectException(RepositoryException::class);
+		$this->expectExceptionMessage("users/alice/typo is not a recorded user export for this location; pass one of these (newest first):\n  users/alice/20261005T120000Z-aaaa0001");
+		$repo->resolveUserExport('users/alice/typo');
+	}
+
+	public function testResolveNamesTheExpectedFormForAUserWithoutExports(): void {
+		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'), $this->anchor);
+		$this->putManifest($repo, 'users/alice/20261005T120000Z-aaaa0001');
+
+		$this->expectException(RepositoryException::class);
+		$this->expectExceptionMessage('bob has no exports here. Expected users/<uid>/<exportId>; occ backup:user:list shows the exports');
+		$repo->resolveUserExport('bob');
+	}
 }

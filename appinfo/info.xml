@@ -40,9 +40,12 @@ NG Backup needs Nextcloud's background jobs on system cron (a real cron line, no
 Read "Known limitations" in the README before you rely on it, and test a restore. Feedback is very
 welcome: use the "Share your experience" link on the admin page.
 
+If you like NG Backup, don't forget to give the app a star in the app store and the
+[repository](https://github.com/dillardblom/ng_backup) a star on GitHub!
+
 Developed and sponsored by [Ensembia](https://www.ensembia.com). We can offer (paid) assistance if
 you need help with restoring a backup after a crash.]]></description>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <licence>agpl</licence>
     <author mail="dillard.blom@ensembia.com">Dillard Blom</author>
     <namespace>NgBackup</namespace>
@@ -53,9 +56,9 @@ you need help with restoring a backup after a crash.]]></description>
     <website>https://github.com/dillardblom/ng_backup</website>
     <bugs>https://github.com/dillardblom/ng_backup/issues</bugs>
     <repository type="git">https://github.com/dillardblom/ng_backup</repository>
-    <screenshot>https://raw.githubusercontent.com/dillardblom/ng_backup/v1.0.0/screenshots/1-backups.png</screenshot>
-    <screenshot>https://raw.githubusercontent.com/dillardblom/ng_backup/v1.0.0/screenshots/2-restore.png</screenshot>
-    <screenshot>https://raw.githubusercontent.com/dillardblom/ng_backup/v1.0.0/screenshots/3-settings.png</screenshot>
+    <screenshot>https://raw.githubusercontent.com/dillardblom/ng_backup/v1.0.1/screenshots/1-backups.png</screenshot>
+    <screenshot>https://raw.githubusercontent.com/dillardblom/ng_backup/v1.0.1/screenshots/2-restore.png</screenshot>
+    <screenshot>https://raw.githubusercontent.com/dillardblom/ng_backup/v1.0.1/screenshots/3-settings.png</screenshot>
     <dependencies>
         <php min-version="8.1"/>
         <lib>sodium</lib>
@@ -92,6 +95,7 @@ you need help with restoring a backup after a crash.]]></description>
         <command>OCA\NgBackup\Command\KeySlotRemove</command>
         <command>OCA\NgBackup\Command\BackupUser</command>
         <command>OCA\NgBackup\Command\RestoreUser</command>
+        <command>OCA\NgBackup\Command\ListUserExports</command>
         <command>OCA\NgBackup\Command\KeyImport</command>
         <command>OCA\NgBackup\Command\RestoreFull</command>
         <command>OCA\NgBackup\Command\Verify</command>
