@@ -7,7 +7,7 @@ installations and hosted Nextcloud. (Choosing SMB as a storage backend is the on
 see "Storage backend experiences" below — that requirement comes from files_external, not from
 ng_backup, and applies to any Nextcloud app that writes to an SMB share.)
 
-**Status: 1.0.0, stable.** Disaster recovery has been tested on real installations (see "Tested
+**Status: 1.0.1, stable.** Disaster recovery has been tested on real installations (see "Tested
 disaster recoveries" below). See "Known limitations" below, `PLAN.md` for the design and
 `docs/HOWTO.md` for a step-by-step guide from setup to a tested restore. Server lost? See
 `docs/DISASTER-RECOVERY.md`.
@@ -259,15 +259,6 @@ Contributions welcome via PR — add what you ran into with your own provider.
 What is planned, without dates. Ideas and votes are welcome in the
 [issues](https://github.com/dillardblom/ng_backup/issues); if something you need is listed here,
 a 👍 on its issue helps decide what comes first.
-
-**1.0.1**
-- An optional label for a backup started with "Back up now".
-- An explanation in the trash of restore points of what "removed by retention policy" means and
-  until when a restore point can be brought back.
-- A "Docs" tab on the admin page with links to the how-to, the disaster recovery guide and this
-  roadmap.
-- Times in `occ` in the administrator's time zone, as on the admin page; restoring a single file
-  with `occ backup:restore --to-directory`.
 
 **1.0.2**
 - A warning on the admin page and in `occ backup:status` when background jobs do not run on a

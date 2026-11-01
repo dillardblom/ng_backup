@@ -11,7 +11,10 @@ Each heading starts with that `<version>`, once: the app store shows a release t
 whose heading starts with its `x.y.z` and ignores anything after it, so `## [1.0.0-rc.6]` would be
 shown under 1.0.0. The git tag of a release candidate goes after the date.
 
-## [Unreleased]
+## [1.0.1] - 2026-11-01
+
+Fixes for what was reported after 1.0.0 (#22, #24) and small improvements. Nothing changes in
+your backups or settings.
 
 ### Added
 - `occ backup:user:list [location] [user]` shows the user exports on a location, with the manifest
@@ -53,6 +56,8 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
 - A restore that was stopped (a crash, a timeout, a restart) left its half-written temporary file
   (`<name>.ngb-restore-<id>`) next to the file it was restoring, and a `files:scan` then showed it
   in Files. A restore now removes such leftovers in each folder it writes to.
+- The app store showed the notes of every release candidate under 1.0.0, because their headings
+  started with "1.0.0-rc". Each heading now starts with the app version of that release.
 
 ## [1.0.0] - 2026-10-29
 
@@ -469,6 +474,7 @@ and not implemented yet.
 - See the "Storage backend experiences" section of the README for provider-specific quirks found
   so far (e.g. Hetzner Storage Box sub-accounts).
 
+[1.0.1]: https://github.com/dillardblom/ng_backup/releases/tag/v1.0.1
 [1.0.0]: https://github.com/dillardblom/ng_backup/releases/tag/v1.0.0
 [0.9.12]: https://github.com/dillardblom/ng_backup/releases/tag/v1.0.0-rc.6
 [0.9.11]: https://github.com/dillardblom/ng_backup/releases/tag/v1.0.0-rc.5

@@ -392,7 +392,7 @@ in README "Known limitations":
   gids (SFTP, Storage Box) → rc4 uitbrengen en om tests vragen → zelf een volledige DR van een
   productie-instantie van ~250 GB via S3 en via SMB. Drie volledige DR-restores vóór 1.0.0.
   Problemen of meldingen van gebruikers: rc5.
-- **1.0.1:** alleen de kleine punten (besluit 2026-10-30): 4, 6–13. Punten 1, 2 en 5 gaan naar
+- **1.0.1** (klaar voor release 2026-11-01): alleen de kleine punten (besluit 2026-10-30): 4, 6–13. Punten 1, 2 en 5 gaan naar
   1.0.2 (README-roadmap aangepast); punt 3 is een test, ingepland voor de week van 2 november,
   niet aangekondigd en los van de release.
   1. **Naar 1.0.2.** (Naar rc4: herstelsnelheid over SFTP.) S3 leest al 16 tegelijk bij index en tree, maar een
