@@ -12,6 +12,9 @@ disaster recoveries" below). See "Known limitations" below, `PLAN.md` for the de
 `docs/HOWTO.md` for a step-by-step guide from setup to a tested restore. Server lost? See
 `docs/DISASTER-RECOVERY.md`.
 
+If you like NG Backup, don't forget to give the app a star in the
+[app store](https://apps.nextcloud.com/apps/ng_backup) and this repository a star on GitHub!
+
 License: AGPL-3.0-or-later. Developed and sponsored by [Ensembia](https://www.ensembia.com).
 Need help restoring a backup after a crash? Ensembia offers paid restore assistance:
 [www.ensembia.com](https://www.ensembia.com).
