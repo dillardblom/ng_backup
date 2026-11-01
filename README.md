@@ -271,6 +271,8 @@ a 👍 on its issue helps decide what comes first.
 - Faster full restores from S3 and SMB, reading ahead as restores over SFTP do since 1.0.0-rc.4.
 - `--salvage` for a restore: restore what can be read, skip a file that cannot, and list those at
   the end instead of stopping.
+- The trash of restore points (most of them moved there by the retention policy) on a tab of its
+  own, "Bin", instead of below the list of restore points.
 
 **1.1.0**
 - Restore without the recovery kit: the backup key from the location itself, opened with one of

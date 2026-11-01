@@ -395,7 +395,10 @@ in README "Known limitations":
 - **1.0.1** (uitgebracht 2026-11-01): alleen de kleine punten (besluit 2026-10-30): 4, 6–13. Punten 1, 2 en 5 gaan naar
   1.0.2 (README-roadmap aangepast); punt 3 is een test, ingepland voor de week van 2 november,
   niet aangekondigd en los van de release. Voor 1.0.2 ook: nieuwe screenshots (het labelveld bij
-  "Back up now" en het tabblad Docs staan er nog niet op; besluit 2026-11-01).
+  "Back up now" en het tabblad Docs staan er nog niet op; besluit 2026-11-01), en de prullenbak
+  van herstelpunten naar een eigen tabblad "Bin" naast "Backup and restore", "Settings" en "Docs":
+  onder de lijst met herstelpunten vervuilt hij het scherm (vooral met wat het bewaarbeleid erin
+  zet; besluit 2026-11-01). Nieuwe screenshots daarna, zodat de Bin er ook op staat.
   1. **Naar 1.0.2.** (Naar rc4: herstelsnelheid over SFTP.) S3 leest al 16 tegelijk bij index en tree, maar een
      restore leest de packs nog één voor één: ook vooruitlezen via de S3-client.
   2. **Naar 1.0.2.** Achtergrondjobs zonder systeem-cron (issue #13; besluit 2026-10-19). De PR die dit
