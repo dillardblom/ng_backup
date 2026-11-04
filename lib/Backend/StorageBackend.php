@@ -23,6 +23,11 @@ final class StorageBackend implements IBackend, IReadsAhead {
 	private bool $s3Reads;
 	/** S3 requests in flight at once for getMany() and getRanges(). */
 	public const S3_CONCURRENCY = 16;
+	/**
+	 * Ranges readAhead() fetches at once over S3, each straight into a file in the spool (a range
+	 * is at most ReadAheadPlan::MAX_RANGE: the spool holds at most this many times that).
+	 */
+	public const S3_READ_AHEAD = 8;
 	/** Most ranges, and bytes, getRanges() holds in memory at once. */
 	private const RANGES_LOT = 64;
 	private const RANGES_LOT_BYTES = 64 * 1048576;
@@ -211,15 +216,11 @@ final class StorageBackend implements IBackend, IReadsAhead {
 	 */
 	private function s3Fetch(array $requests): ?array {
 		try {
-			/** @psalm-suppress UndefinedMethod, UndefinedThisPropertyFetch */
-			[$client, $bucket, $sse] = (function (): array {
-				$sse = method_exists($this, 'getServerSideEncryptionParameters') ? $this->getServerSideEncryptionParameters()
-					: (method_exists($this, 'getSSECParameters') ? $this->getSSECParameters() : []);
-				return [$this->getConnection(), $this->getBucket(), $sse];
-			})->call($this->storage);
-			if (!$client instanceof \Aws\S3\S3Client || !is_string($bucket)) {
+			$s3 = $this->s3Client();
+			if ($s3 === null) {
 				return null;
 			}
+			[$client, $bucket, $sse] = $s3;
 			$results = [];
 			$keys = array_keys($requests); // the pool numbers results 0, 1, ...: mapped back below
 			$commands = (function () use ($requests, $client, $bucket, $sse): \Generator {
@@ -246,15 +247,110 @@ final class StorageBackend implements IBackend, IReadsAhead {
 	}
 
 	/**
+	 * files_external's S3 client, bucket and server-side encryption parameters; null when the
+	 * storage is not as expected.
+	 *
+	 * @return array{0: \Aws\S3\S3Client, 1: string, 2: array}|null
+	 * @psalm-suppress UndefinedClass the AWS SDK comes with Nextcloud, not with this app
+	 */
+	private function s3Client(): ?array {
+		/** @psalm-suppress UndefinedMethod, UndefinedThisPropertyFetch */
+		[$client, $bucket, $sse] = (function (): array {
+			$sse = method_exists($this, 'getServerSideEncryptionParameters') ? $this->getServerSideEncryptionParameters()
+				: (method_exists($this, 'getSSECParameters') ? $this->getSSECParameters() : []);
+			return [$this->getConnection(), $this->getBucket(), $sse];
+		})->call($this->storage);
+		return $client instanceof \Aws\S3\S3Client && is_string($bucket) ? [$client, $bucket, is_array($sse) ? $sse : []] : null;
+	}
+
+	/**
+	 * readAhead() over S3: S3_READ_AHEAD ranges at a time, fetched together straight into files in
+	 * the spool, then handed out in order. One request per range instead of one per blob (with a
+	 * new HTTPS connection each), and several at once: a restore is no longer bound by the round
+	 * trip. A range that could not be fetched is handed out as null (the caller reads it the
+	 * usual way, which reports why).
+	 *
+	 * @param list<array{0:string, 1:int, 2:int}> $ranges
+	 * @return \Generator<int, resource|null>|null
+	 * @psalm-suppress UndefinedClass the AWS SDK comes with Nextcloud, not with this app
+	 */
+	private function s3ReadAhead(array $ranges, string $spool): ?\Generator {
+		// before anything is fetched: an invalid path throws
+		$keys = array_map(fn (array $r): string => trim($this->abs($r[0]), '/'), $ranges);
+		try {
+			$s3 = $this->s3Client();
+		} catch (\Throwable) {
+			$s3 = null;
+		}
+		if ($s3 === null) {
+			return null;
+		}
+		[$client, $bucket, $sse] = $s3;
+		$this->idleCheck();
+		return (static function () use ($client, $bucket, $sse, $ranges, $keys, $spool): \Generator {
+			$prefix = rtrim($spool, '/') . '/s3-' . bin2hex(random_bytes(4)) . '-';
+			foreach (array_chunk(array_keys($ranges), self::S3_READ_AHEAD) as $lot) {
+				$files = [];
+				$commands = [];
+				foreach ($lot as $n => $i) {
+					$files[$i] = $prefix . $i;
+					$commands[$n] = $client->getCommand('GetObject', ['Bucket' => $bucket, 'Key' => $keys[$i],
+						'Range' => 'bytes=' . $ranges[$i][1] . '-' . ($ranges[$i][1] + $ranges[$i][2] - 1), 'SaveAs' => $files[$i]] + $sse);
+				}
+				$fetched = [];
+				try {
+					(new \Aws\CommandPool($client, $commands, [
+						'concurrency' => self::S3_READ_AHEAD,
+						'fulfilled' => function (mixed $result, int $n) use (&$fetched, $lot): void {
+							$fetched[$lot[$n]] = true;
+						},
+						'rejected' => static function (): void {
+						},
+					]))->promise()->wait();
+				} catch (\Throwable) {
+					// what was not fetched is read the usual way
+				}
+				try {
+					foreach ($lot as $i) {
+						clearstatcache(true, $files[$i]);
+						$fh = isset($fetched[$i]) && @filesize($files[$i]) === $ranges[$i][2] ? @fopen($files[$i], 'rb') : false;
+						@unlink($files[$i]); // the open stream keeps its data
+						yield $i => is_resource($fh) ? $fh : null;
+						if (is_resource($fh)) {
+							fclose($fh);
+						}
+					}
+				} finally {
+					// stopped halfway: the rest of this lot
+					foreach ($files as $file) {
+						@unlink($file);
+					}
+				}
+			}
+		})();
+	}
+
+	/**
 	 * Over SFTP: SftpRangeFetcher, on readAheadConnections new connections of its own (built with the
-	 * reconnect function), so the storage's connection stays free for other requests. Elsewhere
-	 * not (yet): null.
+	 * reconnect function), so the storage's connection stays free for other requests. Over S3:
+	 * S3_READ_AHEAD ranges at a time through the S3 client (s3ReadAhead()). Elsewhere not (yet):
+	 * null.
 	 */
 	public function canReadAhead(): bool {
-		return $this->sftpReads && $this->reconnect !== null;
+		return ($this->sftpReads && $this->reconnect !== null) || $this->s3Reads || $this->smbNative();
+	}
+
+	private function smbNative(): bool {
+		return $this->storage instanceof \OCA\Files_External\Lib\Storage\SMB && extension_loaded('smbclient');
 	}
 
 	public function readAhead(array $ranges, string $spool): ?\Generator {
+		if ($ranges !== [] && $this->s3Reads) {
+			return $this->s3ReadAhead($ranges, $spool);
+		}
+		if ($ranges !== [] && $this->smbNative()) {
+			return $this->smbReadAhead($ranges, $spool);
+		}
 		$reconnect = $this->reconnect;
 		if (!$this->sftpReads || $reconnect === null || $ranges === []) {
 			return null;
@@ -306,6 +402,17 @@ final class StorageBackend implements IBackend, IReadsAhead {
 	}
 
 	private function readRange(string $path, int $offset, int $length): string {
+		try {
+			$chunks = $this->smbChunks($this->abs($path), $offset, $length);
+			if ($chunks !== null) {
+				$data = implode('', iterator_to_array($chunks, false));
+				if (strlen($data) === $length) {
+					return $data;
+				}
+			}
+		} catch (\Throwable) {
+			// read the usual way below, which reports what is wrong
+		}
 		$fh = $this->get($path);
 		try {
 			if (fseek($fh, $offset) !== 0) {
@@ -418,6 +525,111 @@ final class StorageBackend implements IBackend, IReadsAhead {
 	 *
 	 * @return list<string>|null
 	 */
+	/**
+	 * Bytes per read over SMB (smbChunks()). libsmbclient keeps a large read in flight as many
+	 * requests at once; icewind's stream reads 1 MiB at a time. Over a line with a 130 ms round
+	 * trip: 4.5 MiB/s in 1 MiB reads, 18 MiB/s in 8 MiB reads (measured 2026-11-04, Samba in a
+	 * container behind netem). Without latency it makes no difference.
+	 */
+	public const SMB_READ = 8 * 1048576;
+
+	/**
+	 * $length bytes of $abs from $offset over SMB, SMB_READ at a time straight through the native
+	 * extension's state of files_external's SMB storage. Null when the storage is not SMB through
+	 * the extension, or its internals are not as expected (the usual way reads it then). The
+	 * generator throws when a read fails.
+	 *
+	 * @return \Generator<int, string>|null
+	 * @psalm-suppress UndefinedClass icewind/smb comes with files_external, not with this app
+	 */
+	private function smbChunks(string $abs, int $offset, int $length): ?\Generator {
+		if (!$this->storage instanceof \OCA\Files_External\Lib\Storage\SMB || !extension_loaded('smbclient')) {
+			return null;
+		}
+		try {
+			/** @var array{0: object, 1: string}|null $handle */
+			$handle = (function (string $path): ?array {
+				/** @psalm-suppress UndefinedThisPropertyFetch */
+				$share = $this->share;
+				if (!$share instanceof \Icewind\SMB\Native\NativeShare) {
+					return null;
+				}
+				/** @psalm-suppress UndefinedMethod */
+				$sharePath = ltrim($this->buildPath($path), '/');
+				/** @psalm-suppress UndefinedMethod */
+				return (fn (string $p): array => [$this->getState(), $this->buildUrl($p)])->call($share, $sharePath);
+			})->call($this->storage, $abs);
+		} catch (\Throwable) {
+			return null;
+		}
+		if ($handle === null) {
+			return null;
+		}
+		[$state, $url] = $handle;
+		/** @psalm-suppress MixedMethodCall the state is icewind's NativeState */
+		return (static function () use ($state, $url, $offset, $length): \Generator {
+			$fh = $state->open($url, 'r');
+			try {
+				$state->lseek($fh, $offset, SEEK_SET, $url);
+				for ($got = 0; $got < $length;) {
+					$chunk = (string)$state->read($fh, min(self::SMB_READ, $length - $got), $url);
+					if ($chunk === '') {
+						throw new BackendException('Short read in ' . $url);
+					}
+					$got += strlen($chunk);
+					yield $chunk;
+				}
+			} finally {
+				$state->close($fh, $url);
+			}
+		})();
+	}
+
+	/**
+	 * readAhead() over SMB: one range after the other, each in SMB_READ reads into a file in the
+	 * spool. Not several at once (PHP cannot wait on more than one libsmbclient call), but whole
+	 * ranges of up to ReadAheadPlan::MAX_RANGE in large reads instead of blob by blob in 1 MiB
+	 * reads. A range that cannot be read is handed out as null.
+	 *
+	 * @param list<array{0:string, 1:int, 2:int}> $ranges
+	 * @return \Generator<int, resource|null>
+	 */
+	private function smbReadAhead(array $ranges, string $spool): \Generator {
+		// before anything is read: an invalid path throws
+		$abs = array_map(fn (array $r): array => [$this->abs($r[0]), $r[1], $r[2]], $ranges);
+		return (function () use ($abs, $spool): \Generator {
+			$file = rtrim($spool, '/') . '/smb-' . bin2hex(random_bytes(4));
+			try {
+				foreach ($abs as $i => [$path, $offset, $length]) {
+					$fh = null;
+					try {
+						$chunks = $this->smbChunks($path, $offset, $length);
+						$out = $chunks === null ? false : fopen($file, 'w+b');
+						if ($chunks !== null && $out !== false) {
+							foreach ($chunks as $chunk) {
+								fwrite($out, $chunk);
+							}
+							$fh = ftell($out) === $length && rewind($out) ? $out : null;
+							if ($fh === null) {
+								fclose($out);
+							}
+						}
+					} catch (\Throwable) {
+						$fh = null; // read the usual way, which reports why
+					} finally {
+						@unlink($file); // an open stream keeps its data
+					}
+					yield $i => $fh;
+					if (is_resource($fh)) {
+						fclose($fh);
+					}
+				}
+			} finally {
+				@unlink($file);
+			}
+		})();
+	}
+
 	private function smbNames(string $abs): ?array {
 		if (!$this->storage instanceof \OCA\Files_External\Lib\Storage\SMB) {
 			return null;
