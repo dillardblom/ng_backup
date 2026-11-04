@@ -133,7 +133,7 @@ final class StorageBackend implements IBackend, IReadsAhead {
 
 	/**
 	 * Over SFTP and S3 several at a time (SftpReadStream::readMany(), s3Fetch()); elsewhere one
-	 * after the other.
+	 * after the other, over SMB in fewer round trips (smbWhole()).
 	 */
 	public function getMany(array $paths): \Generator {
 		$size = $this->s3Reads ? 16 * self::S3_CONCURRENCY : 8 * SftpReadStream::BATCH;
@@ -149,7 +149,8 @@ final class StorageBackend implements IBackend, IReadsAhead {
 				$fast = $fast === null ? null : array_combine($chunk, array_map(fn (string $a): ?string => $fast[$a] ?? null, $abs));
 			}
 			foreach ($chunk as $path) {
-				$data = $fast[$path] ?? null;
+				// over SMB in fewer round trips, one after the other (smbWhole())
+				$data = $fast[$path] ?? $this->smbWhole($this->abs($path));
 				if ($data === null) {
 					// not read in the batch (or no batches here): the usual way, which also
 					// reports a missing file as such
@@ -543,25 +544,7 @@ final class StorageBackend implements IBackend, IReadsAhead {
 	 * @psalm-suppress UndefinedClass icewind/smb comes with files_external, not with this app
 	 */
 	private function smbChunks(string $abs, int $offset, int $length): ?\Generator {
-		if (!$this->storage instanceof \OCA\Files_External\Lib\Storage\SMB || !extension_loaded('smbclient')) {
-			return null;
-		}
-		try {
-			/** @var array{0: object, 1: string}|null $handle */
-			$handle = (function (string $path): ?array {
-				/** @psalm-suppress UndefinedThisPropertyFetch */
-				$share = $this->share;
-				if (!$share instanceof \Icewind\SMB\Native\NativeShare) {
-					return null;
-				}
-				/** @psalm-suppress UndefinedMethod */
-				$sharePath = ltrim($this->buildPath($path), '/');
-				/** @psalm-suppress UndefinedMethod */
-				return (fn (string $p): array => [$this->getState(), $this->buildUrl($p)])->call($share, $sharePath);
-			})->call($this->storage, $abs);
-		} catch (\Throwable) {
-			return null;
-		}
+		$handle = $this->smbHandle($abs);
 		if ($handle === null) {
 			return null;
 		}
@@ -583,6 +566,78 @@ final class StorageBackend implements IBackend, IReadsAhead {
 				$state->close($fh, $url);
 			}
 		})();
+	}
+
+	/**
+	 * A whole (small) file over SMB in four round trips: open, read, read up to the end, close.
+	 * files_external's fopen() first checks that the file exists (a stat with its attributes) and
+	 * icewind's stream reads 1 MiB at a time: about 7 round trips, 1 s per index file from Canada
+	 * to the Storage Box (130 ms), so ~8 h for the 27,000 index files of a 1 TB repository. Null
+	 * when the storage is not SMB through the extension or anything fails: the usual way then
+	 * reads the file and reports a missing one as such.
+	 *
+	 * @psalm-suppress UndefinedClass icewind/smb comes with files_external, not with this app
+	 */
+	private function smbWhole(string $abs): ?string {
+		$handle = $this->smbHandle($abs);
+		if ($handle === null) {
+			return null;
+		}
+		[$state, $url] = $handle;
+		try {
+			/** @psalm-suppress MixedMethodCall the state is icewind's NativeState */
+			$fh = $state->open($url, 'r');
+		} catch (\Throwable) {
+			return null;
+		}
+		try {
+			$data = '';
+			do {
+				/** @psalm-suppress MixedMethodCall */
+				$chunk = (string)$state->read($fh, self::SMB_READ, $url);
+				$data .= $chunk;
+			} while ($chunk !== '');
+			return $data;
+		} catch (\Throwable) {
+			return null;
+		} finally {
+			try {
+				/** @psalm-suppress MixedMethodCall */
+				$state->close($fh, $url);
+			} catch (\Throwable) {
+			}
+		}
+	}
+
+	/**
+	 * icewind's NativeState and the smb:// URL of $abs behind files_external's SMB storage, reached
+	 * through bound closures; null when the storage is not SMB through the native extension or its
+	 * internals are not as expected.
+	 *
+	 * @return array{0: object, 1: string}|null
+	 * @psalm-suppress UndefinedClass icewind/smb comes with files_external, not with this app
+	 */
+	private function smbHandle(string $abs): ?array {
+		if (!$this->storage instanceof \OCA\Files_External\Lib\Storage\SMB || !extension_loaded('smbclient')) {
+			return null;
+		}
+		try {
+			/** @var array{0: object, 1: string}|null $handle */
+			$handle = (function (string $path): ?array {
+				/** @psalm-suppress UndefinedThisPropertyFetch */
+				$share = $this->share;
+				if (!$share instanceof \Icewind\SMB\Native\NativeShare) {
+					return null;
+				}
+				/** @psalm-suppress UndefinedMethod */
+				$sharePath = ltrim($this->buildPath($path), '/');
+				/** @psalm-suppress UndefinedMethod */
+				return (fn (string $p): array => [$this->getState(), $this->buildUrl($p)])->call($share, $sharePath);
+			})->call($this->storage, $abs);
+		} catch (\Throwable) {
+			return null;
+		}
+		return $handle;
 	}
 
 	/**

@@ -34,6 +34,10 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
 - Full restores from S3 read the packs ahead, eight ranges at a time, as restores over SFTP do
   since 1.0.0-rc.4. Over SMB the packs are read in 8 MiB reads instead of 1 MiB: over a line with
   a 130 ms round trip, reading was four times faster in a test (18 instead of 4.5 MiB/s).
+- Over SMB the index files, which a new server reads in `backup:target:add`, take fewer round
+  trips: from Canada to a Hetzner Storage Box (130 ms),
+  0.66 instead of 1.05 s per file, so about 5 instead of 8 hours for the 27,000 index files of a
+  1 TB repository.
 - `occ backup:target:add` only estimates the time left for reading the index once enough of it
   is in. The first file also carries the time to connect, which made it say "about 642 min left"
   for something done within a minute.
