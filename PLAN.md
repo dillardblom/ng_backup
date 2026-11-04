@@ -401,12 +401,13 @@ in README "Known limitations":
   - De DR-test met een backup mét tabelstructuur, zonder `--skip-missing-tables` (punt 3), is
     nog niet gedaan en wordt ingepland vóór de release van 1.0.2. Ingepland (2026-11-04): een
     verse snapshot van nc01 (gemaakt met 1.0.1, dus met tabelstructuur) volgens de DR-gids
-    terugzetten op VM 980 met de 1.0.2-build, over SFTP (Storage Box), zonder
-    `--skip-missing-tables`; daarna dezelfde snapshot nog eens met `--salvage` (moet hetzelfde
+    terugzetten op VM 980 met de 1.0.2-build, over **SMB** (Storage Box; besluit 2026-11-04:
+    SMB in plaats van SFTP, zodat de DR-test de nieuwe SMB-leescode op echte schaal en over de
+    echte lijn vanuit Canada test; vorige meting 2,6 MiB/s, verwachting ~1 dag voor 1 TB), zonder
+    `--skip-missing-tables`; daarna `--salvage` op een deel van de bestanden (moet hetzelfde
     resultaat geven, exitcode 0). Uitvoeren met Dillard, die VM 980 klaarzet; deze week, vóór
-    de release. Een volledige restore over SMB met echte vertraging (Storage Box vanuit Canada)
-    meten we bij dezelfde gelegenheid, om de winst van de grotere SMB-leesacties te bevestigen.
-  Stand 2026-11-04 (lokaal op `polish`, niet gepusht): cron-waarschuwing + tick vanaf de pagina +
+    de release. Screenshots akkoord (2026-11-04).
+  Stand 2026-11-04 (`polish`, gepusht): cron-waarschuwing + tick vanaf de pagina +
   voortgang van de db-fase; `--salvage` voor `backup:restore` en `backup:restore:full`; S3
   vooruitlezen (8 ranges tegelijk, met `SaveAs` naar de spool); SMB in leesacties van 8 MiB
   (gemeten met netem, 130 ms RTT: 4,5 → 18 MiB/s per leesactie; een volledige restore over SMB
