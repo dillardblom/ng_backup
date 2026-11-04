@@ -88,19 +88,21 @@ HELP);
 	 * @return callable(int, int): void
 	 */
 	private static function progress(OutputInterface $output): callable {
-		$start = microtime(true);
 		$shown = 0.0;
+		$first = null; // [time, files done] when the first files were in
 		$inPlace = $output->isDecorated();
-		return static function (int $done, int $total) use ($output, $start, &$shown, $inPlace): void {
+		return static function (int $done, int $total) use ($output, &$shown, &$first, $inPlace): void {
 			$now = microtime(true);
+			if ($first === null && $done > 0) {
+				$first = [$now, $done];
+			}
 			if ($done < $total && $now - $shown < ($inPlace ? 1 : 30)) {
 				return;
 			}
 			$shown = $now;
 			$line = sprintf('Reading the index: %s/%s files (%d%%)', number_format($done), number_format($total), intdiv(100 * $done, max(1, $total)));
-			$elapsed = $now - $start;
-			if ($done < $total && $done > 0 && $elapsed >= 5) {
-				$left = (int)ceil($elapsed / (float)$done * (float)($total - $done) / 60.0);
+			$left = $first === null ? null : self::minutesLeft($now - $first[0], $done - $first[1], $total - $done, $total);
+			if ($left !== null) {
 				$line .= $left <= 1 ? ', less than a minute left' : sprintf(', about %d min left', $left);
 			}
 			if ($inPlace) {
@@ -109,5 +111,18 @@ HELP);
 				$output->writeln($line);
 			}
 		};
+	}
+
+	/**
+	 * Minutes left for reading the index, from the rate since the first files were in: the first
+	 * file also carries the time to connect, which made an S3 location with 4,568 index files
+	 * say "about 642 min left" for something done within a minute. No estimate until 5% of the
+	 * files, or 50 files, came in after that, and at least 5 seconds passed.
+	 */
+	public static function minutesLeft(float $elapsed, int $done, int $left, int $total): ?int {
+		if ($left <= 0 || $done <= 0 || $elapsed < 5.0 || ($done < 50 && $done * 20 < $total)) {
+			return null;
+		}
+		return (int)ceil($elapsed / (float)$done * (float)$left / 60.0);
 	}
 }
