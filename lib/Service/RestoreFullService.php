@@ -58,9 +58,12 @@ final class RestoreFullService {
 	 * - tables in the backup that do not exist here: a backup made from 1.0.0-rc.2 on records
 	 *   their structure and the restore creates them, an older one cannot (missingTables).
 	 *
-	 * @return array{ok:bool, currentMajor:string, snapshotMajor:string, missingApps:list<string>, missingTables:list<string>}
+	 * With $salvage, a database dump that cannot be read does not block: dbUnreadable says why, and
+	 * the restore then salvages the files instead (see restoreFull()).
+	 *
+	 * @return array{ok:bool, currentMajor:string, snapshotMajor:string, missingApps:list<string>, missingTables:list<string>, dbUnreadable?:string}
 	 */
-	public function checkCompatibility(Target $target, string $snapshotId, bool $skipMissingTables = false): array {
+	public function checkCompatibility(Target $target, string $snapshotId, bool $skipMissingTables = false, bool $salvage = false): array {
 		$repo = $this->targets->repository($target);
 		$meta = $repo->snapshotMeta($snapshotId);
 		$currentMajor = explode('.', $this->config->getSystemValueString('version'))[0];
@@ -69,8 +72,19 @@ final class RestoreFullService {
 		$missingApps = array_values(array_diff(array_keys($meta['apps'] ?? []), array_keys($enabled), self::ENVIRONMENT_APPS));
 		$missingTables = [];
 		$prefixMismatch = null;
+		$dbUnreadable = null;
+		$manifest = null;
 		if (isset($meta['db'])) {
-			$manifest = json_decode($repo->getObject($meta['db']), true, 512, JSON_THROW_ON_ERROR);
+			try {
+				$manifest = json_decode($repo->getObject($meta['db']), true, 512, JSON_THROW_ON_ERROR);
+			} catch (\Throwable $e) {
+				if (!$salvage) {
+					throw $e;
+				}
+				$dbUnreadable = 'the database dump cannot be read: ' . $e->getMessage();
+			}
+		}
+		if (is_array($manifest)) {
 			$prefix = $this->config->getSystemValueString('dbtableprefix', 'oc_');
 			$sourcePrefix = DbDumper::dumpPrefix($manifest);
 			if ($sourcePrefix !== null && $sourcePrefix !== $prefix) {
@@ -87,11 +101,21 @@ final class RestoreFullService {
 			'missingApps' => $missingApps,
 			'missingTables' => $prefixMismatch === null ? $missingTables : [],
 			'prefixMismatch' => $prefixMismatch,
-		];
+		] + ($dbUnreadable !== null ? ['dbUnreadable' => $dbUnreadable] : []);
 	}
 
-	/** @return array{dbReport:array, dataFiles:int, configKeys:int, dbConsistent:bool, missingApps:list<string>, maintenanceLeftOn:bool} */
-	public function restoreFull(Target $target, string $snapshotId, bool $skipMissingTables = false): array {
+	/**
+	 * With $salvage, restore whatever can be restored instead of stopping:
+	 * - a file that cannot be read or decrypted is left out and listed (skipped);
+	 * - when the database cannot be restored here (its dump is unreadable or damaged, or it does
+	 *   not fit this installation), the fresh database stays as it is, and the data directory and
+	 *   config of the backup go to a folder of their own (salvageDir) instead: the files are what
+	 *   matters most, and putting Nextcloud back together from there is work by hand;
+	 * - a config.php that cannot be read is not merged (configError).
+	 *
+	 * @return array{dbReport:array, dataFiles:int, configKeys:int, dbConsistent:bool, missingApps:list<string>, maintenanceLeftOn:bool, skipped:array<string, string>, dbError:?string, salvageDir:?string, configError:?string}
+	 */
+	public function restoreFull(Target $target, string $snapshotId, bool $skipMissingTables = false, bool $salvage = false): array {
 		// Maintenance mode for the whole restore: background jobs (cron.php stops in maintenance
 		// mode), page visits (AJAX cron) and users must not write into tables or the data
 		// directory while they are being replaced; a row written in between would collide with a
@@ -114,17 +138,21 @@ final class RestoreFullService {
 			}
 		};
 		try {
-			$check = $this->checkCompatibility($target, $snapshotId, $skipMissingTables);
+			$check = $this->checkCompatibility($target, $snapshotId, $skipMissingTables, $salvage);
 		} catch (\Throwable $e) {
 			$reopen();
 			throw $e;
 		}
 		if (!$check['ok']) {
-			$reopen();
-			throw new \RuntimeException($this->describeBlockers($check));
+			if (!$salvage) {
+				$reopen();
+				throw new \RuntimeException($this->describeBlockers($check));
+			}
+			// The database cannot go into this installation; the files can.
+			$check['dbUnreadable'] = 'the database cannot be restored here: ' . $this->describeBlockers($check);
 		}
 		$appConfig->setValueInt(\OCA\NgBackup\AppInfo\Application::APP_ID, self::INTERRUPTED_KEY, time());
-		$result = $this->restoreInMaintenance($target, $snapshotId, $skipMissingTables, $check);
+		$result = $this->restoreInMaintenance($target, $snapshotId, $skipMissingTables, $check, $salvage);
 		$appConfig->deleteKey(\OCA\NgBackup\AppInfo\Application::APP_ID, self::INTERRUPTED_KEY);
 		if (!$wasInMaintenance) {
 			$this->config->setSystemValue('maintenance', false);
@@ -132,55 +160,56 @@ final class RestoreFullService {
 		return $result + ['maintenanceLeftOn' => $wasInMaintenance];
 	}
 
-	/** @return array{dbReport:array, dataFiles:int, configKeys:int, dbConsistent:bool, missingApps:list<string>} */
-	private function restoreInMaintenance(Target $target, string $snapshotId, bool $skipMissingTables, array $check): array {
-		return $this->withSharedLock($target, function (callable $refresh) use ($target, $snapshotId, $skipMissingTables, $check) {
+	/** @return array{dbReport:array, dataFiles:int, configKeys:int, dbConsistent:bool, missingApps:list<string>, skipped:array<string, string>, dbError:?string, salvageDir:?string, configError:?string} */
+	private function restoreInMaintenance(Target $target, string $snapshotId, bool $skipMissingTables, array $check, bool $salvage): array {
+		return $this->withSharedLock($target, function (callable $refresh) use ($target, $snapshotId, $skipMissingTables, $check, $salvage) {
 			$beat = LeaseService::throttled($refresh);
 			$repo = $this->targets->repository($target);
 			$meta = $repo->snapshotMeta($snapshotId);
 
 			$dbReport = null;
 			$manifest = [];
-			if (isset($meta['db'])) {
-				$manifest = json_decode($repo->getObject($meta['db']), true, 512, JSON_THROW_ON_ERROR);
-				$prefix = $this->config->getSystemValueString('dbtableprefix', 'oc_');
-				// ng_backup's own tables (and its own rows in the shared appconfig table) must
-				// survive this restore untouched: they describe the backup/key/target that is
-				// actively performing it right now, on THIS installation, not the one that was
-				// backed up. Overwriting them mid-restore would pull the rug from under it.
-				foreach (array_keys($manifest['tables']) as $table) {
-					/** @var string $table */
-					if (str_starts_with($table, $prefix . 'ngb_')) {
-						unset($manifest['tables'][$table]);
-					}
-				}
-				// Sequences are keyed separately from tables; excluding a table does not exclude
-				// its sequence, which would otherwise rewind a retained ngb_* table's sequence
-				// below its current ids (PostgreSQL only -- see DbDumper::restoreSequences()).
-				foreach (array_keys($manifest['sequences'] ?? []) as $seq) {
-					/** @var string $seq */
-					if (str_starts_with((string)($manifest['sequences'][$seq]['table'] ?? ''), $prefix . 'ngb_')) {
-						unset($manifest['sequences'][$seq]);
-					}
-				}
-				$ownAppConfig = $this->preserveOwnAppConfig();
-				$dumper = new DbDumper($this->db->getInner(), $prefix);
+			$dbError = $check['dbUnreadable'] ?? null;
+			$skipped = $salvage ? [] : null;
+			$dataDir = rtrim($this->config->getSystemValueString('datadirectory'), '/');
+			if ($dbError === null) {
 				try {
-					$dumper->restore($repo, $manifest, $dbReport, $beat, $skipMissingTables);
-				} finally {
-					$this->restoreOwnAppConfig($ownAppConfig);
+					$this->restoreDatabase($repo, $meta, $manifest, $dbReport, $beat, $skipMissingTables);
+				} catch (\Throwable $e) {
+					if (!$salvage) {
+						throw $e;
+					}
+					// DbDumper::restore() rolled its transaction back: the database is the fresh one.
+					$dbError = 'the database could not be restored: ' . $e->getMessage();
+					$dbReport = null;
 				}
+			}
+			if ($dbError !== null) {
+				$salvageDir = $dataDir . '/ngb-salvage-' . substr($snapshotId, 0, 12);
+				$dataFiles = $this->restore->restoreToDirectory($target, $snapshotId, 'data', $salvageDir . '/data', stripPrefix: true, heartbeat: $beat, skipped: $skipped);
+				$this->restore->restoreToDirectory($target, $snapshotId, 'config', $salvageDir . '/config', stripPrefix: true, heartbeat: $beat, skipped: $skipped);
+				return ['dbReport' => ['skipped' => [], 'restored' => [], 'created' => [], 'missing' => []], 'dataFiles' => $dataFiles, 'configKeys' => 0,
+					'dbConsistent' => true, 'missingApps' => $check['missingApps'], 'skipped' => $skipped ?? [], 'dbError' => $dbError,
+					'salvageDir' => $salvageDir, 'configError' => null];
 			}
 
 			// Read (but do not yet apply) the backed-up config.php before touching the data
 			// directory: once applied, 'secret' may differ from what ng_backup's own Target
 			// options were encrypted with (see restoreFull()'s docblock), and every further
 			// repository access through $this->targets would fail to decrypt them.
-			/** @var array<string, mixed> $backupConfig */
-			$backupConfig = $this->fetchBackupConfig($target, $snapshotId);
+			$configError = null;
+			try {
+				/** @var array<string, mixed> $backupConfig */
+				$backupConfig = $this->fetchBackupConfig($target, $snapshotId, $salvage);
+			} catch (\Throwable $e) {
+				if (!$salvage) {
+					throw $e;
+				}
+				$configError = $e->getMessage();
+				$backupConfig = [];
+			}
 
-			$dataDir = rtrim($this->config->getSystemValueString('datadirectory'), '/');
-			$dataFiles = $this->restore->restoreToDirectory($target, $snapshotId, 'data', $dataDir, stripPrefix: true, heartbeat: $beat);
+			$dataFiles = $this->restore->restoreToDirectory($target, $snapshotId, 'data', $dataDir, stripPrefix: true, heartbeat: $beat, skipped: $skipped);
 
 			// Last step: nothing after this may need $this->targets->repository($target) again.
 			if ($backupConfig !== []) {
@@ -190,15 +219,63 @@ final class RestoreFullService {
 			}
 
 			return ['dbReport' => $dbReport ?? ['skipped' => [], 'restored' => [], 'created' => [], 'missing' => []], 'dataFiles' => $dataFiles, 'configKeys' => count($backupConfig),
-				'dbConsistent' => (bool)($manifest['consistent'] ?? true), 'missingApps' => $check['missingApps']];
+				'dbConsistent' => (bool)($manifest['consistent'] ?? true), 'missingApps' => $check['missingApps'],
+				'skipped' => $skipped ?? [], 'dbError' => null, 'salvageDir' => null, 'configError' => $configError];
 		});
 	}
 
-	/** @return array<string, mixed> config.php's $CONFIG from the backup, minus the connection keys */
-	private function fetchBackupConfig(Target $target, string $snapshotId): array {
+	/**
+	 * Replace the database with the snapshot's dump (one transaction, see DbDumper::restore()).
+	 *
+	 * @param array<string, mixed> $meta the snapshot's meta record
+	 * @param array $manifest set to the dump's manifest
+	 */
+	private function restoreDatabase(\OCA\NgBackup\Repository\Repository $repo, array $meta, array &$manifest, ?array &$dbReport, callable $beat, bool $skipMissingTables): void {
+		if (!isset($meta['db'])) {
+			return;
+		}
+		$manifest = json_decode($repo->getObject($meta['db']), true, 512, JSON_THROW_ON_ERROR);
+		$prefix = $this->config->getSystemValueString('dbtableprefix', 'oc_');
+		// ng_backup's own tables (and its own rows in the shared appconfig table) must
+		// survive this restore untouched: they describe the backup/key/target that is
+		// actively performing it right now, on THIS installation, not the one that was
+		// backed up. Overwriting them mid-restore would pull the rug from under it.
+		foreach (array_keys($manifest['tables']) as $table) {
+			/** @var string $table */
+			if (str_starts_with($table, $prefix . 'ngb_')) {
+				unset($manifest['tables'][$table]);
+			}
+		}
+		// Sequences are keyed separately from tables; excluding a table does not exclude
+		// its sequence, which would otherwise rewind a retained ngb_* table's sequence
+		// below its current ids (PostgreSQL only -- see DbDumper::restoreSequences()).
+		foreach (array_keys($manifest['sequences'] ?? []) as $seq) {
+			/** @var string $seq */
+			if (str_starts_with((string)($manifest['sequences'][$seq]['table'] ?? ''), $prefix . 'ngb_')) {
+				unset($manifest['sequences'][$seq]);
+			}
+		}
+		$ownAppConfig = $this->preserveOwnAppConfig();
+		$dumper = new DbDumper($this->db->getInner(), $prefix);
+		try {
+			$dumper->restore($repo, $manifest, $dbReport, $beat, $skipMissingTables);
+		} finally {
+			$this->restoreOwnAppConfig($ownAppConfig);
+		}
+	}
+
+	/**
+	 * @return array<string, mixed> config.php's $CONFIG from the backup, minus the connection keys
+	 * @throws \RuntimeException with $salvage, when config.php itself cannot be read
+	 */
+	private function fetchBackupConfig(Target $target, string $snapshotId, bool $salvage = false): array {
 		$tmp = sys_get_temp_dir() . '/ngb-restore-config-' . bin2hex(random_bytes(6));
 		try {
-			$this->restore->restoreToDirectory($target, $snapshotId, 'config', $tmp, stripPrefix: true);
+			$skipped = $salvage ? [] : null;
+			$this->restore->restoreToDirectory($target, $snapshotId, 'config', $tmp, stripPrefix: true, skipped: $skipped);
+			if (isset($skipped['config/config.php'])) {
+				throw new \RuntimeException('config.php cannot be read: ' . $skipped['config/config.php']);
+			}
 			$path = $tmp . '/config.php';
 			if (!is_file($path)) {
 				return []; // nothing to merge; the live config.php stays as occ maintenance:install made it

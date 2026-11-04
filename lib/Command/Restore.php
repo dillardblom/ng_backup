@@ -31,6 +31,7 @@ final class Restore extends Command {
 			->addArgument('path', InputArgument::REQUIRED, 'Path in the snapshot (see backup:browse)')
 			->addOption('mode', 'm', InputOption::VALUE_REQUIRED, 'new-folder, merge or replace (user files)', RestoreService::MODE_NEW_FOLDER)
 			->addOption('to-directory', 'd', InputOption::VALUE_REQUIRED, 'Write to this local directory instead (any path, raw files)')
+			->addOption('salvage', null, InputOption::VALUE_NONE, 'Leave out a file that cannot be read or decrypted, list it at the end and go on, instead of stopping')
 			->setHelp(<<<'HELP'
 User files (data/<user>/files/...) are restored through Nextcloud, so versions, trash and the
 file cache stay correct. Modes:
@@ -42,30 +43,52 @@ Examples:
   occ backup:restore offsite 537bf7e9... data/alice/files/Documents
   occ backup:restore offsite 537bf7e9... data/alice/files/Documents/plan.odt --mode=merge
   occ backup:restore offsite 537bf7e9... config --to-directory=/root/restored-config
+With --salvage, a file whose data on the location is damaged or missing is left out and listed
+at the end; everything else is restored. The command then exits with code 2.
 HELP);
 	}
 
 	protected function execute(InputInterface $input, OutputInterface $output): int {
+		$skipped = $input->getOption('salvage') ? [] : null;
 		try {
 			$target = $this->targets->get($input->getArgument('target'));
 			$snapshot = $input->getArgument('snapshot');
 			$path = trim((string)$input->getArgument('path'), '/'); // CLI convenience; the service itself only accepts canonical paths
 			if ($dir = $input->getOption('to-directory')) {
-				$n = $this->restore->restoreToDirectory($target, $snapshot, $path, $dir);
+				$n = $this->restore->restoreToDirectory($target, $snapshot, $path, $dir, false, null, $skipped);
 				$output->writeln("Restored <info>$n</info> files to $dir.");
-				return 0;
+				return self::reportSkipped($skipped, $output);
 			}
 			$r = $this->restore->restoreUserFiles($target, $snapshot, $path, (string)$input->getOption('mode'),
 				function (int $done, int $total, string $name) use ($output) {
 					if ($output->isVerbose() || $done === $total || $done % 100 === 0) {
 						$output->writeln("  $done/$total $name");
 					}
-				});
+				}, $skipped);
 		} catch (\Throwable $e) {
 			$output->writeln('<error>' . $e->getMessage() . '</error>');
+			if ($skipped === null && ($e instanceof \OCA\NgBackup\Repository\RepositoryException || $e instanceof \OCA\NgBackup\Crypto\CryptoException)) {
+				$output->writeln('The data of a file on the location is damaged or missing. Run the same command with --salvage to restore everything else and list what could not be restored.');
+			}
 			return 1;
 		}
 		$output->writeln(sprintf('Restored <info>%d</info> files to %s%s.', $r['restored'], $r['target'], $r['trashed'] ? ", moved {$r['trashed']} extra files to the trash" : ''));
-		return 0;
+		return self::reportSkipped($skipped, $output);
+	}
+
+	/**
+	 * The files --salvage left out; exit code 2 when there are any.
+	 *
+	 * @param array<string, string>|null $skipped
+	 */
+	public static function reportSkipped(?array $skipped, OutputInterface $output): int {
+		if ($skipped === null || $skipped === []) {
+			return 0;
+		}
+		$output->writeln(sprintf('<comment>%d file%s could not be restored (damaged or missing on the location):</comment>', count($skipped), count($skipped) === 1 ? '' : 's'));
+		foreach ($skipped as $path => $reason) {
+			$output->writeln("  $path: $reason");
+		}
+		return 2;
 	}
 }

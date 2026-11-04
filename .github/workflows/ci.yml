@@ -138,3 +138,5 @@ jobs:
         run: tests/integration/full-restore-roundtrip.sh 35-apache mysql to-sqlite
       - name: Full restore of a SQLite backup onto PostgreSQL
         run: tests/integration/full-restore-roundtrip.sh 35-apache sqlite to-pgsql
+      - name: Full restore with a damaged database dump (--salvage)
+        run: tests/integration/full-restore-roundtrip.sh 35-apache sqlite salvage

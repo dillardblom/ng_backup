@@ -221,14 +221,17 @@ final class Repository {
 	 *             "$target/<full logical path>" (disaster recovery: restoring e.g. "data/" or
 	 *             "config/" directly into the real data/config directory, not a subdirectory
 	 *             named after the prefix). Ignored when $prefix is '' (nothing to strip).
+	 * @param array<string, string>|null $skipped salvage: an array to collect the files that could
+	 *             not be read or decrypted (path => reason), which are then left out instead of
+	 *             stopping the restore; null (default) stops at the first such file
 	 */
-	public function restore(string $snapshotId, string $target, string $prefix = '', bool $stripPrefix = false, ?callable $heartbeat = null): int {
+	public function restore(string $snapshotId, string $target, string $prefix = '', bool $stripPrefix = false, ?callable $heartbeat = null, ?array &$skipped = null): int {
 		if ($prefix !== '' && !self::isSafePath(rtrim($prefix, '/'))) {
 			throw new RepositoryException('Invalid path prefix');
 		}
 		$plan = $this->readAhead($snapshotId, $prefix, $target);
 		try {
-			return $this->restoreEntries($snapshotId, $target, $prefix, $stripPrefix, $heartbeat, $plan);
+			return $this->restoreEntries($snapshotId, $target, $prefix, $stripPrefix, $heartbeat, $plan, $skipped);
 		} finally {
 			$plan?->close();
 			if ($plan !== null) {
@@ -285,7 +288,8 @@ final class Repository {
 		return $plan;
 	}
 
-	private function restoreEntries(string $snapshotId, string $target, string $prefix, bool $stripPrefix, ?callable $heartbeat, ?ReadAheadPlan $plan): int {
+	/** @param array<string, string>|null $skipped see restore() */
+	private function restoreEntries(string $snapshotId, string $target, string $prefix, bool $stripPrefix, ?callable $heartbeat, ?ReadAheadPlan $plan, ?array &$skipped): int {
 		$count = 0;
 		$cleaned = [];
 		foreach ($this->streamEntries($snapshotId) as $entry) {
@@ -317,16 +321,30 @@ final class Repository {
 			if ($out === false) {
 				throw new RepositoryException('Cannot create a temporary file for ' . $entry['p']);
 			}
-			foreach ($entry['b'] as $id) {
-				fwrite($out, $this->restoreBlob($id, $plan));
-				if ($heartbeat !== null) {
-					$heartbeat();
+			try {
+				foreach ($entry['b'] as $id) {
+					fwrite($out, $this->restoreBlob($id, $plan));
+					if ($heartbeat !== null) {
+						$heartbeat();
+					}
 				}
-			}
-			fclose($out);
-			if (filesize($tmp) !== $entry['s']) {
-				unlink($tmp);
-				throw new RepositoryException('Size mismatch restoring ' . $entry['p']);
+				fclose($out);
+				clearstatcache(true, $tmp);
+				if (filesize($tmp) !== $entry['s']) {
+					throw new RepositoryException('Size mismatch restoring ' . $entry['p']);
+				}
+			} catch (RepositoryException|BackendException|\OCA\NgBackup\Crypto\CryptoException $e) {
+				// What the location gave back for this file is missing or damaged. Writing to the
+				// target (below) is not part of this: a full disk must still stop the restore.
+				if (is_resource($out)) {
+					fclose($out);
+				}
+				@unlink($tmp);
+				if ($skipped === null) {
+					throw $e;
+				}
+				$skipped[$entry['p']] = $e->getMessage();
+				continue;
 			}
 			if (!rename($tmp, $dest)) {
 				@unlink($tmp);

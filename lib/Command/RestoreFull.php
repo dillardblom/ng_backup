@@ -36,6 +36,7 @@ final class RestoreFull extends Command {
 			->addOption('force', null, InputOption::VALUE_NONE, 'Also on an installation that already has more than one user, and without asking')
 			->addOption('install-apps', null, InputOption::VALUE_NONE, 'First install (from the app store) or enable the apps that were enabled at backup time and are missing here')
 			->addOption('skip-missing-tables', null, InputOption::VALUE_NONE, 'Older backups only: leave out tables that do not exist here and whose structure the backup does not record')
+			->addOption('salvage', null, InputOption::VALUE_NONE, 'Restore what can be restored: leave out files that cannot be read, and when the database cannot be restored, put the files in a folder of their own')
 			->setHelp(<<<'HELP'
 For a FRESH Nextcloud installation only, same major version as the backup, right after
 occ maintenance:install, occ backup:key:import and occ backup:target:add -- before anyone else
@@ -55,6 +56,12 @@ here. Other files under config/ (if any) are not restored.
 
 Afterwards: check trusted_domains and overwritehost/overwriteprotocol match this server, and
 occ maintenance:repair.
+When the backup is damaged: --salvage restores what can be restored. Files whose data cannot be
+read or decrypted are left out and listed. When the database cannot be restored (its dump is
+damaged, or it does not fit this installation), the database stays as occ maintenance:install
+made it, and the data directory and config of the backup go to ngb-salvage-<snapshot> in the
+data directory instead: from there, the files can be put back by hand. The command then exits
+with code 2.
 
 Example:
   occ backup:restore:full offsite 537bf7e9c1a4...
@@ -82,28 +89,40 @@ HELP);
 			$target = $this->targets->get($input->getArgument('target'));
 			$snapshot = (string)$input->getArgument('snapshot');
 			$skipMissingTables = (bool)$input->getOption('skip-missing-tables');
+			$salvage = (bool)$input->getOption('salvage');
 			if ($input->getOption('install-apps')) {
-				$check = $this->restoreFull->checkCompatibility($target, $snapshot, $skipMissingTables);
+				$check = $this->restoreFull->checkCompatibility($target, $snapshot, $skipMissingTables, $salvage);
 				foreach ($check['missingApps'] as $app) {
 					$this->installApp($app, $output);
 				}
 			}
 			$output->writeln('Nextcloud is in maintenance mode while the restore runs; it is switched off when the restore completes.');
-			$result = $this->restoreFull->restoreFull($target, $snapshot, $skipMissingTables);
+			$result = $this->restoreFull->restoreFull($target, $snapshot, $skipMissingTables, $salvage);
 		} catch (\Throwable $e) {
 			$output->writeln('<error>' . $e->getMessage() . '</error>');
 			if (\OCP\Server::get(\OCP\IConfig::class)->getSystemValueBool('maintenance', false)) {
 				$output->writeln('The restore had started: the instance may be partly restored, and maintenance mode stays on so that nobody uses it like that.');
 				$output->writeln('Fix the cause, then switch maintenance mode off and run the same command again with --force, in one line:');
 				$again = 'occ backup:restore:full ' . escapeshellarg((string)$input->getArgument('target')) . ' ' . escapeshellarg((string)$input->getArgument('snapshot'))
-					. ($input->getOption('skip-missing-tables') ? ' --skip-missing-tables' : '') . ' --force --no-interaction';
+					. ($input->getOption('skip-missing-tables') ? ' --skip-missing-tables' : '') . ($input->getOption('salvage') ? ' --salvage' : '') . ' --force --no-interaction';
 				$output->writeln('  occ maintenance:mode --off && ' . $again);
 				$output->writeln('(Without --install-apps, so the instance is open only for the seconds until the restore starts again. Apps the first run could not install are listed at the end: install those afterwards.)');
 			} else {
 				$output->writeln('If this happened after the restore had started, the instance may be partly restored: fix the cause and run the same command again with --force.');
 			}
 			$output->writeln('If occ then says that Nextcloud needs an upgrade (the database is already the old server\'s), run occ upgrade first.');
+			if (!$input->getOption('salvage') && ($e instanceof \OCA\NgBackup\Repository\RepositoryException || $e instanceof \OCA\NgBackup\Crypto\CryptoException)) {
+				$output->writeln('The backup itself looks damaged here. --salvage restores everything that can be read and lists the rest.');
+			}
 			return 1;
+		}
+		if ($result['dbError'] !== null) {
+			$output->writeln('<error>Salvage: ' . $result['dbError'] . '</error>');
+			$output->writeln(sprintf('The database stays as occ maintenance:install made it. The data directory and config of the backup (<info>%d</info> data files) are in:', $result['dataFiles']));
+			$output->writeln('  ' . $result['salvageDir']);
+			$output->writeln('Each user\'s files are in data/<user>/files there. Put back what is needed by hand, for example into the files of new users (then occ files:scan).');
+			Restore::reportSkipped($result['skipped'], $output);
+			return 2;
 		}
 		$output->writeln(sprintf(
 			'Database restored (<info>%d</info> tables, <info>%d</info> unchanged), config merged (<info>%d</info> keys), <info>%d</info> data files restored.',
@@ -135,7 +154,12 @@ HELP);
 			$output->writeln('<comment>Maintenance mode was on before the restore and stays on: switch it off with occ maintenance:mode --off when the instance is ready.</comment>');
 		}
 		$output->writeln('Next: check trusted_domains and overwritehost/overwriteprotocol match this server, then occ maintenance:repair.');
-		return 0;
+		$code = 0;
+		if ($result['configError'] !== null) {
+			$output->writeln('<comment>Salvage: config.php of the backup was not merged (' . $result['configError'] . '). Set at least \'instanceid\', \'passwordsalt\' and \'secret\' to the old server\'s values if you have them, or data encrypted with them (server-side encryption, stored passwords) cannot be read.</comment>');
+			$code = 2;
+		}
+		return max($code, Restore::reportSkipped($result['skipped'], $output));
 	}
 
 	/** Enable an app that is here but switched off, or install it from the app store. */

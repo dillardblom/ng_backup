@@ -84,8 +84,8 @@ final class RestoreService {
 	 *
 	 * @return array{restored:int, trashed:int, target:string}
 	 */
-	public function restoreUserFiles(Target $target, string $snapshotId, string $logicalPath, string $mode = self::MODE_NEW_FOLDER, ?callable $progress = null): array {
-		return $this->withSharedLock($target, function (callable $refresh) use ($target, $snapshotId, $logicalPath, $mode, $progress) {
+	public function restoreUserFiles(Target $target, string $snapshotId, string $logicalPath, string $mode = self::MODE_NEW_FOLDER, ?callable $progress = null, ?array &$skipped = null): array {
+		return $this->withSharedLock($target, function (callable $refresh) use ($target, $snapshotId, $logicalPath, $mode, $progress, &$skipped) {
 			$last = time();
 			// Keep the lease alive while files are being written.
 			$beat = function (int $done, int $total, string $name) use ($refresh, $progress, &$last): void {
@@ -97,11 +97,12 @@ final class RestoreService {
 					$progress($done, $total, $name);
 				}
 			};
-			return $this->doRestoreUserFiles($target, $snapshotId, $logicalPath, $mode, $beat);
+			return $this->doRestoreUserFiles($target, $snapshotId, $logicalPath, $mode, $beat, $skipped);
 		});
 	}
 
-	private function doRestoreUserFiles(Target $target, string $snapshotId, string $logicalPath, string $mode, ?callable $progress): array {
+	/** @param array<string, string>|null $skipped see Repository::restore() */
+	private function doRestoreUserFiles(Target $target, string $snapshotId, string $logicalPath, string $mode, ?callable $progress, ?array &$skipped): array {
 		if (!Repository::isSafePath($logicalPath) || !preg_match('#^data/([^/]+)/files(?:/(.*))?$#', $logicalPath, $m)) {
 			throw new \InvalidArgumentException('Expected a path like data/<user>/files/<folder or file>');
 		}
@@ -139,7 +140,16 @@ final class RestoreService {
 		$this->cleaned = [];
 		$restored = 0;
 		foreach ($names as $relPath => $entry) {
-			$this->writeFile($repo, $dest, (string)$relPath, $entry);
+			try {
+				$this->writeFile($repo, $dest, (string)$relPath, $entry);
+			} catch (\OCA\NgBackup\Repository\RepositoryException|\OCA\NgBackup\Backend\BackendException|\OCA\NgBackup\Crypto\CryptoException $e) {
+				// Damaged or missing on the location (writeFile removed its temporary)
+				if ($skipped === null) {
+					throw $e;
+				}
+				$skipped[$entry['p']] = $e->getMessage();
+				continue;
+			}
 			$restored++;
 			if ($progress !== null) {
 				$progress($restored, count($names), (string)$relPath);
@@ -160,14 +170,14 @@ final class RestoreService {
 	 *             Repository::restore()); used to restore "data/" or "config/" straight into the
 	 *             real data/config directory for occ backup:restore:full.
 	 */
-	public function restoreToDirectory(Target $target, string $snapshotId, string $prefix, string $directory, bool $stripPrefix = false, ?callable $heartbeat = null): int {
+	public function restoreToDirectory(Target $target, string $snapshotId, string $prefix, string $directory, bool $stripPrefix = false, ?callable $heartbeat = null, ?array &$skipped = null): int {
 		if ($prefix !== '' && !Repository::isSafePath($prefix)) {
 			throw new \InvalidArgumentException('Invalid path: ' . $prefix);
 		}
 		if (!is_dir($directory) && !mkdir($directory, 0750, true) && !is_dir($directory)) {
 			throw new \RuntimeException("Cannot create $directory");
 		}
-		return $this->withSharedLock($target, function (callable $refresh) use ($target, $snapshotId, $prefix, $directory, $stripPrefix, $heartbeat): int {
+		return $this->withSharedLock($target, function (callable $refresh) use ($target, $snapshotId, $prefix, $directory, $stripPrefix, $heartbeat, &$skipped): int {
 			$own = LeaseService::throttled($refresh);
 			$beat = static function () use ($own, $heartbeat): void {
 				$own();
@@ -175,7 +185,7 @@ final class RestoreService {
 					$heartbeat();
 				}
 			};
-			return $this->targets->repository($target)->restore($snapshotId, $directory, trim($prefix, '/') === '' ? '' : trim($prefix, '/') . '/', $stripPrefix, $beat);
+			return $this->targets->repository($target)->restore($snapshotId, $directory, trim($prefix, '/') === '' ? '' : trim($prefix, '/') . '/', $stripPrefix, $beat, $skipped);
 		}, 3600);
 	}
 
@@ -203,7 +213,7 @@ final class RestoreService {
 				throw new \RuntimeException('Write failed for ' . $relPath);
 			}
 			if ($written !== $entry['s']) {
-				throw new \RuntimeException("Size mismatch restoring $relPath");
+				throw new \OCA\NgBackup\Repository\RepositoryException("Size mismatch restoring $relPath");
 			}
 			if ($folder->nodeExists($name)) {
 				$existing = $folder->get($name);

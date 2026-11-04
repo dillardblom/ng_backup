@@ -2,13 +2,15 @@
 # Disaster recovery: occ backup:key:import + backup:target:add + backup:restore:full on a
 # SECOND, fresh Nextcloud instance that never saw the first one, sharing only the backup
 # location (a local directory, bind-mounted into both containers) -- see PLAN.md 3.7.
-# Usage: full-restore-roundtrip.sh <nextcloud-image-tag> [sqlite|pgsql|mysql] [legacy|sftp|to-pgsql|to-mysql|to-sqlite]
+# Usage: full-restore-roundtrip.sh <nextcloud-image-tag> [sqlite|pgsql|mysql] [legacy|sftp|salvage|to-pgsql|to-mysql|to-sqlite]
 #   e.g. full-restore-roundtrip.sh 35-apache pgsql
 # With "sftp" the location is an SFTP server instead of a shared directory, and the origin has a
 # file spread over several packs: the restore reads them ahead on connections of its own.
 # With "to-<db>" the restore instance runs that database whatever the origin runs (a MySQL or
 # SQLite backup records no ID counters; after the restore new rows must not collide with restored
 # ones, whatever the database on either side).
+# With "salvage" the snapshot's database dump is damaged on the location: the restore must stop
+# without changing anything, and with --salvage put the files in a folder of their own.
 # With "legacy" the origin runs NG Backup 1.0.0-rc.1 (0.9.7), whose backups do not record the
 # structure of their tables: the restore must then leave the tables of the disabled app out
 # with --skip-missing-tables, as for a real backup made before 1.0.0-rc.2.
@@ -135,6 +137,12 @@ RUN_OUT=$(run_on ngb-frt-origin backup:run offsite -l disaster-test)
 SNAP=$(printf '%s\n' "$RUN_OUT" | head -1 | awk -F'snapshot ' '{print $2}' | tr -d ',')
 [ -n "$SNAP" ] || fail "no snapshot id from backup:run"
 ok "test data backed up, snapshot $SNAP"
+if [ "$MODE" = salvage ]; then
+	# The database dump of this snapshot damaged on the location: a byte flipped in its manifest
+	docker exec -u www-data ngb-frt-origin php -r '$p = "/mnt/shared/repo/db/" . $argv[1]; $d = file_get_contents($p); $i = intdiv(strlen($d), 2); $d[$i] = ~$d[$i]; file_put_contents($p, $d);' "$SNAP" \
+		|| fail "damage the database dump"
+	ok "database dump of the snapshot damaged on the location"
+fi
 
 docker cp ngb-frt-origin:/tmp/kit.json /tmp/ngb-frt-kit.json
 docker exec ngb-frt-origin sh -c "cat /tmp/pass" > /tmp/ngb-frt-pass
@@ -163,6 +171,30 @@ printf '%s\n' "$LIST_OUT" | grep -q "$SNAP" || {
 	fail "the origin's snapshot is not listed after connecting the location"
 }
 ok "recovery kit imported, existing repository adopted, snapshot visible"
+
+if [ "$MODE" = salvage ]; then
+	set +e
+	OUT=$(run_on ngb-frt-restore backup:restore:full offsite "$SNAP" --no-interaction 2>&1); CODE=$?
+	set -e
+	[ "$CODE" = 1 ] || { printf '%s\n' "$OUT" | tail -20; fail "a restore with a damaged database dump did not stop (exit $CODE)"; }
+	printf '%s\n' "$OUT" | grep -- "--salvage" >/dev/null || { printf '%s\n' "$OUT" | tail -20; fail "the stopped restore does not point at --salvage"; }
+	run_on ngb-frt-restore status 2>&1 | grep "maintenance: false" >/dev/null || fail "maintenance mode stayed on after a restore that changed nothing"
+	ok "damaged database dump: the restore stops before changing anything and points at --salvage"
+	set +e
+	OUT=$(run_on ngb-frt-restore backup:restore:full offsite "$SNAP" --no-interaction --salvage 2>&1); CODE=$?
+	set -e
+	[ "$CODE" = 2 ] || { printf '%s\n' "$OUT" | tail -30; fail "restore:full --salvage exited with $CODE, not 2"; }
+	SALVAGE=/var/www/html/data/ngb-salvage-${SNAP:0:12}
+	printf '%s\n' "$OUT" | grep "$SALVAGE" >/dev/null || { printf '%s\n' "$OUT" | tail -30; fail "the output does not name the salvage folder"; }
+	[ "$(docker exec ngb-frt-restore cat "$SALVAGE/data/frtest/files/Docs/note.txt")" = "hello disaster recovery" ] || fail "the user's file is not in the salvage folder"
+	docker exec ngb-frt-restore test -f "$SALVAGE/config/config.php" || fail "config.php is not in the salvage folder"
+	run_on ngb-frt-restore user:list | grep frtest >/dev/null && fail "the fresh database was changed (the backed-up user is there)"
+	run_on ngb-frt-restore status 2>&1 | grep "maintenance: false" >/dev/null || fail "maintenance mode is still on after the salvage"
+	run_on ngb-frt-restore backup:status >/dev/null || fail "backup:status fails after the salvage"
+	ok "with --salvage: the fresh database untouched, data and config of the backup in $SALVAGE (exit 2)"
+	echo "FULL RESTORE ROUNDTRIP PASS ($DB, salvage)"
+	exit 0
+fi
 
 RESTORE_OPTS=(--no-interaction --install-apps)
 if [ "$LEGACY" = legacy ] && [ "$DB" != sqlite ]; then

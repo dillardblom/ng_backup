@@ -109,6 +109,23 @@ the end of the restore, install those afterwards.
 If occ then says that Nextcloud or one of the apps requires an upgrade, the database is already
 the old server's: run `occ upgrade` first, then the same command with `--force`.
 
+**If the backup itself is damaged** (the restore stops with "Decryption failed", "Blob
+verification failed" or a file that is missing on the location), try an older restore point
+first. If none is better, `--salvage` restores whatever can be read:
+
+    occ backup:restore:full offsite <snapshot> --install-apps --salvage
+
+- Files that cannot be read are left out and listed at the end; everything else is restored.
+- If the database cannot be restored (its dump is damaged, or it does not fit this
+  installation), the database stays as the fresh installation made it, and the data directory
+  and config of the backup go to a folder of their own in the data directory,
+  `ngb-salvage-<snapshot>`. Each user's files are in `data/<user>/files` there: create the users
+  again and copy their files back by hand (then `occ files:scan --all`). Calendars, contacts and
+  shares are in the database and cannot be recovered this way.
+
+The command then ends with exit code 2 instead of 0. The same option exists for
+`occ backup:restore`, to restore single folders.
+
 **9. After the restore.** These worked in our tests:
 
     occ upgrade
