@@ -48,6 +48,7 @@ final class AdminApiController extends Controller {
 		private \OCA\NgBackup\Service\KeySlotService $slots,
 		private \OCA\NgBackup\Service\PruneService $prune,
 		private \OCA\NgBackup\Service\Schedule $schedule,
+		private \OCA\NgBackup\Service\CronHealth $cron,
 	) {
 		parent::__construct(Application::APP_ID, $request);
 	}
@@ -75,7 +76,34 @@ final class AdminApiController extends Controller {
 			'recentDays' => \OCA\NgBackup\Command\Status::RECENT_DAYS,
 			'schedule' => $this->schedule->get()['time'],
 			'scheduleTimezone' => $this->schedule->get()['timezone'],
+			'cron' => $this->cron->check(),
 		]);
+	}
+
+	/** Seconds of backup work one tick() does: well within a normal web request. */
+	public const TICK_SECONDS = 10.0;
+
+	/**
+	 * Move running backups forward from the open admin page, when background jobs do not run on a
+	 * working system cron (#13). The page calls this while a backup runs, so "Back up now" works
+	 * without cron as long as the page stays open; scheduled backups still need cron. With a
+	 * working system cron this does nothing: the background job does the work.
+	 */
+	public function tick(): JSONResponse {
+		if ($this->cron->check()['ok']) {
+			return new JSONResponse(['stepped' => 0]);
+		}
+		$deadline = microtime(true) + self::TICK_SECONDS;
+		$stepped = 0;
+		foreach ($this->runs->findRunning(null, BackupService::KIND_FULL) as $run) {
+			if (microtime(true) >= $deadline) {
+				break;
+			}
+			// step() returns at once when the background job (or another tab) holds the run.
+			$this->backups->step($run, $deadline);
+			$stepped++;
+		}
+		return new JSONResponse(['stepped' => $stepped]);
 	}
 
 	#[PasswordConfirmationRequired]
@@ -313,6 +341,7 @@ final class AdminApiController extends Controller {
 		return ['id' => $r->getId(), 'targetId' => $r->getTargetId(), 'kind' => $r->getKind(), 'status' => $r->getStatus(),
 			'phase' => $r->getPhase(), 'snapshotId' => $r->getSnapshotId(), 'snapshot' => $snapshot, 'startedAt' => $r->getStartedAt(),
 			'updatedAt' => $r->getUpdatedAt(), 'finishedAt' => $r->getFinishedAt(), 'error' => $r->getError(),
-			'stats' => json_decode($r->getStats() ?? 'null', true), 'progress' => \OCA\NgBackup\Job\BackupRun::progressOf($r)];
+			'stats' => json_decode($r->getStats() ?? 'null', true), 'progress' => \OCA\NgBackup\Job\BackupRun::progressOf($r),
+			'waitingFor' => $r->getKind() === BackupService::KIND_FULL ? \OCA\NgBackup\Service\CronHealth::waitingFor($r) : null];
 	}
 }

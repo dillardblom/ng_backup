@@ -12,11 +12,22 @@
 			</p>
 			<NcLoadingIcon v-if="!status" :size="32" />
 			<NcNoteCard v-if="error" type="error">{{ error }}</NcNoteCard>
+			<NcNoteCard v-if="status && !status.cron.ok" type="warning">
+				<p>
+					{{ status.cron.stopped
+						? t('ng_backup', 'Background jobs are set to system cron, but cron has not run since {time}.', { time: lastCron })
+						: t('ng_backup', 'Background jobs do not run on a system cron (they are set to "{mode}").', { mode: status.cron.mode === 'webcron' ? 'Webcron' : 'AJAX' }) }}
+					{{ t('ng_backup', 'Backups need a system cron that runs every 5 minutes, also the scheduled ones.') }}
+					<a :href="status.cron.docs" target="_blank" rel="noopener noreferrer">{{ t('ng_backup', 'How to set up cron ↗') }}</a>
+				</p>
+				<p>{{ t('ng_backup', 'Until then, a backup started with "Back up now" only moves on while this page is open.') }}</p>
+			</NcNoteCard>
 		</NcSettingsSection>
 
 		<template v-if="status">
 			<div class="ngb-tabs">
 				<NcButton :variant="tab === 'backup' ? 'primary' : 'secondary'" @click="tab = 'backup'">{{ t('ng_backup', 'Backup and restore') }}</NcButton>
+				<NcButton v-if="status.key.everConfirmed && status.targets.length" :variant="tab === 'bin' ? 'primary' : 'secondary'" @click="tab = 'bin'">{{ t('ng_backup', 'Bin') }}</NcButton>
 				<NcButton :variant="tab === 'settings' ? 'primary' : 'secondary'" @click="tab = 'settings'">{{ t('ng_backup', 'Settings') }}</NcButton>
 				<NcButton :variant="tab === 'docs' ? 'primary' : 'secondary'" @click="tab = 'docs'">{{ t('ng_backup', 'Docs') }}</NcButton>
 			</div>
@@ -29,6 +40,7 @@
 					</li>
 				</ul>
 			</NcSettingsSection>
+			<Bin v-else-if="tab === 'bin' && status.key.everConfirmed && status.targets.length" :status="status" @changed="refresh" />
 			<template v-else-if="tab === 'settings'">
 				<KeySetup :status="status" @changed="refresh" />
 				<Locations v-if="status.key.everConfirmed" :status="status" @changed="refresh" />
@@ -46,7 +58,7 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { t } from '@nextcloud/l10n'
 import NcButton from '@nextcloud/vue/components/NcButton'
 import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
@@ -54,6 +66,7 @@ import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import NcSettingsSection from '@nextcloud/vue/components/NcSettingsSection'
 import api from './api.js'
 import Backups from './components/Backups.vue'
+import Bin from './components/Bin.vue'
 import KeySetup from './components/KeySetup.vue'
 import Locations from './components/Locations.vue'
 import RestoreBrowser from './components/RestoreBrowser.vue'
@@ -105,12 +118,26 @@ async function refresh() {
 	} catch (e) {
 		error.value = e.message
 	}
-	// Poll while something runs, so progress shows up without reloading.
+	// Poll while something runs, so progress shows up without reloading. Without a working
+	// system cron, each poll also lets a running backup take a short step (see tick()).
 	clearTimeout(timer)
 	if (status.value?.runs.some(r => r.status === 'running')) {
-		timer = setTimeout(refresh, 4000)
+		timer = setTimeout(tickAndRefresh, 4000)
 	}
 }
+
+async function tickAndRefresh() {
+	if (status.value && !status.value.cron.ok && status.value.runs.some(r => r.status === 'running' && r.kind === 'full')) {
+		try {
+			await api.tick()
+		} catch (e) {
+			// The next poll tries again; the error of a failed step shows on its run.
+		}
+	}
+	await refresh()
+}
+
+const lastCron = computed(() => status.value?.cron.lastRun ? new Date(status.value.cron.lastRun * 1000).toLocaleString() : '')
 
 onMounted(refresh)
 onBeforeUnmount(() => clearTimeout(timer))

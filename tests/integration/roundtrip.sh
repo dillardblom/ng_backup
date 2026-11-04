@@ -25,7 +25,8 @@ ok "location added"
 
 # Test data: a user with files.
 $X sh -c "OC_PASS='Roundtrip-pw-2026' php occ user:add --password-from-env $U >/dev/null"
-$X sh -c "mkdir -p $DATA/$U/files/Docs/Sub && for i in 1 2 3 4 5; do head -c 300000 /dev/urandom > $DATA/$U/files/Docs/f\$i.bin; done; echo hello > $DATA/$U/files/Docs/Sub/note.txt; head -c 6000000 /dev/urandom > $DATA/$U/files/big.bin"
+# large.bin (40 MB) fills more than one pack: a restore to a directory reads ahead over several ranges
+$X sh -c "mkdir -p $DATA/$U/files/Docs/Sub && for i in 1 2 3 4 5; do head -c 300000 /dev/urandom > $DATA/$U/files/Docs/f\$i.bin; done; echo hello > $DATA/$U/files/Docs/Sub/note.txt; head -c 6000000 /dev/urandom > $DATA/$U/files/big.bin; head -c 40000000 /dev/urandom > $DATA/$U/files/large.bin"
 occ files:scan "$U" >/dev/null
 SUM_BEFORE=$($X sh -c "cd $DATA/$U/files && find . -type f -print0 | sort -z | xargs -0 md5sum | md5sum")
 
@@ -56,9 +57,46 @@ occ backup:restore ci "$SNAP" "data/$U/files/Docs/f2.bin" -d /tmp/ngb-rt-one | g
 $X sh -c "cmp -s $ONE/f2.bin $DATA/$U/files/Docs/f2.bin" || fail "the file restored to a directory differs"
 $X sh -c "ls -A $ONE | grep -q ngb-restore" && fail "the temporary of a stopped restore was left"
 ok "restore of one file to a directory; the temporary of a stopped restore removed"
+
+# All of the user's files to a directory: over S3 and SFTP the packs are read ahead
+occ backup:restore ci "$SNAP" "data/$U/files" -d /tmp/ngb-rt-dir >/dev/null || fail "restore of a folder to a directory"
+SUM_DIR=$($X sh -c "cd /tmp/ngb-rt-dir/data/$U/files && find . -type f -print0 | sort -z | xargs -0 md5sum | md5sum")
+[ "$SUM_BEFORE" = "$SUM_DIR" ] || fail "the files restored to a directory differ"
+$X sh -c "ls -A /tmp/ngb-rt-dir | grep -q ngb-restore-spool" && fail "the read-ahead spool was left in the directory"
+$X sh -c "rm -rf /tmp/ngb-rt-dir"
+ok "restore of all the user's files to a directory: identical, no spool left"
 # not grep -q: it stops reading at the first match, and occ, still writing, then fails (pipefail)
 occ backup:status | grep "started (" >/dev/null || fail "backup:status does not name the time zone"
 ok "backup:status names the time zone of its times"
+
+# Without a system cron (#13): backup:status warns, and the open admin page moves a backup started
+# with "Back up now" forward through /api/tick. Nothing runs cron in this container, so only the
+# ticks below can finish this backup.
+occ background:ajax >/dev/null
+occ backup:status | grep "do not run on a system cron" >/dev/null || fail "backup:status gives no warning without system cron"
+ADM=ngbadmin-$RANDOM; ADM_PW="Tick-admin-pw-$RANDOM-2026"
+$X sh -c "OC_PASS='$ADM_PW' php occ user:add --password-from-env --group=admin $ADM >/dev/null"
+api() { $X curl -sf -u "$ADM:$ADM_PW" -H 'OCS-APIRequest: true' -H 'Content-Type: application/json' "$@"; }
+API=http://localhost/index.php/apps/ng_backup/api
+STATUS=$(api "$API/status") || fail "status API"
+echo "$STATUS" | php -r '$s = json_decode(stream_get_contents(STDIN), true); exit(!$s["cron"]["ok"] && $s["cron"]["mode"] === "ajax" && $s["cron"]["docs"] !== "" ? 0 : 1);' || fail "status API does not report the missing cron"
+TID=$(echo "$STATUS" | php -r 'echo json_decode(stream_get_contents(STDIN), true)["targets"][0]["id"];')
+RUN=$(api -X POST -d "{\"targetId\": $TID, \"label\": \"page\"}" "$API/backups" | php -r 'echo json_decode(stream_get_contents(STDIN), true)["id"];') || fail "start a backup through the API"
+for i in $(seq 1 60); do
+  api -X POST "$API/tick" >/dev/null || fail "tick"
+  RS=$(api "$API/status" | php -r '$s = json_decode(stream_get_contents(STDIN), true); foreach ($s["runs"] as $r) { if ($r["id"] == '"$RUN"') { echo $r["status"]; } }')
+  [ "$RS" = running ] || break
+done
+[ "$RS" = done ] || fail "the backup started through the API ended as '$RS' after $i ticks"
+occ backup:list ci | grep " page " >/dev/null || fail "the snapshot of the ticked backup is not listed"
+ok "without system cron: warning in backup:status and the API, backup finished by $i ticks of the open page"
+occ background:cron >/dev/null
+$X php -f /var/www/html/cron.php >/dev/null 2>&1 || true
+occ backup:status | grep "system cron" >/dev/null && fail "backup:status still warns after cron ran"
+sleep 8 # APCu app config cache of the web server
+api "$API/status" | php -r 'exit(json_decode(stream_get_contents(STDIN), true)["cron"]["ok"] ? 0 : 1);' || fail "the status API still reports a missing cron after cron ran"
+ok "with a system cron that ran: no warning in backup:status or the API"
+occ user:delete "$ADM" >/dev/null
 
 # Checksum audit: shallow (index presence) and deep (download, decrypt, verify every blob).
 occ backup:verify ci "$SNAP" | grep "^OK$" >/dev/null || fail "shallow verify"
@@ -71,12 +109,38 @@ ok "database dump and restore"
 
 # Retention, trash and catalog.
 occ backup:retention --last=1 --daily=0 --weekly=0 --monthly=0 >/dev/null
-occ backup:prune ci | grep "forgot 1" >/dev/null || fail "prune"
+occ backup:prune ci | grep "forgot 2" >/dev/null || fail "prune" # first and second; "page" (above) is the last
 occ backup:trash ci | grep " first " >/dev/null || fail "trash"
 TID=$(occ backup:trash ci | awk -F'|' '!f && / first /{gsub(/ /,"",$3); print $3; f=1}')
 occ backup:trash:restore ci "$TID" >/dev/null || fail "trash restore"
 [ "$(occ backup:list ci | grep -c ' ci ')" = "2" ] || fail "snapshot not back from the trash"
 ok "retention, trash and restore from trash"
+
+# Damaged data on the location (last: the location is not used after this). A byte flipped every
+# MiB of every pack hits big.bin (6 MB) for sure; a small file mostly survives. Without --salvage
+# the restore stops and points at --salvage; with it, the rest is restored and the damage listed.
+if [[ "$TARGET_ARGS" == local* ]]; then
+  # "second" went to the trash above: the backup of the page is still there
+  SNAP=$(occ backup:list ci | awk -F'|' '!f && / page /{gsub(/ /,"",$3); print $3; f=1}')
+  [ -n "$SNAP" ] || fail "the snapshot of the ticked backup is not listed"
+  $X php -r 'foreach (glob("/tmp/ngb-rt-target/repo/packs/*/*") as $p) { $h = fopen($p, "r+b"); for ($o = 4096; $o < filesize($p); $o += 1048576) { fseek($h, $o); $b = fread($h, 1); fseek($h, $o); fwrite($h, ~$b); } fclose($h); }'
+  set +e
+  OUT=$(occ backup:restore ci "$SNAP" "data/$U/files" -d /tmp/ngb-rt-salvage 2>&1); CODE=$?
+  set -e
+  [ "$CODE" = 1 ] || { echo "$OUT"; fail "a restore of damaged data did not stop (exit $CODE)"; }
+  echo "$OUT" | grep -- "--salvage" >/dev/null || { echo "$OUT"; fail "the stopped restore does not point at --salvage"; }
+  set +e
+  OUT=$(occ backup:restore ci "$SNAP" "data/$U/files" -d /tmp/ngb-rt-salvage --salvage 2>&1); CODE=$?
+  set -e
+  [ "$CODE" = 2 ] || { echo "$OUT"; fail "restore --salvage of damaged data exited with $CODE, not 2"; }
+  echo "$OUT" | grep "data/$U/files/big.bin: " >/dev/null || { echo "$OUT"; fail "the damaged big.bin is not listed"; }
+  N=$(echo "$OUT" | sed -n 's/^Restored \([0-9]*\) files.*/\1/p')
+  [ "${N:-0}" -ge 1 ] || { echo "$OUT"; fail "restore --salvage restored nothing"; }
+  $X sh -c "test ! -e /tmp/ngb-rt-salvage/data/$U/files/big.bin" || fail "the damaged big.bin was written anyway"
+  $X sh -c "find /tmp/ngb-rt-salvage -name '*.ngb-restore-*' | grep -q ." && fail "a temporary of a damaged file was left"
+  ok "damaged data: the restore stops and points at --salvage; with --salvage $N files restored and the damaged ones listed (exit 2)"
+  $X sh -c "rm -rf /tmp/ngb-rt-salvage"
+fi
 
 # No errors caused by loading files_external while it is disabled (its tables may not exist).
 if $X sh -c "grep -q 'external_mounts' $DATA/nextcloud.log 2>/dev/null"; then fail "files_external table errors in the log"; fi

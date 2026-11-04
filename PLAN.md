@@ -392,6 +392,20 @@ in README "Known limitations":
   gids (SFTP, Storage Box) → rc4 uitbrengen en om tests vragen → zelf een volledige DR van een
   productie-instantie van ~250 GB via S3 en via SMB. Drie volledige DR-restores vóór 1.0.0.
   Problemen of meldingen van gebruikers: rc5.
+- **1.0.2** (plan akkoord 2026-11-04): punten 1, 2 en 5 hieronder, de Bin, nieuwe screenshots en
+  het polish-punt over de schatting van `target:add`. Besluiten 2026-11-04:
+  - `--salvage` haalt ook bij een kapotte database terug wat kan: bestanden zijn per gebruiker
+    gescheiden en het waardevolst. Kan de database niet terug (dump onleesbaar, of past niet op
+    deze installatie), dan blijft de verse database staan en gaan data en config van de backup
+    naar `<datadir>/ngb-salvage-<snapshot>/`; vanaf daar is het handwerk. Exitcode 2.
+  - De DR-test met een backup mét tabelstructuur, zonder `--skip-missing-tables` (punt 3), is
+    nog niet gedaan en wordt ingepland vóór de release van 1.0.2.
+  Stand 2026-11-04 (lokaal op `polish`, niet gepusht): cron-waarschuwing + tick vanaf de pagina +
+  voortgang van de db-fase; `--salvage` voor `backup:restore` en `backup:restore:full`; S3
+  vooruitlezen (8 ranges tegelijk, met `SaveAs` naar de spool); SMB in leesacties van 8 MiB
+  (gemeten met netem, 130 ms RTT: 4,5 → 18 MiB/s per leesactie; een volledige restore over SMB
+  met vertraging is nog niet gemeten); Bin-tabblad; schatting `target:add`. Nog te doen:
+  screenshots, DR-test, release.
 - **1.0.1** (uitgebracht 2026-11-01): alleen de kleine punten (besluit 2026-10-30): 4, 6–13. Punten 1, 2 en 5 gaan naar
   1.0.2 (README-roadmap aangepast); punt 3 is een test, ingepland voor de week van 2 november,
   niet aangekondigd en los van de release. Voor 1.0.2 ook: nieuwe screenshots (het labelveld bij

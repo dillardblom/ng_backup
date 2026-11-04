@@ -11,6 +11,33 @@ Each heading starts with that `<version>`, once: the app store shows a release t
 whose heading starts with its `x.y.z` and ignores anything after it, so `## [1.0.0-rc.6]` would be
 shown under 1.0.0. The git tag of a release candidate goes after the date.
 
+## [1.0.2] - unreleased
+
+### Added
+- A warning on the admin page and in `occ backup:status` when background jobs do not run on a
+  system cron, or the cron stopped, with a link to how to set one up. Backups, also the scheduled
+  ones, need it (#13).
+- Without a working system cron, a backup started with "Back up now" moves on while the NG Backup
+  page stays open (#13).
+- `--salvage` for `occ backup:restore` and `occ backup:restore:full`: restore whatever can be
+  read when a backup is damaged. Files that cannot be read or decrypted are left out and listed,
+  and the command exits with code 2. When the database cannot be restored, `backup:restore:full`
+  leaves the fresh database as it is and puts the data directory and config of the backup in
+  `ngb-salvage-<snapshot>` in the data directory, to put back by hand.
+- The trash of restore points has a tab of its own, "Bin", instead of being shown below the
+  backups.
+
+### Changed
+- A backup in its database phase shows how far it is, for example "running (db: 47/183 tables)",
+  and one that has not moved for 15 minutes says "waiting for background jobs" with when it last
+  took a step. Before, it only said "running (db)", which looked the same as being stuck (#13).
+- Full restores from S3 read the packs ahead, eight ranges at a time, as restores over SFTP do
+  since 1.0.0-rc.4. Over SMB the packs are read in 8 MiB reads instead of 1 MiB: over a line with
+  a 130 ms round trip, reading was four times faster in a test (18 instead of 4.5 MiB/s).
+- `occ backup:target:add` only estimates the time left for reading the index once enough of it
+  is in. The first file also carries the time to connect, which made it say "about 642 min left"
+  for something done within a minute.
+
 ## [1.0.1] - 2026-11-01
 
 Fixes for what was reported after 1.0.0 (#22, #24) and small improvements. Nothing changes in

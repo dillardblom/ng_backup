@@ -18,34 +18,6 @@
 		</div>
 		<NcNoteCard v-if="error" type="error">{{ error }}</NcNoteCard>
 
-		<template v-for="target in status.targets" :key="'trash' + target.id">
-			<div v-if="trash[target.id]?.length" class="ngb-trash">
-				<h3>{{ t('ng_backup', 'Trash of {name}', { name: target.name }) }}</h3>
-				<p class="ngb-muted">{{ t('ng_backup', 'Removed restore points can be brought back until they are deleted permanently.') }}</p>
-				<ul>
-					<li v-for="item in trash[target.id]" :key="item.id">
-						{{ item.time ? formatDateTime(item.time) : item.id }}{{ item.label ? ' – ' + item.label : '' }}
-						<span class="ngb-muted">{{ t('ng_backup', 'removed by {by}, deleted after {date}', { by: item.by, date: formatDate(item.deleteAfter) }) }}</span>
-						<button v-if="item.by === RETENTION"
-							class="ngb-info"
-							:aria-expanded="retentionInfo ? 'true' : 'false'"
-							:aria-label="t('ng_backup', 'What does this mean?')"
-							:title="t('ng_backup', 'What does this mean?')"
-							@click="retentionInfo = !retentionInfo">
-							ⓘ
-						</button>
-						<NcButton variant="tertiary" @click="untrash(target, item)">{{ t('ng_backup', 'Restore') }}</NcButton>
-					</li>
-				</ul>
-				<NcNoteCard v-if="retentionInfo && trash[target.id].some(item => item.by === RETENTION)" type="info">
-					{{ n('ng_backup',
-						'The retention policy keeps the newest restore points, and for older days, weeks and months only the last restore point of each. It moves the others to this trash, where they stay for %n day before they are deleted permanently. Until then you can bring one back with "Restore". Nothing was lost by accident.',
-						'The retention policy keeps the newest restore points, and for older days, weeks and months only the last restore point of each. It moves the others to this trash, where they stay for %n days before they are deleted permanently. Until then you can bring one back with "Restore". Nothing was lost by accident.',
-						status.key.deleteDelayDays) }}
-				</NcNoteCard>
-			</div>
-		</template>
-
 		<div v-if="status.runs.length" class="ngb-table-wrap">
 			<table class="ngb-table">
 				<thead>
@@ -66,7 +38,7 @@
 						<td>{{ targetName(run.targetId) }}</td>
 						<td>{{ run.kind }}</td>
 						<td>{{ run.snapshot ? formatDateTime(run.snapshot.createdAt) + (run.snapshot.label ? ' – ' + run.snapshot.label : '') : '' }}</td>
-						<td :class="'ngb-' + run.status">{{ run.status }}{{ run.status === 'running' ? ' (' + run.phase + percent(run) + ')' : '' }}{{ run.error ? ': ' + run.error : '' }}</td>
+						<td :class="'ngb-' + run.status">{{ runStatus(run) }}{{ run.error ? ': ' + run.error : '' }}</td>
 						<td>{{ run.stats?.files?.files ?? run.stats?.restored ?? '' }}</td>
 						<td>{{ run.stats?.files ? formatSize(run.stats.files.bytes) : '' }}</td>
 						<td>{{ run.stats?.files ? formatSize(run.stats.files.uploaded) : '' }}</td>
@@ -95,9 +67,7 @@ import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import NcSettingsSection from '@nextcloud/vue/components/NcSettingsSection'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
 import api from '../api.js'
-import { formatDateTime, formatDate, formatSize, toZone } from '../format.js'
-import { confirmPassword } from '@nextcloud/password-confirmation'
-import { reactive } from 'vue'
+import { formatDateTime, formatSize, toZone } from '../format.js'
 
 const props = defineProps({ status: { type: Object, required: true }, allRuns: { type: Boolean, default: false } })
 const emit = defineEmits(['changed', 'show-all-runs'])
@@ -110,35 +80,29 @@ const error = ref('')
 watch(() => [props.status.schedule, props.status.scheduleTimezone], ([s]) => { schedule.value = shown(s) })
 
 const label = ref('')
-// "by" of a restore point the weekly cleanup removed (PruneService)
-const RETENTION = 'retention policy'
-const retentionInfo = ref(false)
-const trash = reactive({})
-async function loadTrash() {
-	for (const target of props.status.targets) {
-		try {
-			trash[target.id] = await api.trash(target.id)
-		} catch (e) {
-			trash[target.id] = []
-		}
-	}
-}
-watch(() => props.status.targets.map(tg => tg.id).join(','), loadTrash, { immediate: true })
 
-async function untrash(target, item) {
-	error.value = ''
-	try {
-		await confirmPassword()
-		await api.untrash(target.id, item.id)
-		await loadTrash()
-		emit('changed')
-	} catch (e) {
-		error.value = e?.message || ''
+// ": 47/183 tables" in the database phase; " 68%", or " ~68%" when the total is estimated from
+// Nextcloud's file cache (first backup)
+const percent = (run) => {
+	if (!run.progress) {
+		return ''
 	}
+	if (run.progress.totalTables) {
+		return ': ' + t('ng_backup', '{done}/{total} tables', { done: run.progress.tables, total: run.progress.totalTables })
+	}
+	return ' ' + (run.progress.approximate ? '~' : '') + Math.floor(run.progress.fraction * 100) + '%'
 }
-
-// " 68%", or " ~68%" when the total is estimated from Nextcloud's file cache (first backup)
-const percent = (run) => run.progress ? ' ' + (run.progress.approximate ? '~' : '') + Math.floor(run.progress.fraction * 100) + '%' : ''
+// "running (db: 47/183 tables)", or "waiting for background jobs (…, last step 12 min ago)"
+const runStatus = (run) => {
+	if (run.status !== 'running') {
+		return run.status
+	}
+	const detail = run.phase + percent(run)
+	if (run.waitingFor) {
+		return t('ng_backup', 'waiting for background jobs ({detail}, last step {minutes} min ago)', { detail, minutes: Math.floor(run.waitingFor / 60) })
+	}
+	return run.status + ' (' + detail + ')'
+}
 const isRunning = (targetId) => props.status.runs.some(r => r.targetId === targetId && r.kind === 'full' && r.status === 'running')
 const targetName = (id) => props.status.targets.find(tg => tg.id === id)?.name ?? '#' + id
 
@@ -168,13 +132,10 @@ async function saveSchedule() {
 .ngb-row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
 .ngb-time { max-width: 260px; }
 .ngb-label { max-width: 360px; }
-.ngb-info { background: none; border: none; padding: 0 4px; min-height: auto; cursor: pointer; color: var(--color-primary-element); }
 .ngb-table-wrap { overflow-x: auto; }
 .ngb-table { width: 100%; border-collapse: collapse; }
 .ngb-table th, .ngb-table td { text-align: start; padding: 4px 8px; border-bottom: 1px solid var(--color-border); }
 .ngb-failed { color: var(--color-error-text); }
 .ngb-muted { color: var(--color-text-maxcontrast); }
-.ngb-trash { margin: 12px 0; }
-.ngb-trash h3 { font-weight: bold; }
 .ngb-done { color: var(--color-success-text); }
 </style>

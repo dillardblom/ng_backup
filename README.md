@@ -42,7 +42,8 @@ Need help restoring a backup after a crash? Ensembia offers paid restore assista
   background job, so a backup only moves forward when that job runs. Choosing "Cron" under
   **Administration settings → Basic settings → Background jobs** is not enough on its own: it
   tells Nextcloud that the system will call it, so you also need a cron line that does. Without
-  it a backup stays at "running (db)", and so does one started with "Back up now".
+  it scheduled backups do not run; the admin page and `occ backup:status` warn about it, and a
+  backup started with "Back up now" only moves on while the NG Backup page stays open.
   `occ backup:run` in a terminal works without cron (it runs in the foreground).
   - Regular server: `crontab -u www-data -e` and add
     `*/5 * * * * php -f /var/www/nextcloud/cron.php` (your Nextcloud path).

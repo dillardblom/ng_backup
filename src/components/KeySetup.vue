@@ -12,7 +12,7 @@
 			<NcPasswordField v-model="pass2" :label="t('ng_backup', 'Repeat passphrase')" autocomplete="new-password"
 				:error="pass2 !== '' && pass1 !== pass2" :helper-text="pass2 !== '' && pass1 !== pass2 ? t('ng_backup', 'The passphrases do not match') : ''" />
 			<NcTextField v-model="delay" type="number" min="1" max="365"
-				:label="t('ng_backup', 'Days a removed backup stays in the trash before it is really deleted')"
+				:label="t('ng_backup', 'Days a removed backup stays in the Bin before it is really deleted')"
 				:helper-text="t('ng_backup', 'Protects against a malicious or mistaken cleanup. Cannot be changed later.')" />
 			<NcButton type="submit" variant="primary" :disabled="busy || pass1.length < 16 || pass1 !== pass2 || !(delay >= 1 && delay <= 365)">
 				{{ t('ng_backup', 'Create backup key') }}
@@ -22,7 +22,7 @@
 		<template v-else>
 			<p>
 				{{ t('ng_backup', 'Key fingerprint: {fingerprint}', { fingerprint: status.key.fingerprint }) }} ·
-				{{ t('ng_backup', 'Removed backups are kept in the trash for {days} days', { days: status.key.deleteDelayDays }) }}
+				{{ t('ng_backup', 'Removed backups are kept in the Bin for {days} days', { days: status.key.deleteDelayDays }) }}
 			</p>
 
 			<!-- Passphrase slots -->
