@@ -407,6 +407,14 @@ in README "Known limitations":
     `--skip-missing-tables`; daarna `--salvage` op een deel van de bestanden (moet hetzelfde
     resultaat geven, exitcode 0). Uitvoeren met Dillard, die VM 980 klaarzet; deze week, vóór
     de release. Screenshots akkoord (2026-11-04).
+  **DR-test 1.0.2 over SMB (VM 980, snapshot a86271ed van nc01, 983 GiB, gestart 2026-11-04):**
+  index lezen 8 uur (~1 bestand/s; daarna versneld naar 0,66 s/bestand, gemeten vanaf VM 980);
+  restore zonder opties (geen `--install-apps`, geen `--skip-missing-tables`) liep ~12 MiB/s
+  (SFTP eerder 2,8-7,6; SMB vóór 1.0.2 2,6). Na 392 GiB viel de SMB-verbinding weg en bleef de
+  restore op 100% CPU hangen: de smbclient-extensie geeft bij een mislukte read een string met
+  lengte -1. Opgelost (controle + nieuwe verbinding), plus hervatten: `--force` laat bestanden met
+  dezelfde grootte en mtime staan. Hervat 2026-11-05 07:21 UTC na `maintenance:mode --off`
+  volgens de gids; binnen 10 min voorbij de 392 GiB. SMB op sub5 na de test weer uitzetten.
   Stand 2026-11-04 (`polish`, gepusht): cron-waarschuwing + tick vanaf de pagina +
   voortgang van de db-fase; `--salvage` voor `backup:restore` en `backup:restore:full`; S3
   vooruitlezen (8 ranges tegelijk, met `SaveAs` naar de spool); SMB in leesacties van 8 MiB
