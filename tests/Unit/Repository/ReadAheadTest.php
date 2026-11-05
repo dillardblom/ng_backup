@@ -75,11 +75,14 @@ class ReadAheadTest extends TestCase {
 		$this->assertSame(2, $backend->snapshotReads, 'the restore itself read the snapshot again');
 	}
 
-	public function testTheEmptySpoolOfAStoppedRestoreIsRemoved(): void {
+	public function testTheSpoolOfAStoppedRestoreIsRemoved(): void {
 		$target = $this->tempDir();
 		mkdir("$target/.ngb-restore-spool-0badc0de", 0700); // a restore that was killed
+		mkdir("$target/.ngb-restore-spool-8badf00d", 0700); // ... while it wrote a range
+		file_put_contents("$target/.ngb-restore-spool-8badf00d/smb-01234567", str_repeat('x', 4096));
 
 		$this->assertRestored($this->restore(new ReadAheadBackend(new LocalBackend($this->root)), '', $target));
+		$this->assertSame([], glob("$target/.ngb-restore-spool-*"));
 	}
 
 	public function testARangeThatCouldNotBeReadAheadIsReadTheUsualWay(): void {

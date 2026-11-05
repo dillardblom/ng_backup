@@ -103,7 +103,9 @@ mode on yourself before, it stays on: switch it off with `occ maintenance:mode -
 If it stops halfway, maintenance mode stays on (the instance may be partly restored). Fix the cause,
 then switch maintenance mode off and run the restore again with `--force`, in one line (the message
 prints it): `occ maintenance:mode --off && occ backup:restore:full <location> <snapshot> --force`.
-Leave out `--install-apps` this time, so that the instance is open only for the seconds until the
+It goes on where it stopped: data files that are already in place with the size and modification
+time of the backup are left, so only the rest comes from the location again (since 1.0.2; before,
+it started over). The database is restored again in full, which takes minutes. Leave out `--install-apps` this time, so that the instance is open only for the seconds until the
 restore has switched maintenance mode on again; apps the first run could not install are listed at
 the end of the restore, install those afterwards.
 If occ then says that Nextcloud or one of the apps requires an upgrade, the database is already

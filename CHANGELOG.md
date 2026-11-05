@@ -35,9 +35,18 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
   since 1.0.0-rc.4. Over SMB the packs are read in 8 MiB reads instead of 1 MiB: over a line with
   a 130 ms round trip, reading was four times faster in a test (18 instead of 4.5 MiB/s).
 - Over SMB the index files, which a new server reads in `backup:target:add`, take fewer round
-  trips: from Canada to a Hetzner Storage Box (130 ms),
-  0.66 instead of 1.05 s per file, so about 5 instead of 8 hours for the 27,000 index files of a
-  1 TB repository.
+  trips: from Canada to a Hetzner Storage Box (130 ms), 0.66 instead of 1.05 s per file, so about
+  5 instead of 8 hours for the 27,000 index files of a 1 TB repository.
+- `occ backup:restore:full` that runs again after it stopped (`--force`) goes on where it was: data
+  files already in place with the size and modification time of the backup are left, and only
+  the rest is read from the location. Before, a stopped restore of 1 TB started over.
+
+### Fixed
+- A full restore over SMB could hang at 100% CPU when the connection to the server dropped: a
+  failed read was counted as data. It is now read again over a new connection. Found in a
+  disaster recovery test of 1 TB from Canada to a Hetzner Storage Box, after 392 GiB.
+- The read-ahead folder of a restore that was killed while it wrote is removed by the next run;
+  it kept one file of up to 8 MiB.
 - `occ backup:target:add` only estimates the time left for reading the index once enough of it
   is in. The first file also carries the time to connect, which made it say "about 642 min left"
   for something done within a minute.
