@@ -412,7 +412,8 @@ final class StorageBackend implements IBackend, IReadsAhead {
 				}
 			}
 		} catch (\Throwable) {
-			// read the usual way below, which reports what is wrong
+			// read the usual way below, which reports what is wrong, over a new connection
+			$this->smbReconnect();
 		}
 		$fh = $this->get($path);
 		try {
@@ -555,7 +556,8 @@ final class StorageBackend implements IBackend, IReadsAhead {
 			try {
 				$state->lseek($fh, $offset, SEEK_SET, $url);
 				for ($got = 0; $got < $length;) {
-					$chunk = (string)$state->read($fh, min(self::SMB_READ, $length - $got), $url);
+					$want = min(self::SMB_READ, $length - $got);
+					$chunk = self::smbRead($state, $fh, $want, $url);
 					if ($chunk === '') {
 						throw new BackendException('Short read in ' . $url);
 					}
@@ -590,22 +592,67 @@ final class StorageBackend implements IBackend, IReadsAhead {
 		} catch (\Throwable) {
 			return null;
 		}
+		$data = '';
 		try {
-			$data = '';
 			do {
-				/** @psalm-suppress MixedMethodCall */
-				$chunk = (string)$state->read($fh, self::SMB_READ, $url);
+				$chunk = self::smbRead($state, $fh, self::SMB_READ, $url);
 				$data .= $chunk;
 			} while ($chunk !== '');
-			return $data;
 		} catch (\Throwable) {
-			return null;
-		} finally {
-			try {
-				/** @psalm-suppress MixedMethodCall */
-				$state->close($fh, $url);
-			} catch (\Throwable) {
-			}
+			$data = null;
+		}
+		try {
+			/** @psalm-suppress MixedMethodCall */
+			$state->close($fh, $url);
+		} catch (\Throwable) {
+		}
+		if ($data === null) {
+			$this->smbReconnect(); // a read failed: the usual way reads it over a new connection
+		}
+		return $data;
+	}
+
+	/**
+	 * One read of at most $bytes through the native state, checked. When libsmbclient fails a read
+	 * (seen when the connection to the server dropped during a long restore), the smbclient
+	 * extension does not return false but a string whose length is -1, because it stores
+	 * smbc_read()'s -1 in an unsigned length; icewind passes it on. Counting that as data made
+	 * the read loop go backwards forever at 100% CPU (DR test 2026-11-05, after 392 GiB).
+	 *
+	 * @param resource $fh
+	 * @psalm-suppress MixedMethodCall, MixedArgument the state is icewind's NativeState
+	 */
+	private static function smbRead(object $state, $fh, int $bytes, string $url): string {
+		$chunk = $state->read($fh, $bytes, $url);
+		$n = is_string($chunk) ? strlen($chunk) : -1;
+		if ($n < 0 || $n > $bytes) {
+			throw new BackendException('Read failed in ' . $url);
+		}
+		return $chunk;
+	}
+
+	/**
+	 * After a failed read: drop icewind's connection state, so the next read (the usual way, or
+	 * the next range) connects again instead of failing on a connection that is gone.
+	 *
+	 * @psalm-suppress UndefinedClass icewind/smb comes with files_external, not with this app
+	 */
+	private function smbReconnect(): void {
+		if (!$this->storage instanceof \OCA\Files_External\Lib\Storage\SMB) {
+			return;
+		}
+		try {
+			(function (): void {
+				/** @psalm-suppress UndefinedThisPropertyFetch */
+				$share = $this->share;
+				if ($share instanceof \Icewind\SMB\Native\NativeShare) {
+					(function (): void {
+						/** @psalm-suppress UndefinedThisPropertyAssignment */
+						$this->state = null;
+					})->call($share);
+				}
+			})->call($this->storage);
+		} catch (\Throwable) {
 		}
 	}
 
@@ -657,12 +704,15 @@ final class StorageBackend implements IBackend, IReadsAhead {
 			try {
 				foreach ($abs as $i => [$path, $offset, $length]) {
 					$fh = null;
+					$out = false;
 					try {
 						$chunks = $this->smbChunks($path, $offset, $length);
 						$out = $chunks === null ? false : fopen($file, 'w+b');
 						if ($chunks !== null && $out !== false) {
 							foreach ($chunks as $chunk) {
-								fwrite($out, $chunk);
+								if (fwrite($out, $chunk) !== strlen($chunk)) {
+									throw new BackendException('Cannot write to the spool');
+								}
 							}
 							$fh = ftell($out) === $length && rewind($out) ? $out : null;
 							if ($fh === null) {
@@ -670,7 +720,11 @@ final class StorageBackend implements IBackend, IReadsAhead {
 							}
 						}
 					} catch (\Throwable) {
-						$fh = null; // read the usual way, which reports why
+						if (is_resource($out)) {
+							fclose($out);
+						}
+						$fh = null; // read the usual way, which reports why, over a new connection
+						$this->smbReconnect();
 					} finally {
 						@unlink($file); // an open stream keeps its data
 					}

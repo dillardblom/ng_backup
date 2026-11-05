@@ -169,15 +169,18 @@ final class RestoreService {
 	 * @param bool $stripPrefix write into $directory itself instead of $directory/$prefix (see
 	 *             Repository::restore()); used to restore "data/" or "config/" straight into the
 	 *             real data/config directory for occ backup:restore:full.
+	 * @param bool $keepUnchanged leave files already in place with the snapshot's size and
+	 *             modification time (see Repository::restore()): a full restore that runs again
+	 *             goes on where it stopped
 	 */
-	public function restoreToDirectory(Target $target, string $snapshotId, string $prefix, string $directory, bool $stripPrefix = false, ?callable $heartbeat = null, ?array &$skipped = null): int {
+	public function restoreToDirectory(Target $target, string $snapshotId, string $prefix, string $directory, bool $stripPrefix = false, ?callable $heartbeat = null, ?array &$skipped = null, bool $keepUnchanged = false): int {
 		if ($prefix !== '' && !Repository::isSafePath($prefix)) {
 			throw new \InvalidArgumentException('Invalid path: ' . $prefix);
 		}
 		if (!is_dir($directory) && !mkdir($directory, 0750, true) && !is_dir($directory)) {
 			throw new \RuntimeException("Cannot create $directory");
 		}
-		return $this->withSharedLock($target, function (callable $refresh) use ($target, $snapshotId, $prefix, $directory, $stripPrefix, $heartbeat, &$skipped): int {
+		return $this->withSharedLock($target, function (callable $refresh) use ($target, $snapshotId, $prefix, $directory, $stripPrefix, $heartbeat, &$skipped, $keepUnchanged): int {
 			$own = LeaseService::throttled($refresh);
 			$beat = static function () use ($own, $heartbeat): void {
 				$own();
@@ -185,7 +188,7 @@ final class RestoreService {
 					$heartbeat();
 				}
 			};
-			return $this->targets->repository($target)->restore($snapshotId, $directory, trim($prefix, '/') === '' ? '' : trim($prefix, '/') . '/', $stripPrefix, $beat, $skipped);
+			return $this->targets->repository($target)->restore($snapshotId, $directory, trim($prefix, '/') === '' ? '' : trim($prefix, '/') . '/', $stripPrefix, $beat, $skipped, $keepUnchanged);
 		}, 3600);
 	}
 

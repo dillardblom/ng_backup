@@ -186,7 +186,7 @@ final class RestoreFullService {
 			}
 			if ($dbError !== null) {
 				$salvageDir = $dataDir . '/ngb-salvage-' . substr($snapshotId, 0, 12);
-				$dataFiles = $this->restore->restoreToDirectory($target, $snapshotId, 'data', $salvageDir . '/data', stripPrefix: true, heartbeat: $beat, skipped: $skipped);
+				$dataFiles = $this->restore->restoreToDirectory($target, $snapshotId, 'data', $salvageDir . '/data', stripPrefix: true, heartbeat: $beat, skipped: $skipped, keepUnchanged: true);
 				$this->restore->restoreToDirectory($target, $snapshotId, 'config', $salvageDir . '/config', stripPrefix: true, heartbeat: $beat, skipped: $skipped);
 				return ['dbReport' => ['skipped' => [], 'restored' => [], 'created' => [], 'missing' => []], 'dataFiles' => $dataFiles, 'configKeys' => 0,
 					'dbConsistent' => true, 'missingApps' => $check['missingApps'], 'skipped' => $skipped ?? [], 'dbError' => $dbError,
@@ -209,7 +209,7 @@ final class RestoreFullService {
 				$backupConfig = [];
 			}
 
-			$dataFiles = $this->restore->restoreToDirectory($target, $snapshotId, 'data', $dataDir, stripPrefix: true, heartbeat: $beat, skipped: $skipped);
+			$dataFiles = $this->restore->restoreToDirectory($target, $snapshotId, 'data', $dataDir, stripPrefix: true, heartbeat: $beat, skipped: $skipped, keepUnchanged: true);
 
 			// Last step: nothing after this may need $this->targets->repository($target) again.
 			if ($backupConfig !== []) {

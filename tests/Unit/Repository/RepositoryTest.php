@@ -101,6 +101,34 @@ class RepositoryTest extends TestCase {
 		$this->assertFileExists($stripped . '/note-1.txt');
 	}
 
+	public function testARestoreThatRunsAgainKeepsWhatIsInPlaceAndRestoresTheRest(): void {
+		$location = $this->tempDir();
+		$backend = new LocalBackend($location);
+		$repo = Repository::init($backend, 'pw');
+		$r = $repo->backupDirectory($this->src);
+		$target = $this->tempDir();
+		$repo->restore($r['snapshot'], $target);
+
+		// as a stopped restore leaves it: one file not there yet, one with other content
+		unlink($target . '/docs/d1/note-1.txt');
+		file_put_contents($target . '/docs/d0/note-0.txt', 'something else');
+		$this->assertSame(34, $repo->restore($r['snapshot'], $target, keepUnchanged: true));
+		$this->assertSame(self::hashTree($this->src), self::hashTree($target));
+
+		// all in place: nothing is read from the location, which could not give it anyway now
+		self::removeTree($location . '/packs');
+		$this->assertSame(34, Repository::open($backend, 'pw')->restore($r['snapshot'], $target, keepUnchanged: true));
+		$this->expectException(\Throwable::class);
+		Repository::open($backend, 'pw')->restore($r['snapshot'], $target);
+	}
+
+	private static function removeTree(string $dir): void {
+		foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS), \RecursiveIteratorIterator::CHILD_FIRST) as $f) {
+			$f->isDir() ? rmdir($f->getPathname()) : unlink($f->getPathname());
+		}
+		rmdir($dir);
+	}
+
 	public function testRestoreRemovesTemporariesOfAStoppedRestore(): void {
 		$repo = Repository::init($this->backend, 'pw');
 		$r = $repo->backupDirectory($this->src);
