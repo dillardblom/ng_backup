@@ -111,7 +111,7 @@ HELP);
 				$output->writeln('If this happened after the restore had started, the instance may be partly restored: fix the cause and run the same command again with --force.');
 			}
 			$output->writeln('If occ then says that Nextcloud needs an upgrade (the database is already the old server\'s), run occ upgrade first.');
-			if (!$input->getOption('salvage') && ($e instanceof \OCA\NgBackup\Repository\RepositoryException || $e instanceof \OCA\NgBackup\Crypto\CryptoException)) {
+			if (!$input->getOption('salvage') && Restore::backupLooksDamaged($e)) {
 				$output->writeln('The backup itself looks damaged here. --salvage restores everything that can be read and lists the rest.');
 			}
 			return 1;

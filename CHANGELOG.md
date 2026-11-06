@@ -50,6 +50,11 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
 - `occ backup:target:add` only estimates the time left for reading the index once enough of it
   is in. The first file also carries the time to connect, which made it say "about 642 min left"
   for something done within a minute.
+- A restore that stops because a file is gone from the location now points at `--salvage`, as it
+  already did for damaged data.
+
+### Known issues
+- Empty folders are not backed up or restored; to be fixed in 1.0.3 (#27).
 
 ## [1.0.1] - 2026-11-01
 

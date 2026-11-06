@@ -140,6 +140,9 @@ The command then ends with exit code 2 instead of 0. The same option exists for
 - From Nextcloud All-in-One to a regular server: also check the cache settings (`memcache.*`,
   `redis`), which point at AIO's containers.
 - Log in, open a few files, a calendar and a contact.
+- Empty folders do not come back: a backup only records files (to be fixed in 1.0.3, see
+  [issue #27](https://github.com/dillardblom/ng_backup/issues/27)). `occ files:scan` then removes
+  them from the file cache, so it reports them as removed.
 - Start background jobs again (cron), as in step 2 in reverse.
 
 **10. Point your domain at the new server** and check that clients reconnect.

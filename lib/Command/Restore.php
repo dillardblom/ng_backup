@@ -67,13 +67,20 @@ HELP);
 				}, $skipped);
 		} catch (\Throwable $e) {
 			$output->writeln('<error>' . $e->getMessage() . '</error>');
-			if ($skipped === null && ($e instanceof \OCA\NgBackup\Repository\RepositoryException || $e instanceof \OCA\NgBackup\Crypto\CryptoException)) {
+			if ($skipped === null && self::backupLooksDamaged($e)) {
 				$output->writeln('The data of a file on the location is damaged or missing. Run the same command with --salvage to restore everything else and list what could not be restored.');
 			}
 			return 1;
 		}
 		$output->writeln(sprintf('Restored <info>%d</info> files to %s%s.', $r['restored'], $r['target'], $r['trashed'] ? ", moved {$r['trashed']} extra files to the trash" : ''));
 		return self::reportSkipped($skipped, $output);
+	}
+
+	/** Damaged data, or a file that is gone from the location: what --salvage is for. */
+	public static function backupLooksDamaged(\Throwable $e): bool {
+		return $e instanceof \OCA\NgBackup\Repository\RepositoryException
+			|| $e instanceof \OCA\NgBackup\Crypto\CryptoException
+			|| ($e instanceof \OCA\NgBackup\Backend\BackendException && str_starts_with($e->getMessage(), 'Not found'));
 	}
 
 	/**

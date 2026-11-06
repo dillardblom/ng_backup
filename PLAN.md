@@ -415,6 +415,21 @@ in README "Known limitations":
   lengte -1. Opgelost (controle + nieuwe verbinding), plus hervatten: `--force` laat bestanden met
   dezelfde grootte en mtime staan. Hervat 2026-11-05 07:21 UTC na `maintenance:mode --off`
   volgens de gids; binnen 10 min voorbij de 392 GiB. SMB op sub5 na de test weer uitzetten.
+  **Resultaat (klaar 2026-11-06 02:11 UTC, nazorg 02:27):** hervatte run 18 u 50 min, exit 0, 150.755
+  bestanden; 7-13 MiB/s (langzamer vanaf ~18 uur Duitse tijd, oorzaak niet vastgesteld). Vergeleken
+  met nc01: 150.467 van 150.758 bestanden gelijk in grootte en mtime, 397 op hash zonder verschil;
+  gebruikers, agenda's, contacten, shares en Deck gelijk; bestanden, agenda en contacten via WebDAV
+  getest als gebruiker. `backup:restore --salvage` op 16.904 bestanden: exit 0, geen verschil. Niet
+  vastgesteld: de 50.080 "updated" bij `files:scan`. Zonder `--install-apps` 51 van de 81 apps aan.
+  VM's 980-982 en de sim-backups op OVH en sub6 opgeruimd.
+  **Naar 1.0.3 (besluit 2026-11-06):** lege mappen komen niet terug (3.982 op nc01, 2.076 daarvan in
+  `files`, verklaart vrijwel zeker de 2.370 "removed" bij `files:scan`). De backup legt alleen
+  bestanden vast (`walk()`), dus oudere snapshots hebben ze niet. Voor een DR acceptabel, wel
+  fixen; issue #27. Daarna kleine volledige simulaties; een DR van 1 TB is hiervoor niet nodig.
+  **Salvage vóór de release getest (besluit 2026-11-06):** nieuwe modus `salvage-files` in
+  `full-restore-roundtrip.sh`, ook in CI: één pack beschadigd en één weg. Eerst stopt de restore,
+  daarna `--salvage --force` volgens de gids. Vond één fout: bij een ontbrekend bestand wees de
+  melding niet naar `--salvage` (opgelost).
   Stand 2026-11-04 (`polish`, gepusht): cron-waarschuwing + tick vanaf de pagina +
   voortgang van de db-fase; `--salvage` voor `backup:restore` en `backup:restore:full`; S3
   vooruitlezen (8 ranges tegelijk, met `SaveAs` naar de spool); SMB in leesacties van 8 MiB
