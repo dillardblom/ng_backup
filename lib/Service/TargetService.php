@@ -35,6 +35,7 @@ final class TargetService {
 		private \OCA\NgBackup\Db\DbIndexCache $indexCache,
 		private \OCA\NgBackup\Db\AppConfigCatalogAnchor $anchor,
 		private SnapshotMapper $snapshots,
+		private AlertService $alerts,
 	) {
 	}
 
@@ -281,10 +282,16 @@ final class TargetService {
 		if (!Schedule::validZone($zone)) {
 			throw new \InvalidArgumentException('Unknown time zone: ' . $zone);
 		}
-		$target->setSchedule(LocationSchedule::normalize($schedule));
+		$new = LocationSchedule::normalize($schedule);
+		$turnedOff = $new === '' && (string)$target->getSchedule() !== '';
+		$target->setSchedule($new);
 		$target->setScheduleZone($zone);
 		$target->setScheduleSince(time());
-		return $this->mapper->update($target);
+		$target = $this->mapper->update($target);
+		if ($turnedOff) {
+			$this->alerts->securityEvent('schedule_off', ['target' => $target->getName()]);
+		}
+		return $target;
 	}
 
 	public function setMaxBytes(Target $target, ?int $maxBytes): Target {

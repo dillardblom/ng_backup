@@ -59,8 +59,11 @@ final class BackupJob extends TimedJob {
 		}
 		$this->failStaleRestores();
 		$this->weeklyPrune();
-		foreach ($this->targets->list() as $t) {
+		$targets = $this->targets->list();
+		foreach ($targets as $t) {
 			$this->alerts->checkStale($t);
+			$othersActive = array_filter($targets, static fn ($o) => $o->getId() !== $t->getId() && (string)$o->getSchedule() !== '') !== [];
+			$this->alerts->checkOff($t, $othersActive);
 		}
 	}
 

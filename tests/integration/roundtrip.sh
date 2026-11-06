@@ -108,6 +108,12 @@ for L in 2 3; do
 done
 IDS=$(api "$API/status" | php -r 'foreach (json_decode(stream_get_contents(STDIN), true)["targets"] as $t) { if ($t["name"] === "ci2" || $t["name"] === "ci3") { echo $t["id"], " "; } }')
 for ID in $IDS; do api -X POST -d "{\"targetId\": $ID, \"label\": \"turn\"}" "$API/backups" >/dev/null || fail "start a backup to location $ID"; done
+# Never two runs to one location: a second start gets the run that is there.
+ID=${IDS%% *}
+RUNS=$(api "$API/status" | php -r 'echo count(array_filter(json_decode(stream_get_contents(STDIN), true)["runs"], fn ($r) => $r["status"] === "running"));')
+api -X POST -d "{\"targetId\": $ID, \"label\": \"again\"}" "$API/backups" >/dev/null || fail "second start"
+AGAIN=$(api "$API/status" | php -r 'echo count(array_filter(json_decode(stream_get_contents(STDIN), true)["runs"], fn ($r) => $r["status"] === "running"));')
+[ "$RUNS" = 2 ] && [ "$AGAIN" = 2 ] || fail "a second start to one location: $RUNS, then $AGAIN running"
 occ backup:status | grep "queued" >/dev/null || fail "the second backup is not queued"
 QUEUED=$(api "$API/status" | php -r 'echo count(array_filter(json_decode(stream_get_contents(STDIN), true)["runs"], fn ($r) => $r["queued"]));')
 [ "$QUEUED" = 1 ] || fail "$QUEUED backups queued instead of 1"
@@ -125,7 +131,6 @@ occ backup:status | grep "system cron" >/dev/null && fail "backup:status still w
 sleep 8 # APCu app config cache of the web server
 api "$API/status" | php -r 'exit(json_decode(stream_get_contents(STDIN), true)["cron"]["ok"] ? 0 : 1);' || fail "the status API still reports a missing cron after cron ran"
 ok "with a system cron that ran: no warning in backup:status or the API"
-occ user:delete "$ADM" >/dev/null
 
 # A schedule per location. Choosing a time starts nothing; the moment itself does, and only there.
 JOB=$(occ background-job:list --class='OCA\NgBackup\BackgroundJob\BackupJob' --output=json | php -r 'echo json_decode(stream_get_contents(STDIN), true)[0]["id"];')
@@ -144,8 +149,23 @@ occ backup:list ci2 | grep " scheduled " >/dev/null || fail "the scheduled momen
 job
 [ "$(occ backup:list ci2 | grep -c ' scheduled ')" = 1 ] || fail "one moment started more than one backup"
 occ backup:target:schedule ci2 nonsense >/dev/null 2>&1 && fail "a bad schedule was accepted"
-for L in 2 3; do occ backup:target:remove ci$L >/dev/null || fail "target remove ci$L"; done
 ok "schedule per location: nothing on choosing a time, one backup at the moment, none when off"
+
+# What administrators are told, as Nextcloud shows it.
+notes() { api "http://localhost/ocs/v2.php/apps/notifications/api/v2/notifications?format=json"; }
+occ backup:target:schedule ci2 off >/dev/null
+$X sh -c "touch '$DATA/ngb-rt-bad\\name.txt'"
+occ backup:run ci3 -l names | grep "their name is not supported" >/dev/null || fail "occ does not report the name"
+$X sh -c "rm '$DATA/ngb-rt-bad\\name.txt'"
+NOTES=$(notes) || fail "read the notifications"
+echo "$NOTES" | grep "turned off the schedule of backup location ci2" >/dev/null || fail "no notification about the schedule that was turned off"
+echo "$NOTES" | grep "is missing because of its name" >/dev/null || fail "no notification about the name"
+echo "$NOTES" | grep "Rename them" >/dev/null || fail "the notification about the name does not ask to rename"
+job
+notes | grep "has no schedule" >/dev/null && fail "a reminder right after turning it off"
+for L in 2 3; do occ backup:target:remove ci$L >/dev/null || fail "target remove ci$L"; done
+occ user:delete "$ADM" >/dev/null
+ok "notifications: schedule turned off, name not supported, no early reminder"
 
 # Checksum audit: shallow (index presence) and deep (download, decrypt, verify every blob).
 occ backup:verify ci "$SNAP" | grep "^OK$" >/dev/null || fail "shallow verify"

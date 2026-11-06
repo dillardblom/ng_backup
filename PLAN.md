@@ -581,8 +581,9 @@ in README "Known limitations":
   is de keuze van de beheerder (besluit 2026-11-06).
   **Stand op branch `1.1.0` (2026-11-07):** klaar: betere melding, punten 4, 5, 6 en 8. Pin en notitie staan
   in de catalogus, met een kopie in de database voor de lijsten. Een moment van vóór het instellen van
-  een schema start niets. Geen schema is een keuze: dan ook geen melding "geen recente backup". Nog niet
-  getest: de update vanaf 1.0.3, de pagina in een browser, de tekst van de nieuwe melding in beeld.
+  een schema start niets. Geen schema: geen melding "geen recente backup", wel een melding aan alle
+  beheerders bij het uitzetten en een herinnering, wekelijks zolang een andere locatie een schema heeft,
+  anders dagelijks (besluit 2026-11-07). Nog niet getest: de update vanaf 1.0.3, de pagina in een browser.
   1. `backup:key:import` zonder kit: de sleutel-slots van de locatie (`config`) lezen, met de kit
      als reserve als `config` ontbreekt of niet opent. Vergt een andere volgorde van
      `target:add` en sleutelimport (het gevoeligste pad), daarom niet in rc1. Daarna de
@@ -614,11 +615,10 @@ in README "Known limitations":
      nooit opruimt (bijv. "vóór de upgrade naar NC 35"), in de lijst en met
      `occ backup:pin <snapshot>` / `--unpin`. Op de locatie bewaren (catalogus), zodat de
      opschoning het ziet, ook na een DR; vastgepinde punten tellen niet mee in last/daily/weekly.
-  9. **Feedbackvraag weghalen** in 1.1.0 of 1.2.0 (besluit 2026-10-27): de regel "We would like
+  9. **Feedbackvraag weghalen in 1.2.0** (besluit 2026-11-07, niet in 1.1.0): de regel "We would like
      to hear how NG Backup works for you ... Share your experience" in de beheerpagina blijft tot
-     dan staan (de vermelding "in beta" is er in 1.0.1 al af). Zijn er tegen die
-     tijd geen noemenswaardige meldingen, dan werkt het: mensen melden eerder wat niet werkt dan
-     wat gewoon werkt. Het formulier (`experience.yml`) mag blijven voor wie het zelf opzoekt.
+     dan staan. Er komt weinig feedback bij zo'n 150 downloads per versie; geen bericht is goed
+     bericht. Het formulier (`experience.yml`) in de issues blijft.
 - **Bevindingen DR-test op PVE02 (2026-10-17, snapshot van nc01, 1 TB, AIO → gewone NC 34 met
   PostgreSQL 18)** — voor **1.0.0-rc.2**:
   1. Tabellen van apps die bij de backup **niet aanstonden** (restanten: Deck, ONLYOFFICE,

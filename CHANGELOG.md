@@ -28,6 +28,8 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
   point has the time its backup really began, not the time it was queued.
 - Choosing a time no longer starts a backup right away when that time has already passed today.
 - A location without a schedule no longer gets the notification that it has had no recent backup.
+  Instead, all administrators are told when a schedule is turned off, and reminded once a week while
+  another location is still backed up, or every day when none is.
 - A file or folder that is left out because of its name now gets a notification of its own, in the
   log and in `occ backup:run`. It says the item is missing from the backup, gives example paths and
   asks to rename it; before, it was reported as unreadable, with advice about permissions.
