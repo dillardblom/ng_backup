@@ -253,8 +253,13 @@ final class BackupService {
 					try {
 						$this->alerts->storedBytes($target, $repo->storedBytes());
 						$stats = $state['files']['stats'];
+						$warnings = BackupRun::warnings($state['files']);
+						if (($stats['badNames'] ?? 0) > 0) {
+							$this->logger->warning(sprintf('NG Backup run %d to %s: %d left out because their name is not supported (rename them): %s',
+								$run->getId(), $target->getName(), $stats['badNames'], implode(', ', $warnings['badNames'])));
+							$this->alerts->runBadNames($run, $target->getName(), (int)$stats['badNames'], $warnings['badNames']);
+						}
 						if (($stats['unreadable'] ?? 0) > 0 || ($stats['changing'] ?? 0) > 0) {
-							$warnings = BackupRun::warnings($state['files']);
 							$this->logger->warning(sprintf('NG Backup run %d to %s: %d unreadable (missing from the snapshot): %s; %d changed while being read: %s',
 								$run->getId(), $target->getName(), $stats['unreadable'] ?? 0, implode(', ', $warnings['unreadable']),
 								$stats['changing'] ?? 0, implode(', ', $warnings['changing'])));

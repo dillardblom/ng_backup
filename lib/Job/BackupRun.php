@@ -64,7 +64,7 @@ final class BackupRun {
 					// such path must not make a backup fail, or the whole snapshot unreadable later.
 					// The cursor stays where it is: the state is JSON, which cannot hold such a name. A
 					// next step meets it again, and it is reported once.
-					self::recordUnreadable($state, $stats, mb_scrub($logical, 'UTF-8'));
+					self::recordBadName($state, $stats, $logical);
 					continue;
 				}
 				if (is_dir($path)) {
@@ -250,10 +250,26 @@ final class BackupRun {
 		$stats['unreadable'] = ($stats['unreadable'] ?? 0) + 1;
 	}
 
-	/** @return array{unreadable: list<string>, changing: list<string>} examples for the report (first 50 each) */
+	/**
+	 * A file or directory left out because of its name. Remembered like an unreadable one, in a form
+	 * that fits the JSON state and is safe to show: control characters and invalid bytes replaced.
+	 */
+	private static function recordBadName(array &$state, array &$stats, string $logical): void {
+		$shown = (string)preg_replace('/[\x00-\x1f\x7f]/', '?', mb_scrub($logical, 'UTF-8'));
+		if (isset($state['badNames'][$shown])) {
+			return;
+		}
+		if (count($state['badNames'] ?? []) < 1000) {
+			$state['badNames'][$shown] = true;
+		}
+		$stats['badNames'] = ($stats['badNames'] ?? 0) + 1;
+	}
+
+	/** @return array{unreadable: list<string>, badNames: list<string>, changing: list<string>} examples for the report (first 50 each) */
 	public static function warnings(array $state): array {
 		return [
 			'unreadable' => array_slice(array_map('strval', array_keys($state['unreadable'] ?? [])), 0, 50),
+			'badNames' => array_slice(array_map('strval', array_keys($state['badNames'] ?? [])), 0, 50),
 			'changing' => array_slice(array_map('strval', array_values($state['changing'] ?? [])), 0, 50),
 		];
 	}

@@ -62,6 +62,16 @@ final class AlertService {
 	}
 
 	/**
+	 * A backup that finished but left out files or folders because of their name.
+	 *
+	 * @param list<string> $examples
+	 */
+	public function runBadNames(Run $run, string $targetName, int $count, array $examples): void {
+		$this->notifyAdmins('run_bad_names', 'run-' . $run->getId(), ['target' => $targetName, 'count' => (string)$count,
+			'examples' => mb_strimwidth(implode(', ', $examples), 0, 300, '…')]);
+	}
+
+	/**
 	 * Remember how much is stored on a location (for the settings page) and warn administrators
 	 * once a day when it is at 80% of its limit or more.
 	 */

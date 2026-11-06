@@ -472,9 +472,12 @@ in README "Known limitations":
   tijd terug. Hoort zo, vooral bij oudere verzamelingen: de maptijd wordt gebruikt om in te schatten
   wanneer een map is aangemaakt. De backup moet dan de tijd van alle mappen vastleggen en de restore
   die aan het eind terugzetten; werkt pas vanaf de eerste backup met die versie. Op de roadmap onder 1.1.0.
+  **1.0.3 uitgebracht (2026-11-06)**, ook op nc01 geïnstalleerd.
 - **Branches (besluit 2026-11-06):** werk voor een versie op een branch met die naam (`1.0.3`);
   `polish` alleen voor kleine cosmetische zaken, per geval bekijken of en wanneer die gemerged
   worden. SMB staat uit op sub5 en sub6; sub6 is het testaccount, eerst aanzetten voor een SMB-test.
+  Na 1.0.3 gaat het werk naar `1.1.0`. Een spoedfix die niet kan wachten gaat op `1.0.4` vanaf `main`,
+  krijgt een eigen merge en release; daarna `main` in `1.1.0` mergen, zodat daar met de fix getest wordt.
 - **1.0.1** (uitgebracht 2026-11-01): alleen de kleine punten (besluit 2026-10-30): 4, 6–13. Punten 1, 2 en 5 gaan naar
   1.0.2 (README-roadmap aangepast); punt 3 is een test, ingepland voor de week van 2 november,
   niet aangekondigd en los van de release. Voor 1.0.2 ook: nieuwe screenshots (het labelveld bij
@@ -569,7 +572,13 @@ in README "Known limitations":
 - **Polish:** `target:add` toonde bij het eerste indexbestand al "about 642 min left" (S3,
   4.568 bestanden, daarna binnen een minuut klaar): een schatting pas na ~5% of na meer dan
   een paar bestanden.
-- **1.1.0:**
+- **1.1.0** (geen harde datum: een week was een voorzet, langer mag; de releasefrequentie mag omlaag,
+  besluit 2026-11-06):
+  **Betere melding voor namen die een snapshot niet kan bevatten** (backslash, stuurteken, geen UTF-8):
+  een eigen melding in plaats van "unreadable" met het advies over rechten. Zegt dat deze bestanden of
+  mappen in de backup ontbreken, geeft voorbeelden van de paden en vraagt ze te hernoemen; de volgende
+  backup neemt ze mee. Alleen als Nextcloud-melding: de app mailt niet zelf, of meldingen gemaild worden
+  is de keuze van de beheerder (besluit 2026-11-06).
   1. `backup:key:import` zonder kit: de sleutel-slots van de locatie (`config`) lezen, met de kit
      als reserve als `config` ontbreekt of niet opent. Vergt een andere volgorde van
      `target:add` en sleutelimport (het gevoeligste pad), daarom niet in rc1. Daarna de

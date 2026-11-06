@@ -46,6 +46,10 @@ final class Notifier implements INotifier {
 				$notification->setParsedSubject($l->t('Backup to %1$s finished with warnings: %2$s unreadable, %3$s changed while being read', [$p['target'], $p['unreadable'], $p['changing']]));
 				$notification->setParsedMessage($l->t('Unreadable files and folders are missing from this backup (check their permissions). Files that kept changing were saved as they were while being read. Examples: %s', [$p['examples'] ?? '']));
 				break;
+			case 'run_bad_names':
+				$notification->setParsedSubject($l->n('Backup to %s finished, but %n item is missing because of its name', 'Backup to %s finished, but %n items are missing because of their names', (int)$p['count'], [$p['target']]));
+				$notification->setParsedMessage($l->t('Names with a backslash or a control character, or that are not valid UTF-8, are not supported, so these files and folders are not in this backup. Rename them; the next backup includes them. Examples: %s', [$p['examples'] ?? '']));
+				break;
 			case 'quota_warning':
 				$notification->setParsedSubject($l->t('Backup location %1$s is at %2$s%% of its limit (%3$s of %4$s)', [$p['target'], $p['percent'], $p['used'], $p['limit']]));
 				$notification->setParsedMessage($l->t('Backups stop when the limit is reached. Raise the limit, or let the retention policy remove older backups.'));

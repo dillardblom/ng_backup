@@ -11,6 +11,13 @@ Each heading starts with that `<version>`, once: the app store shows a release t
 whose heading starts with its `x.y.z` and ignores anything after it, so `## [1.0.0-rc.6]` would be
 shown under 1.0.0. The git tag of a release candidate goes after the date.
 
+## [Unreleased]
+
+### Changed
+- A file or folder that is left out because of its name now gets a notification of its own, in the
+  log and in `occ backup:run`. It says the item is missing from the backup, gives example paths and
+  asks to rename it; before, it was reported as unreadable, with advice about permissions.
+
 ## [1.0.3] - 2026-11-06
 
 ### Fixed

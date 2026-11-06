@@ -79,6 +79,9 @@ HELP);
 				if (($f['unreadable'] ?? 0) > 0) {
 					$output->writeln(sprintf('<comment>  warning: %d unreadable files or folders are missing from this backup (see the server log)</comment>', $f['unreadable']));
 				}
+				if (($f['badNames'] ?? 0) > 0) {
+					$output->writeln(sprintf('<comment>  warning: %d files or folders are missing from this backup because their name is not supported; rename them and the next backup includes them (see the server log)</comment>', $f['badNames']));
+				}
 				if (($f['changing'] ?? 0) > 0) {
 					$output->writeln(sprintf('<comment>  warning: %d files kept changing and were saved as read (see the server log)</comment>', $f['changing']));
 				}
