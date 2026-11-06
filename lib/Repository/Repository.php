@@ -384,7 +384,12 @@ final class Repository {
 		// read along with the files, so this asks nothing more of the location.
 		foreach ($this->emptyDirs($snapshotId) as [$path, $mtime]) {
 			if (self::underPrefix($path, $prefix)) {
-				self::restoreEmptyDir($target, self::destination($target, $path, $prefix, $stripPrefix), $path, $mtime);
+				if ($heartbeat !== null) {
+					$heartbeat();
+				}
+				// The prefix itself, stripped, is the target (for a file it is the file's name there).
+				$dest = $stripPrefix && $path === rtrim($prefix, '/') ? rtrim($target, '/') : self::destination($target, $path, $prefix, $stripPrefix);
+				self::restoreEmptyDir($target, $dest, $path, $mtime);
 			}
 		}
 		return $count;
@@ -397,13 +402,13 @@ final class Repository {
 	 */
 	public function emptyDirs(string $snapshotId): array {
 		$meta = $this->lastMeta[$snapshotId] ?? $this->snapshotMeta($snapshotId);
-		$dirs = $meta['emptyDirs'] ?? [];
-		foreach (is_array($dirs) ? $dirs : [null] as $dir) {
-			if (!is_array($dir) || !is_string($dir[0] ?? null) || !self::isSafePath($dir[0]) || !is_int($dir[1] ?? null)) {
-				throw new RepositoryException('Invalid empty folder in snapshot ' . $snapshotId);
+		$dirs = [];
+		foreach (is_array($meta['emptyDirs'] ?? null) ? $meta['emptyDirs'] : [] as $dir) {
+			// One folder that makes no sense is no reason to give up on the files of a restore.
+			if (is_array($dir) && is_string($dir[0] ?? null) && self::isSafePath($dir[0]) && is_int($dir[1] ?? null)) {
+				$dirs[] = [$dir[0], $dir[1]];
 			}
 		}
-		/** @var list<array{0: string, 1: int}> */
 		return $dirs;
 	}
 

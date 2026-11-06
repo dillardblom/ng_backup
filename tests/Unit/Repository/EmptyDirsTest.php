@@ -71,6 +71,32 @@ class EmptyDirsTest extends TestCase {
 		$this->assertSame(array_unique($paths), $paths);
 	}
 
+	public function testANameASnapshotCannotHoldIsReportedAndTheSnapshotStaysReadable(): void {
+		mkdir("$this->src/data/odd\\folder", 0700, true);
+		mkdir("$this->src/data/alice/files/line\nbreak", 0700, true);
+		file_put_contents("$this->src/data/alice/files/back\\slash.txt", 'x');
+		file_put_contents("$this->src/data/alice/files/\xff.txt", 'x');
+		$state = BackupRun::start(['data' => "$this->src/data"]);
+		for ($i = 0; $i < 50 && $state['phase'] !== 'commit'; $i++) {
+			$state = BackupRun::step($this->repo(), $state, microtime(true) + 30);
+		}
+		$this->assertSame('commit', $state['phase']);
+		$this->assertSame(4, $state['stats']['unreadable']);
+		$this->repo()->recordSnapshot($state['snapshot']);
+
+		$this->assertSame(['data/alice/files/Hollow/Nested', 'data/skipped/inner'], array_column($this->repo()->emptyDirs($state['snapshot']), 0));
+		$target = $this->tempDir();
+		$this->assertSame(1, $this->repo()->restore($state['snapshot'], $target));
+		$this->assertFileExists("$target/data/alice/files/Docs/note.txt");
+	}
+
+	public function testAnEmptyFolderThatIsThePrefixItselfIsTheTarget(): void {
+		$snapshot = $this->backup();
+		$target = $this->tempDir();
+		$this->repo()->restore($snapshot, $target, 'data/skipped/inner/', true);
+		$this->assertSame([], glob("$target/*"), 'not a folder "inner" inside the target');
+	}
+
 	public function testRestoreBringsThemBackWithTheirTime(): void {
 		$snapshot = $this->backup();
 		$target = $this->tempDir();

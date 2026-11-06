@@ -209,6 +209,8 @@ final class RestoreFullService {
 			try {
 				/** @var array<string, mixed> $backupConfig */
 				$backupConfig = $this->fetchBackupConfig($target, $snapshotId, $salvage);
+			} catch (\OCA\NgBackup\Repository\RestoreTargetException $e) {
+				throw $e; // nowhere to put it: not a config.php that cannot be read
 			} catch (\Throwable $e) {
 				if (!$salvage) {
 					throw $e;

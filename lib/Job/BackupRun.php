@@ -59,17 +59,21 @@ final class BackupRun {
 			$finishedWalk = true;
 
 			foreach ($walker->walk($state['after']) as $logical => $path) {
+				if (!mb_check_encoding($logical, 'UTF-8') || !Repository::isSafePath($logical)) {
+					// A name a snapshot cannot hold (a backslash, a control character, not UTF-8). One
+					// such path must not make a backup fail, or the whole snapshot unreadable later.
+					self::recordUnreadable($state, $stats, mb_scrub($logical, 'UTF-8'));
+					$state['cur'] = null;
+					$state['after'] = $logical;
+					continue;
+				}
 				if (is_dir($path)) {
 					$mtime = @filemtime($path);
 					if ($mtime === false) {
 						continue; // removed while walking
 					}
-					if (mb_check_encoding($logical, 'UTF-8')) {
-						$emptyDirs[] = json_encode([$logical, $mtime], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
-						$stats['emptyDirs'] = ($stats['emptyDirs'] ?? 0) + 1;
-					} else {
-						self::recordUnreadable($state, $stats, $logical); // a snapshot only holds UTF-8
-					}
+					$emptyDirs[] = json_encode([$logical, $mtime], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+					$stats['emptyDirs'] = ($stats['emptyDirs'] ?? 0) + 1;
 					$state['after'] = $logical;
 					if (microtime(true) >= $deadline) {
 						$finishedWalk = false;

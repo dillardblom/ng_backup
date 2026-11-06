@@ -61,7 +61,8 @@ final class RestoreService {
 		$prefix = trim($path, '/');
 		$prefix = $prefix === '' ? '' : $prefix . '/';
 		$children = [];
-		foreach ($this->targets->repository($target)->entries($snapshotId) as $e) {
+		$repo = $this->targets->repository($target);
+		foreach ($repo->entries($snapshotId) as $e) {
 			if ($prefix !== '' && !str_starts_with($e['p'], $prefix)) {
 				continue;
 			}
@@ -75,7 +76,7 @@ final class RestoreService {
 			}
 			$children[$name] = $c;
 		}
-		foreach ($this->targets->repository($target)->emptyDirs($snapshotId) as [$dir]) {
+		foreach ($repo->emptyDirs($snapshotId) as [$dir]) { // read along with the entries
 			if ($prefix === '' || str_starts_with($dir, $prefix)) {
 				$name = explode('/', substr($dir, strlen($prefix)), 2)[0];
 				$children[$name] ??= ['name' => $name, 'type' => 'dir', 'size' => 0, 'mtime' => null, 'files' => 0];
@@ -180,6 +181,9 @@ final class RestoreService {
 			if (!$existed) {
 				$folder->touch($mtime);
 			}
+			if ($progress !== null) {
+				$progress($restored, count($names), $dir); // keeps the lease alive too
+			}
 		}
 
 		$trashed = 0;
@@ -204,7 +208,7 @@ final class RestoreService {
 			throw new \InvalidArgumentException('Invalid path: ' . $prefix);
 		}
 		if (!is_dir($directory) && !mkdir($directory, 0750, true) && !is_dir($directory)) {
-			throw new \RuntimeException("Cannot create $directory");
+			throw new \OCA\NgBackup\Repository\RestoreTargetException("Cannot create $directory (disk full, or no permission?)");
 		}
 		return $this->withSharedLock($target, function (callable $refresh) use ($target, $snapshotId, $prefix, $directory, $stripPrefix, $heartbeat, &$skipped, $keepUnchanged): int {
 			$own = LeaseService::throttled($refresh);

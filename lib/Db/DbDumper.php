@@ -160,8 +160,8 @@ final class DbDumper {
 		try {
 			foreach ($missing as $table) {
 				if (isset($manifest['tables'][$table]['schema'])) {
+					$report['created'][] = $table; // first: creating it can stop halfway (its indexes)
 					$this->db->createSchemaManager()->createTable(self::tableFromStructure($table, $manifest['tables'][$table]['schema'], $this->tableOptions()));
-					$report['created'][] = $table;
 				} else {
 					$report['missing'][] = $table;
 				}
@@ -172,7 +172,12 @@ final class DbDumper {
 		}
 		$total = 0;
 		$foreignKeys = [];
-		$this->db->beginTransaction();
+		try {
+			$this->db->beginTransaction();
+		} catch (\Throwable $e) {
+			$this->dropCreatedTables($report);
+			throw $e;
+		}
 		try {
 			$foreignKeys = $this->suspendForeignKeys(); // first: on SQLite it also takes the write lock
 			foreach ($manifest['tables'] as $table => $info) {

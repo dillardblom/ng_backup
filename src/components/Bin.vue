@@ -17,7 +17,7 @@
 			</template>
 			<p class="ngb-muted">{{ t('ng_backup', 'This can take a while: every removed restore point is read from the location.') }}</p>
 		</div>
-		<NcNoteCard v-else-if="empty" type="info">{{ t('ng_backup', 'The bin is empty.') }}</NcNoteCard>
+		<NcNoteCard v-else-if="empty && !error" type="info">{{ t('ng_backup', 'The bin is empty.') }}</NcNoteCard>
 
 		<template v-for="target in status.targets" :key="'trash' + target.id">
 			<div v-if="trash[target.id]?.length" class="ngb-trash">

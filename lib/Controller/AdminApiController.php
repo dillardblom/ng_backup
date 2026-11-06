@@ -83,7 +83,7 @@ final class AdminApiController extends Controller {
 	/** Seconds of backup work one tick() does: well within a normal web request. */
 	public const TICK_SECONDS = 10.0;
 	/** Seconds one request for the Bin reads, before the page shows how far it is and asks for more. */
-	private const TRASH_PAGE_SECONDS = 2.0;
+	private const TRASH_PAGE_SECONDS = 5.0;
 
 	/**
 	 * Move running backups forward from the open admin page, when background jobs do not run on a

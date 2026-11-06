@@ -21,6 +21,9 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
 - A full disk during a restore no longer looks like a damaged backup. The restore now stops with a
   message about the disk, also with `--salvage`, and does not point at `--salvage` any more. The same
   goes for other trouble writing to the restore directory, such as permissions.
+- A file or folder whose name a snapshot cannot hold (a backslash, a control character, not UTF-8) is
+  left out and reported as unreadable. Before, a backslash or control character could make the whole
+  restore point unreadable, and a name that is not UTF-8 made the backup fail.
 - A restore that goes on after a stop also removes the temporary files in folders where every file
   is already in place, and checks that those folders are inside the restore directory before it
   leaves their files alone.
