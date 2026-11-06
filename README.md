@@ -274,6 +274,7 @@ a 👍 on its issue helps decide what comes first.
   your passphrases.
 - A schedule per location, also "every N hours".
 - Locations backed up one after the other instead of at the same time.
+- All folders get their original modification time back on a restore, not only the empty ones.
 - A note on a restore point that you can change afterwards.
 - Pinning a restore point, so the retention policy never removes it (for example the one from
   before an upgrade).

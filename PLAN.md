@@ -468,6 +468,10 @@ in README "Known limitations":
   (mtime van mappen wordt niet teruggezet, dus nieuwe mtime en etag; bestanden ongemoeid). "Removed":
   o.a. `cache` van een gebruiker, die de backup uitsluit. Waarschijnlijk verklaart dit ook de 50.080
   "updated" op nc01, niet op nc01 zelf vastgesteld.
+  **Naar 1.1.0 of 1.2.0 (besluit 2026-11-06):** alle mappen krijgen bij een restore hun oorspronkelijke
+  tijd terug. Hoort zo, vooral bij oudere verzamelingen: de maptijd wordt gebruikt om in te schatten
+  wanneer een map is aangemaakt. De backup moet dan de tijd van alle mappen vastleggen en de restore
+  die aan het eind terugzetten; werkt pas vanaf de eerste backup met die versie. Op de roadmap onder 1.1.0.
 - **Branches (besluit 2026-11-06):** werk voor een versie op een branch met die naam (`1.0.3`);
   `polish` alleen voor kleine cosmetische zaken, per geval bekijken of en wanneer die gemerged
   worden. SMB staat uit op sub5 en sub6; sub6 is het testaccount, eerst aanzetten voor een SMB-test.

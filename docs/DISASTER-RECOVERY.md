@@ -151,6 +151,9 @@ The command then ends with exit code 2 instead of 0. The same option exists for
 - From Nextcloud All-in-One to a regular server: also check the cache settings (`memcache.*`,
   `redis`), which point at AIO's containers.
 - Log in, open a few files, a calendar and a contact.
+- `occ files:scan` can report many folders as "Updated". That is expected: a restore does not yet put
+  back the modification time of folders with files in them, so they show the time of the restore.
+  The files themselves keep their time and content.
 - Empty folders only come back from backups made with version 1.0.3 or newer. With an older
   restore point they are gone: `occ files:scan` then removes them from the file cache, so it reports
   them as removed.
