@@ -26,7 +26,7 @@ ok "location added"
 # Test data: a user with files.
 $X sh -c "OC_PASS='Roundtrip-pw-2026' php occ user:add --password-from-env $U >/dev/null"
 # large.bin (40 MB) fills more than one pack: a restore to a directory reads ahead over several ranges
-$X sh -c "mkdir -p $DATA/$U/files/Docs/Sub $DATA/$U/files/Docs/Empty/Nested $DATA/$U/files/Hollow && for i in 1 2 3 4 5; do head -c 300000 /dev/urandom > $DATA/$U/files/Docs/f\$i.bin; done; echo hello > $DATA/$U/files/Docs/Sub/note.txt; head -c 6000000 /dev/urandom > $DATA/$U/files/big.bin; head -c 40000000 /dev/urandom > $DATA/$U/files/large.bin"
+$X sh -c "mkdir -p $DATA/$U/files/Docs/Sub $DATA/$U/files/Docs/Empty/Nested $DATA/$U/files/Hollow && touch -d @1700000000 $DATA/$U/files/Hollow && for i in 1 2 3 4 5; do head -c 300000 /dev/urandom > $DATA/$U/files/Docs/f\$i.bin; done; echo hello > $DATA/$U/files/Docs/Sub/note.txt; head -c 6000000 /dev/urandom > $DATA/$U/files/big.bin; head -c 40000000 /dev/urandom > $DATA/$U/files/large.bin"
 occ files:scan "$U" >/dev/null
 SUM_BEFORE=$($X sh -c "cd $DATA/$U/files && find . -type f -print0 | sort -z | xargs -0 md5sum | md5sum")
 
@@ -47,6 +47,7 @@ $X sh -c "test -d $DATA/$U/files/Restored\ */Docs/Empty/Nested" || fail "the emp
 occ backup:browse ci "$SNAP" "data/$U/files" | grep Hollow >/dev/null || fail "an empty folder is not shown when browsing the snapshot"
 occ backup:restore ci "$SNAP" "data/$U/files/Hollow" -m merge >/dev/null || fail "restore of a folder that was empty"
 $X sh -c "test -d $DATA/$U/files/Hollow" || fail "the empty folder did not come back by itself"
+[ "$($X stat -c %Y "$DATA/$U/files/Hollow")" = 1700000000 ] || fail "the empty folder did not get its time back"
 occ backup:restore ci "$SNAP" "data/$U/files/Docs" -m replace >/dev/null || fail "restore replace"
 $X sh -c "test -d $DATA/$U/files/Docs/Empty/Nested" || fail "replace did not bring back the empty folder, or moved it to the trash"
 ok "empty folders: restored in each mode, by themselves and shown when browsing"

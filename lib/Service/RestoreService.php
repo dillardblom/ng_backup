@@ -130,13 +130,13 @@ final class RestoreService {
 			}
 		}
 		// Folders without anything in them, relative to $source ('' when $source itself is one).
-		/** @var array<array-key, true> $emptyDirs a folder called "2026" is an integer key */
+		/** @var array<array-key, int> $emptyDirs modification times; a folder called "2026" is an integer key */
 		$emptyDirs = [];
-		foreach ($single ? [] : $repo->emptyDirs($snapshotId) as [$dir]) {
+		foreach ($single ? [] : $repo->emptyDirs($snapshotId) as [$dir, $mtime]) {
 			if ($dir === $source) {
-				$emptyDirs[''] = true;
+				$emptyDirs[''] = $mtime;
 			} elseif (str_starts_with($dir, $source . '/')) {
-				$emptyDirs[substr($dir, strlen($source) + 1)] = true;
+				$emptyDirs[substr($dir, strlen($source) + 1)] = $mtime;
 			}
 		}
 		if ($entries === [] && $emptyDirs === []) {
@@ -172,8 +172,13 @@ final class RestoreService {
 			}
 		}
 
-		foreach (array_keys($emptyDirs) as $dir) {
-			$this->ensureFolder($dest, (string)$dir);
+		foreach ($emptyDirs as $dir => $mtime) {
+			$dir = (string)$dir;
+			$existed = $dir === '' || $dest->nodeExists($dir); // one that is there keeps its own time
+			$folder = $this->ensureFolder($dest, $dir);
+			if (!$existed) {
+				$folder->touch($mtime);
+			}
 		}
 
 		$trashed = 0;
