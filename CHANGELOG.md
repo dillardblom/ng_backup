@@ -55,6 +55,9 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
 
 ### Known issues
 - Empty folders are not backed up or restored; to be fixed in 1.0.3 (#27).
+- A full disk during a restore looks like a damaged backup ("Size mismatch"), and with `--salvage`
+  the restore goes on and lists the remaining files. The backup itself is fine: make room and run
+  the restore again. To be fixed in 1.0.3.
 
 ## [1.0.1] - 2026-11-01
 
