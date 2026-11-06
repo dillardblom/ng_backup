@@ -11,7 +11,7 @@ Each heading starts with that `<version>`, once: the app store shows a release t
 whose heading starts with its `x.y.z` and ignores anything after it, so `## [1.0.0-rc.6]` would be
 shown under 1.0.0. The git tag of a release candidate goes after the date.
 
-## [1.0.2] - unreleased
+## [1.0.2] - 2026-11-06
 
 ### Added
 - A warning on the admin page and in `occ backup:status` when background jobs do not run on a
