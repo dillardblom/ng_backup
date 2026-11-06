@@ -296,6 +296,9 @@ On the backlog; know them before you rely on NG Backup:
 - **Empty folders do not come back.** A backup only records files, so a folder without files is
   not restored. To be fixed in 1.0.3
   ([#27](https://github.com/dillardblom/ng_backup/issues/27)).
+- **A full disk during a restore looks like a damaged backup.** The reason shown is "Size mismatch",
+  and with `--salvage` the restore goes on and lists the remaining files. The backup itself is fine:
+  make room and run the restore again. To be fixed in 1.0.3.
 - **Only the data directory is backed up.** Object storage as primary storage (`objectstore` in
   `config.php`) is not supported: a backup refuses to start there. Folders mounted through the
   External storage app are not in the data directory and are **not included**, without a warning.

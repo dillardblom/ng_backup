@@ -117,7 +117,16 @@ first. If none is better, `--salvage` restores whatever can be read:
 
     occ backup:restore:full offsite <snapshot> --install-apps --salvage
 
+If a restore already stopped halfway, run it as in step 8: maintenance mode off, with `--force` and
+without `--install-apps`:
+
+    occ maintenance:mode --off && occ backup:restore:full offsite <snapshot> --salvage --force
+
 - Files that cannot be read are left out and listed at the end; everything else is restored.
+- **Check the disk first if the reason is "Size mismatch".** In this version a full disk looks like
+  damaged data: the message then points at `--salvage`, and with `--salvage` the restore goes on and
+  lists the remaining files. The backup itself is fine: make room and run the restore again as in
+  step 8, without `--salvage` unless the backup is damaged as well. To be fixed in 1.0.3.
 - If the database cannot be restored (its dump is damaged, or it does not fit this
   installation), the database stays as the fresh installation made it, and the data directory
   and config of the backup go to a folder of their own in the data directory,
