@@ -225,21 +225,6 @@ final class DbDumper {
 			$this->restoreSequences($manifest['sequences'] ?? [], $report['missing'], array_merge($report['restored'], $report['skipped']));
 			$this->resumeForeignKeys($foreignKeys);
 			$this->db->commit();
-			// Foreign keys of the tables created above, now their rows are in. Not inside the
-			// transaction: MySQL commits on DDL. A failure is reported, not fatal: the data is
-			// restored either way.
-			foreach ($report['created'] as $table) {
-				$structure = $manifest['tables'][$table]['schema'] ?? [];
-				foreach ($structure['foreignKeys'] ?? [] as $fk) {
-					try {
-						$this->db->createSchemaManager()->createForeignKey(
-							new \Doctrine\DBAL\Schema\ForeignKeyConstraint($fk['columns'], $fk['table'], $fk['foreign'], $fk['name'], $fk['options'] ?? []),
-							$table);
-					} catch (\Throwable $e) {
-						$report['foreignKeyErrors'][] = $table . '.' . $fk['name'] . ': ' . $e->getMessage();
-					}
-				}
-			}
 		} catch (\Throwable $e) {
 			$this->db->rollBack();
 			// PostgreSQL rolls the dropped foreign keys back with the transaction; MySQL's session
@@ -249,6 +234,21 @@ final class DbDumper {
 			}
 			$this->dropCreatedTables($report);
 			throw $e;
+		}
+		// Committed. Foreign keys of the tables created above, now their rows are in. Not inside the
+		// transaction: MySQL commits on DDL. A failure is reported, not fatal: the data is restored
+		// either way, and the created tables stay.
+		foreach ($report['created'] as $table) {
+			$structure = $manifest['tables'][$table]['schema'] ?? [];
+			foreach ($structure['foreignKeys'] ?? [] as $fk) {
+				try {
+					$this->db->createSchemaManager()->createForeignKey(
+						new \Doctrine\DBAL\Schema\ForeignKeyConstraint($fk['columns'], $fk['table'], $fk['foreign'], $fk['name'], $fk['options'] ?? []),
+						$table);
+				} catch (\Throwable $e) {
+					$report['foreignKeyErrors'][] = $table . '.' . $fk['name'] . ': ' . $e->getMessage();
+				}
+			}
 		}
 		return $total;
 	}

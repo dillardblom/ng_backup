@@ -12,6 +12,24 @@ use OCA\NgBackup\Repository\RestoreTargetException;
 use OCA\NgBackup\Tests\Unit\TempDirTrait;
 use PHPUnit\Framework\TestCase;
 
+/** A stream that takes at most 3 bytes per write. */
+class PartialWriteStream {
+	public static string $written = '';
+	/** @var resource|null set by PHP */
+	public $context;
+
+	public function stream_open(string $path, string $mode, int $options, ?string &$opened): bool {
+		self::$written = '';
+		return true;
+	}
+
+	public function stream_write(string $data): int {
+		$part = substr($data, 0, 3);
+		self::$written .= $part;
+		return strlen($part);
+	}
+}
+
 /**
  * What goes wrong where a restore writes to is not damage in the backup: it stops the restore, also
  * with --salvage, and the message does not point at --salvage.
@@ -46,6 +64,18 @@ class RestoreTargetTest extends TestCase {
 		stream_set_write_buffer($out, 0);
 		$this->expectException(RestoreTargetException::class);
 		Repository::writeAll($out, 'data', 'dir/a.bin');
+	}
+
+	public function testAWriteThatTakesPartOfTheDataGoesOn(): void {
+		stream_wrapper_register('ngbpartial', PartialWriteStream::class);
+		try {
+			$out = fopen('ngbpartial://x', 'wb');
+			Repository::writeAll($out, 'abcdefgh', 'dir/a.bin');
+			fclose($out);
+			$this->assertSame('abcdefgh', PartialWriteStream::$written);
+		} finally {
+			stream_wrapper_unregister('ngbpartial');
+		}
 	}
 
 	public function testATargetErrorDoesNotLookLikeDamage(): void {

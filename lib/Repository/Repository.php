@@ -451,12 +451,17 @@ final class Repository {
 
 	/**
 	 * Write all of $data, or stop: a short write leaves a file that looks damaged only by its size.
+	 * A write may take only part of the data and still be fine; one that takes nothing is not.
 	 *
 	 * @param resource $out
 	 */
 	public static function writeAll($out, string $data, string $path): void {
-		if (@fwrite($out, $data) !== strlen($data)) {
-			throw new RestoreTargetException('Cannot write ' . $path . ' to the restore directory (disk full?)');
+		while ($data !== '') {
+			$written = @fwrite($out, $data);
+			if ($written === false || $written === 0) {
+				throw new RestoreTargetException('Cannot write ' . $path . ' to the restore directory (disk full?)');
+			}
+			$data = substr($data, $written);
 		}
 	}
 
