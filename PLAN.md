@@ -437,7 +437,10 @@ in README "Known limitations":
   met vertraging is nog niet gemeten); Bin-tabblad; schatting `target:add`; nieuwe screenshots
   (1–3 vervangen, 4-bin erbij; in `info.xml` bij de release naar tag v1.0.2 laten wijzen en
   4-bin toevoegen). Getest: unit (208), psalm, integratie NC35 sqlite/pgsql, S3/SFTP/FTP/SMB,
-  volledige restore met `--salvage`. Nog te doen: DR-test, release.
+  volledige restore met `--salvage`. **1.0.2 uitgebracht 2026-11-06** (tag `v1.0.2`, PR #28).
+- **Branches (besluit 2026-11-06):** werk voor een versie op een branch met die naam (`1.0.3`);
+  `polish` alleen voor kleine cosmetische zaken, per geval bekijken of en wanneer die gemerged
+  worden. SMB staat uit op sub5 en sub6; sub6 is het testaccount, eerst aanzetten voor een SMB-test.
 - **1.0.1** (uitgebracht 2026-11-01): alleen de kleine punten (besluit 2026-10-30): 4, 6–13. Punten 1, 2 en 5 gaan naar
   1.0.2 (README-roadmap aangepast); punt 3 is een test, ingepland voor de week van 2 november,
   niet aangekondigd en los van de release. Voor 1.0.2 ook: nieuwe screenshots (het labelveld bij
