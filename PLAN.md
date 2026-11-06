@@ -437,7 +437,44 @@ in README "Known limitations":
   met vertraging is nog niet gemeten); Bin-tabblad; schatting `target:add`; nieuwe screenshots
   (1–3 vervangen, 4-bin erbij; in `info.xml` bij de release naar tag v1.0.2 laten wijzen en
   4-bin toevoegen). Getest: unit (208), psalm, integratie NC35 sqlite/pgsql, S3/SFTP/FTP/SMB,
-  volledige restore met `--salvage`. Nog te doen: DR-test, release.
+  volledige restore met `--salvage`. **1.0.2 uitgebracht 2026-11-06** (tag `v1.0.2`, PR #28).
+- **Naar 1.0.3, uit de reviews van 1.0.2 (achteraf gedraaid, 2026-11-06):**
+  1. Lege mappen (#27).
+  2. Een volle schijf onder `--salvage` telt als beschadigde backup en de restore gaat door; zonder
+     `--salvage` wijst de melding er ten onrechte naar. `fwrite` controleren, schrijffouten stoppen de
+     restore (`Repository::restoreEntries`; ook `RestoreService::writeFile` nakijken). Beide reviews.
+  3. Hervatten: controle op de doelmap vóór het overslaan, en tijdelijke bestanden ook opruimen in
+     een map waar alles al klopt.
+  4. Alleen `.ngb-restore-spool-<hex>` opruimen.
+  5. Salvage-test: tijdelijke bestanden recursief zoeken; `admin` en `frtest` apart controleren.
+  6. Nog nakijken: lease verversen bij overgeslagen bestanden; fout ná de database-commit
+     (`restoreOwnAppConfig`) en tabellen die na een rollback blijven staan; backups zonder cron
+     via de pagina (eerlijke beurten, stappen die de webtimeout halen); Bin verversen en fouten
+     tonen; SMB-uitzondering bij het openen van een pack onder `--salvage`.
+  Niet doen: bij hervatten de inhoud vergelijken (grootte en mtime is ook het criterium van de backup).
+  **Stand op branch `1.0.3` (2026-11-06):** punten 1-6 gebouwd. Lege mappen staan in het metarecord
+  van de snapshot, niet tussen de bestanden: 1.0.2 en ouder lezen zo'n snapshot gewoon en slaan alleen
+  de lege mappen over. Geen webtimeout-wijziging zonder cron: alleen in de code nagelopen, niet getest
+  (Nextcloud zet de PHP-tijdslimiet ruim, een gestopte stap wordt overgedaan); wel eerlijke beurten.
+  Bin leest in delen met teller en balk (besluit 2026-11-06, ook met oog op meerdere backups per
+  dag). Getest: unit (volle schijf op echte tmpfs), integratie NC35 sqlite/pgsql/mysql, sftp, salvage,
+  salvage-files; Bin in een echte browser met vertraagde verzoeken (1 van 7 t/m 7). Nog: reviews
+  vóór de PR, README-regels bij de versiecommit.
+  **Simulaties (2026-11-06, NC 34.0.4, 2 GB, lokale SFTP, `~/dev-local/ngb-sim/sim.sh`):** normaal
+  (pgsql), stop en hervat (pgsql → MariaDB, restore met kill -9 gestopt), volle schijf met `--salvage`:
+  alle drie geslaagd, alle 3.101 gebruikersbestanden en 7 lege mappen gelijk, share, agenda en WebDAV
+  werken. Vond één fout, opgelost: na een kill bleven vergrendelingen tot 2 uur staan, waardoor de
+  backup van stap 11 werd geweigerd. `files:scan` "Updated" zijn in de gemeten run alleen mappen
+  (mtime van mappen wordt niet teruggezet, dus nieuwe mtime en etag; bestanden ongemoeid). "Removed":
+  o.a. `cache` van een gebruiker, die de backup uitsluit. Waarschijnlijk verklaart dit ook de 50.080
+  "updated" op nc01, niet op nc01 zelf vastgesteld.
+  **Naar 1.1.0 of 1.2.0 (besluit 2026-11-06):** alle mappen krijgen bij een restore hun oorspronkelijke
+  tijd terug. Hoort zo, vooral bij oudere verzamelingen: de maptijd wordt gebruikt om in te schatten
+  wanneer een map is aangemaakt. De backup moet dan de tijd van alle mappen vastleggen en de restore
+  die aan het eind terugzetten; werkt pas vanaf de eerste backup met die versie. Op de roadmap onder 1.1.0.
+- **Branches (besluit 2026-11-06):** werk voor een versie op een branch met die naam (`1.0.3`);
+  `polish` alleen voor kleine cosmetische zaken, per geval bekijken of en wanneer die gemerged
+  worden. SMB staat uit op sub5 en sub6; sub6 is het testaccount, eerst aanzetten voor een SMB-test.
 - **1.0.1** (uitgebracht 2026-11-01): alleen de kleine punten (besluit 2026-10-30): 4, 6–13. Punten 1, 2 en 5 gaan naar
   1.0.2 (README-roadmap aangepast); punt 3 is een test, ingepland voor de week van 2 november,
   niet aangekondigd en los van de release. Voor 1.0.2 ook: nieuwe screenshots (het labelveld bij

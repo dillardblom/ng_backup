@@ -28,6 +28,28 @@ class TreeWalkerTest extends TestCase {
 		$this->assertSame(['Z', 'a', 'a-b', 'a.txt', 'b', 'skip'], array_values(array_unique(array_map(fn ($p) => explode('/', $p)[0], $paths))));
 	}
 
+	public function testEmptyDirectoriesAreYieldedInOrderAndOnResume(): void {
+		$d = $this->tree();
+		mkdir("$d/a/empty");
+		mkdir("$d/a-hollow/inner", 0700, true);
+		symlink("$d/a.txt", "$d/skip/link");
+		mkdir("$d/only-link");
+		symlink("$d/a.txt", "$d/only-link/link");
+		$w = new TreeWalker(['' => $d]);
+		$all = array_keys(iterator_to_array($w->walk()));
+		$this->assertContains('a/empty', $all);
+		$this->assertContains('a-hollow/inner', $all);
+		$this->assertNotContains('a-hollow', $all, 'only the deepest');
+		$this->assertContains('only-link', $all, 'a link is not walked');
+		$this->assertNotContains('skip', $all);
+		$sorted = $all;
+		usort($sorted, [TreeWalker::class, 'compare']);
+		$this->assertSame($sorted, $all);
+		foreach ($all as $i => $cursor) {
+			$this->assertSame(array_slice($all, $i + 1), array_keys(iterator_to_array($w->walk($cursor))), "after $cursor");
+		}
+	}
+
 	public function testResumeAfterCursorYieldsTheRest(): void {
 		$w = new TreeWalker(['' => $this->tree()]);
 		$all = array_keys(iterator_to_array($w->walk()));

@@ -61,7 +61,8 @@ final class RestoreService {
 		$prefix = trim($path, '/');
 		$prefix = $prefix === '' ? '' : $prefix . '/';
 		$children = [];
-		foreach ($this->targets->repository($target)->entries($snapshotId) as $e) {
+		$repo = $this->targets->repository($target);
+		foreach ($repo->entries($snapshotId) as $e) {
 			if ($prefix !== '' && !str_starts_with($e['p'], $prefix)) {
 				continue;
 			}
@@ -74,6 +75,12 @@ final class RestoreService {
 				$c['mtime'] = $e['m'];
 			}
 			$children[$name] = $c;
+		}
+		foreach ($repo->emptyDirs($snapshotId) as [$dir]) { // read along with the entries
+			if ($prefix === '' || str_starts_with($dir, $prefix)) {
+				$name = explode('/', substr($dir, strlen($prefix)), 2)[0];
+				$children[$name] ??= ['name' => $name, 'type' => 'dir', 'size' => 0, 'mtime' => null, 'files' => 0];
+			}
 		}
 		ksort($children, SORT_STRING);
 		return array_values($children);
@@ -123,7 +130,17 @@ final class RestoreService {
 				$entries[substr($e['p'], strlen($source) + 1)] = $e;
 			}
 		}
-		if ($entries === []) {
+		// Folders without anything in them, relative to $source ('' when $source itself is one).
+		/** @var array<array-key, int> $emptyDirs modification times; a folder called "2026" is an integer key */
+		$emptyDirs = [];
+		foreach ($single ? [] : $repo->emptyDirs($snapshotId) as [$dir, $mtime]) {
+			if ($dir === $source) {
+				$emptyDirs[''] = $mtime;
+			} elseif (str_starts_with($dir, $source . '/')) {
+				$emptyDirs[substr($dir, strlen($source) + 1)] = $mtime;
+			}
+		}
+		if ($entries === [] && $emptyDirs === []) {
 			throw new NotFoundException("Nothing at $source in snapshot $snapshotId");
 		}
 
@@ -134,6 +151,7 @@ final class RestoreService {
 		} elseif ($mode !== self::MODE_MERGE && $mode !== self::MODE_REPLACE) {
 			throw new \InvalidArgumentException("Unknown mode $mode");
 		}
+		$destExisted = $parentRel === '' || $userFolder->nodeExists($parentRel);
 		$dest = $this->ensureFolder($userFolder, $parentRel);
 		$names = $single ? [basename($rel) => $entries['']] : $entries;
 
@@ -156,9 +174,21 @@ final class RestoreService {
 			}
 		}
 
+		foreach ($emptyDirs as $dir => $mtime) {
+			$dir = (string)$dir;
+			$existed = $dir === '' ? $destExisted : $dest->nodeExists($dir); // one that is there keeps its own time
+			$folder = $this->ensureFolder($dest, $dir);
+			if (!$existed) {
+				$folder->touch($mtime);
+			}
+			if ($progress !== null) {
+				$progress($restored, count($names), $dir); // keeps the lease alive too
+			}
+		}
+
 		$trashed = 0;
 		if ($mode === self::MODE_REPLACE && !$single) {
-			$trashed = $this->trashExtras($dest, '', array_flip(array_keys($names)));
+			$trashed = $this->trashExtras($dest, '', array_flip(array_keys($names)) + $emptyDirs);
 		}
 		return ['restored' => $restored, 'trashed' => $trashed, 'target' => $uid . ':' . $userFolder->getRelativePath($dest->getPath())];
 	}
@@ -178,7 +208,7 @@ final class RestoreService {
 			throw new \InvalidArgumentException('Invalid path: ' . $prefix);
 		}
 		if (!is_dir($directory) && !mkdir($directory, 0750, true) && !is_dir($directory)) {
-			throw new \RuntimeException("Cannot create $directory");
+			throw new \OCA\NgBackup\Repository\RestoreTargetException("Cannot create $directory (disk full, or no permission?)");
 		}
 		return $this->withSharedLock($target, function (callable $refresh) use ($target, $snapshotId, $prefix, $directory, $stripPrefix, $heartbeat, &$skipped, $keepUnchanged): int {
 			$own = LeaseService::throttled($refresh);
@@ -262,7 +292,7 @@ final class RestoreService {
 		foreach ($folder->getDirectoryListing() as $node) {
 			$rel = $prefix === '' ? $node->getName() : $prefix . '/' . $node->getName();
 			if ($node instanceof Folder) {
-				$hasKept = false;
+				$hasKept = isset($keep[$rel]); // a folder that was empty in the snapshot
 				foreach (array_keys($keep) as $k) {
 					if (str_starts_with((string)$k, $rel . '/')) {
 						$hasKept = true;

@@ -82,6 +82,8 @@ final class AdminApiController extends Controller {
 
 	/** Seconds of backup work one tick() does: well within a normal web request. */
 	public const TICK_SECONDS = 10.0;
+	/** Seconds one request for the Bin reads, before the page shows how far it is and asks for more. */
+	private const TRASH_PAGE_SECONDS = 5.0;
 
 	/**
 	 * Move running backups forward from the open admin page, when background jobs do not run on a
@@ -95,7 +97,10 @@ final class AdminApiController extends Controller {
 		}
 		$deadline = microtime(true) + self::TICK_SECONDS;
 		$stepped = 0;
-		foreach ($this->runs->findRunning(null, BackupService::KIND_FULL) as $run) {
+		$running = $this->runs->findRunning(null, BackupService::KIND_FULL);
+		// Longest wait first: a run that takes all of a tick does not keep another from its turn.
+		usort($running, static fn ($a, $b) => $a->getUpdatedAt() <=> $b->getUpdatedAt());
+		foreach ($running as $run) {
 			if (microtime(true) >= $deadline) {
 				break;
 			}
@@ -174,15 +179,18 @@ final class AdminApiController extends Controller {
 		}
 	}
 
-	public function trash(int $targetId): JSONResponse {
+	public function trash(int $targetId, string $after = ''): JSONResponse {
 		try {
 			$delay = $this->keys->deleteDelayDays() * 86400;
+			$repo = $this->targets->repository($this->targets->get((string)$targetId));
+			// In parts, so that the page can show how far it is (a read per removed restore point).
+			$page = $repo->trashPage($after, microtime(true) + self::TRASH_PAGE_SECONDS);
 			$out = [];
-			foreach ($this->targets->repository($this->targets->get((string)$targetId))->trash() as $id => $info) {
+			foreach ($page['items'] as $id => $info) {
 				$out[] = ['id' => $id, 'label' => $info['label'], 'time' => $info['time'], 'removedAt' => $info['forgottenAt'],
 					'by' => $info['by'], 'deleteAfter' => $info['forgottenAt'] + $delay];
 			}
-			return new JSONResponse($out);
+			return new JSONResponse(['total' => $page['total'], 'items' => $out]);
 		} catch (\Throwable $e) {
 			return new JSONResponse(['error' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
 		}

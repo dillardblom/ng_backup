@@ -151,6 +151,12 @@ final class RestoreFullService {
 			// The database cannot go into this installation; the files can.
 			$check['dbUnreadable'] = 'the database cannot be restored here: ' . $this->describeBlockers($check);
 		}
+		if ($interrupted) {
+			// A restore that was killed leaves its leases, for up to two hours: they would keep
+			// the first backup of the recovered server waiting after this restore completes.
+			// In maintenance mode, on a partly restored instance, nothing else reads the location.
+			$this->leases->dropShared(PruneService::lockKey($target));
+		}
 		$appConfig->setValueInt(\OCA\NgBackup\AppInfo\Application::APP_ID, self::INTERRUPTED_KEY, time());
 		$result = $this->restoreInMaintenance($target, $snapshotId, $skipMissingTables, $check, $salvage);
 		$appConfig->deleteKey(\OCA\NgBackup\AppInfo\Application::APP_ID, self::INTERRUPTED_KEY);
@@ -175,6 +181,8 @@ final class RestoreFullService {
 			if ($dbError === null) {
 				try {
 					$this->restoreDatabase($repo, $meta, $manifest, $dbReport, $beat, $skipMissingTables);
+				} catch (DatabaseAlreadyRestoredException $e) {
+					throw $e;
 				} catch (\Throwable $e) {
 					if (!$salvage) {
 						throw $e;
@@ -201,6 +209,8 @@ final class RestoreFullService {
 			try {
 				/** @var array<string, mixed> $backupConfig */
 				$backupConfig = $this->fetchBackupConfig($target, $snapshotId, $salvage);
+			} catch (\OCA\NgBackup\Repository\RestoreTargetException $e) {
+				throw $e; // nowhere to put it: not a config.php that cannot be read
 			} catch (\Throwable $e) {
 				if (!$salvage) {
 					throw $e;
@@ -259,8 +269,20 @@ final class RestoreFullService {
 		$dumper = new DbDumper($this->db->getInner(), $prefix);
 		try {
 			$dumper->restore($repo, $manifest, $dbReport, $beat, $skipMissingTables);
-		} finally {
+		} catch (\Throwable $e) {
+			try {
+				$this->restoreOwnAppConfig($ownAppConfig);
+			} catch (\Throwable) {
+				// rolled back, so they are still there: the error that brought us here is the one to report
+			}
+			throw $e;
+		}
+		try {
 			$this->restoreOwnAppConfig($ownAppConfig);
+		} catch (\Throwable $e) {
+			// The old server's database is in place by now: not a case for "the database stays as
+			// the fresh installation made it" under --salvage. A run again restores these rows.
+			throw new DatabaseAlreadyRestoredException('The database was restored, but NG Backup could not put back its own settings: ' . $e->getMessage(), 0, $e);
 		}
 	}
 

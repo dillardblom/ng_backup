@@ -55,9 +55,32 @@ final class BackupRun {
 			});
 			$parent = new ParentCursor($repo, $state['parent'], $state['parentPos']);
 			$lines = [];
+			$emptyDirs = [];
 			$finishedWalk = true;
 
 			foreach ($walker->walk($state['after']) as $logical => $path) {
+				if (!mb_check_encoding($logical, 'UTF-8') || !Repository::isSafePath($logical)) {
+					// A name a snapshot cannot hold (a backslash, a control character, not UTF-8). One
+					// such path must not make a backup fail, or the whole snapshot unreadable later.
+					// The cursor stays where it is: the state is JSON, which cannot hold such a name. A
+					// next step meets it again, and it is reported once.
+					self::recordUnreadable($state, $stats, mb_scrub($logical, 'UTF-8'));
+					continue;
+				}
+				if (is_dir($path)) {
+					$mtime = @filemtime($path);
+					if ($mtime === false) {
+						continue; // removed while walking
+					}
+					$emptyDirs[] = json_encode([$logical, $mtime], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+					$stats['emptyDirs'] = ($stats['emptyDirs'] ?? 0) + 1;
+					$state['after'] = $logical;
+					if (microtime(true) >= $deadline) {
+						$finishedWalk = false;
+						break;
+					}
+					continue;
+				}
 				$version = Repository::fileVersion($path);
 				if ($version === 'missing') {
 					continue; // deleted while walking
@@ -136,6 +159,11 @@ final class BackupRun {
 				$writer->write(implode("\n", $lines) . "\n");
 				$state['segments'][] = $writer->finish();
 			}
+			if ($emptyDirs !== []) {
+				$writer = $repo->blobWriter($stats);
+				$writer->write(implode("\n", $emptyDirs) . "\n");
+				$state['dirSegments'][] = $writer->finish();
+			}
 			$repo->flushPacks();
 			$state['parentPos'] = $parent->position();
 			$state['stats'] = $stats;
@@ -150,10 +178,18 @@ final class BackupRun {
 		if ($state['phase'] === 'finish') {
 			// Every segment ends with a newline, so they read as one stream: fetched together,
 			// several at a time where the location allows it.
+			// Empty folders go in the meta record, not between the files: a version that does not
+			// know them reads the snapshot as before, and only restores no empty folders.
+			$emptyDirs = [];
+			foreach (isset($state['dirSegments']) ? $repo->readLines(array_values(array_merge(...$state['dirSegments']))) : [] as $line) {
+				if ($line !== '') {
+					$emptyDirs[] = json_decode($line, true, 8, JSON_THROW_ON_ERROR);
+				}
+			}
 			$repo->putSnapshot($state['snapshot'],
 				['time' => $state['started'], 'parent' => $state['parent'], 'label' => $state['label'],
 					'roots' => array_keys($state['roots']), 'stats' => $state['stats'],
-					'warnings' => self::warnings($state)] + $state['meta'],
+					'warnings' => self::warnings($state)] + ($emptyDirs === [] ? [] : ['emptyDirs' => $emptyDirs]) + $state['meta'],
 				$repo->readLines(array_values(array_merge(...$state['segments']))));
 			$state['phase'] = 'commit';
 		}

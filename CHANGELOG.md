@@ -11,6 +11,36 @@ Each heading starts with that `<version>`, once: the app store shows a release t
 whose heading starts with its `x.y.z` and ignores anything after it, so `## [1.0.0-rc.6]` would be
 shown under 1.0.0. The git tag of a release candidate goes after the date.
 
+## [1.0.3] - 2026-11-06
+
+### Fixed
+- Empty folders are backed up and restored (#27), in `occ backup:restore`, `occ backup:restore:full`
+  and the restore page, where they are shown too. They come back from the first backup made with
+  this version; older restore points do not contain them. An older version of NG Backup can still
+  read new restore points, and then only leaves the empty folders out.
+- A full disk during a restore no longer looks like a damaged backup. The restore now stops with a
+  message about the disk, also with `--salvage`, and does not point at `--salvage` any more. The same
+  goes for other trouble writing to the restore directory, such as permissions.
+- A file or folder whose name a snapshot cannot hold (a backslash, a control character, not UTF-8) is
+  left out and reported as unreadable. Before, a backslash or control character could make the whole
+  restore point unreadable, and a name that is not UTF-8 made the backup fail.
+- A restore that goes on after a stop also removes the temporary files in folders where every file
+  is already in place, and checks that those folders are inside the restore directory before it
+  leaves their files alone.
+- After a restore that was killed and then ran again, a backup no longer has to wait up to two hours
+  for the locks of the killed run.
+- A restore only removes read-ahead folders of its own (`.ngb-restore-spool-` with 8 hex digits).
+- A restore keeps its lock on the location during a long row of files that are already in place.
+- A database restore that fails no longer leaves behind tables it created, which could stop the
+  installation of that app later. When only NG Backup's own settings cannot be put back after the
+  database was restored, `--salvage` no longer says the database is still the fresh one.
+- A connection that breaks while opening a pack on the location (seen with SMB) is retried once and
+  is handled by `--salvage`, instead of stopping the restore with the error of the storage.
+- Without a system cron, several running backups take turns while the page is open.
+- The Bin tab shows how far it is while it reads the removed restore points, which can take a while.
+  It also shows when it cannot read a location, instead of an empty bin, and refreshes when a run
+  ends.
+
 ## [1.0.2] - 2026-11-06
 
 ### Added

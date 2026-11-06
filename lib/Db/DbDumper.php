@@ -157,17 +157,27 @@ final class DbDumper {
 		}
 		// Tables the backup knows the structure of are created first (DDL is not transactional
 		// everywhere); tables it does not know are left out, as asked.
-		foreach ($missing as $table) {
-			if (isset($manifest['tables'][$table]['schema'])) {
-				$this->db->createSchemaManager()->createTable(self::tableFromStructure($table, $manifest['tables'][$table]['schema'], $this->tableOptions()));
-				$report['created'][] = $table;
-			} else {
-				$report['missing'][] = $table;
+		try {
+			foreach ($missing as $table) {
+				if (isset($manifest['tables'][$table]['schema'])) {
+					$report['created'][] = $table; // first: creating it can stop halfway (its indexes)
+					$this->db->createSchemaManager()->createTable(self::tableFromStructure($table, $manifest['tables'][$table]['schema'], $this->tableOptions()));
+				} else {
+					$report['missing'][] = $table;
+				}
 			}
+		} catch (\Throwable $e) {
+			$this->dropCreatedTables($report);
+			throw $e;
 		}
 		$total = 0;
 		$foreignKeys = [];
-		$this->db->beginTransaction();
+		try {
+			$this->db->beginTransaction();
+		} catch (\Throwable $e) {
+			$this->dropCreatedTables($report);
+			throw $e;
+		}
 		try {
 			$foreignKeys = $this->suspendForeignKeys(); // first: on SQLite it also takes the write lock
 			foreach ($manifest['tables'] as $table => $info) {
@@ -220,21 +230,6 @@ final class DbDumper {
 			$this->restoreSequences($manifest['sequences'] ?? [], $report['missing'], array_merge($report['restored'], $report['skipped']));
 			$this->resumeForeignKeys($foreignKeys);
 			$this->db->commit();
-			// Foreign keys of the tables created above, now their rows are in. Not inside the
-			// transaction: MySQL commits on DDL. A failure is reported, not fatal: the data is
-			// restored either way.
-			foreach ($report['created'] as $table) {
-				$structure = $manifest['tables'][$table]['schema'] ?? [];
-				foreach ($structure['foreignKeys'] ?? [] as $fk) {
-					try {
-						$this->db->createSchemaManager()->createForeignKey(
-							new \Doctrine\DBAL\Schema\ForeignKeyConstraint($fk['columns'], $fk['table'], $fk['foreign'], $fk['name'], $fk['options'] ?? []),
-							$table);
-					} catch (\Throwable $e) {
-						$report['foreignKeyErrors'][] = $table . '.' . $fk['name'] . ': ' . $e->getMessage();
-					}
-				}
-			}
 		} catch (\Throwable $e) {
 			$this->db->rollBack();
 			// PostgreSQL rolls the dropped foreign keys back with the transaction; MySQL's session
@@ -242,9 +237,42 @@ final class DbDumper {
 			if (in_array('SET FOREIGN_KEY_CHECKS = 1', $foreignKeys, true)) {
 				$this->db->executeStatement('SET FOREIGN_KEY_CHECKS = 1');
 			}
+			$this->dropCreatedTables($report);
 			throw $e;
 		}
+		// Committed. Foreign keys of the tables created above, now their rows are in. Not inside the
+		// transaction: MySQL commits on DDL. A failure is reported, not fatal: the data is restored
+		// either way, and the created tables stay.
+		foreach ($report['created'] as $table) {
+			$structure = $manifest['tables'][$table]['schema'] ?? [];
+			foreach ($structure['foreignKeys'] ?? [] as $fk) {
+				try {
+					$this->db->createSchemaManager()->createForeignKey(
+						new \Doctrine\DBAL\Schema\ForeignKeyConstraint($fk['columns'], $fk['table'], $fk['foreign'], $fk['name'], $fk['options'] ?? []),
+						$table);
+				} catch (\Throwable $e) {
+					$report['foreignKeyErrors'][] = $table . '.' . $fk['name'] . ': ' . $e->getMessage();
+				}
+			}
+		}
 		return $total;
+	}
+
+	/**
+	 * The restore did not go through: a rollback does not undo CREATE TABLE everywhere. Left behind,
+	 * the empty tables of an app would stop that app's installation later ("table already exists").
+	 *
+	 * @param array{created: list<string>, ...} $report
+	 */
+	private function dropCreatedTables(array &$report): void {
+		foreach ($report['created'] as $table) {
+			try {
+				$this->db->createSchemaManager()->dropTable($table);
+			} catch (\Throwable) {
+				// the error that brought us here is the one to report; a run again uses the table
+			}
+		}
+		$report['created'] = [];
 	}
 
 	/**

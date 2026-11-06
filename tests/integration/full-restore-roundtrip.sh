@@ -102,7 +102,7 @@ ok "key, kit and location on the origin"
 
 NC_PASS=$(openssl rand -hex 16)
 docker exec -u www-data -e OC_PASS="$NC_PASS" ngb-frt-origin php occ user:add --password-from-env frtest >/dev/null
-docker exec ngb-frt-origin sh -c "mkdir -p /var/www/html/data/frtest/files/Docs && head -c 200000 /dev/urandom > /var/www/html/data/frtest/files/Docs/report.bin && echo 'hello disaster recovery' > /var/www/html/data/frtest/files/Docs/note.txt && chown -R www-data:www-data /var/www/html/data/frtest"
+docker exec ngb-frt-origin sh -c "mkdir -p /var/www/html/data/frtest/files/Docs /var/www/html/data/frtest/files/Empty/Nested && head -c 200000 /dev/urandom > /var/www/html/data/frtest/files/Docs/report.bin && echo 'hello disaster recovery' > /var/www/html/data/frtest/files/Docs/note.txt && chown -R www-data:www-data /var/www/html/data/frtest"
 if [ "$MODE" = sftp ]; then
 	# about three packs of 32 MiB
 	docker exec ngb-frt-origin sh -c "head -c 90000000 /dev/urandom > /var/www/html/data/frtest/files/Docs/large.bin && chown www-data:www-data /var/www/html/data/frtest/files/Docs/large.bin"
@@ -214,6 +214,7 @@ if [ "$MODE" = salvage ]; then
 	printf '%s\n' "$OUT" | grep "$SALVAGE" >/dev/null || { printf '%s\n' "$OUT" | tail -30; fail "the output does not name the salvage folder"; }
 	[ "$(docker exec ngb-frt-restore cat "$SALVAGE/data/frtest/files/Docs/note.txt")" = "hello disaster recovery" ] || fail "the user's file is not in the salvage folder"
 	docker exec ngb-frt-restore test -f "$SALVAGE/config/config.php" || fail "config.php is not in the salvage folder"
+	docker exec ngb-frt-restore test -d "$SALVAGE/data/frtest/files/Empty/Nested" || fail "the empty folder is not in the salvage folder"
 	run_on ngb-frt-restore user:list | grep frtest >/dev/null && fail "the fresh database was changed (the backed-up user is there)"
 	run_on ngb-frt-restore status 2>&1 | grep "maintenance: false" >/dev/null || fail "maintenance mode is still on after the salvage"
 	run_on ngb-frt-restore backup:status >/dev/null || fail "backup:status fails after the salvage"
@@ -254,8 +255,8 @@ if [ "$MODE" = salvage-files ]; then
 			if (!file_exists($root . $p)) { $bad[] = "not listed and not there: $p"; continue; }
 			hash_file("sha256", $root . $p) === $sum ? $same++ : $bad[] = "different: $p";
 		}
-		$temps = glob($root . "*/*.ngb-restore-*") ?: [];
-		foreach ($temps as $t) { $bad[] = "temporary left: $t"; }
+		$walk = new RecursiveIteratorIterator(new RecursiveDirectoryIterator("/var/www/html/data", FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::SELF_FIRST);
+		foreach ($walk as $f) { if (str_contains($f->getFilename(), ".ngb-restore-")) { $bad[] = "temporary left: " . $f->getPathname(); } }
 		echo "same=$same gone=$gone bad=", count($bad), "\n", implode("\n", array_slice($bad, 0, 10)), "\n";
 		echo "reasons: ", implode(" | ", array_unique(array_map(fn ($r) => substr(preg_replace("#[0-9a-f]{16,}#", "<id>", $r), 0, 70), $reasons))), "\n";')
 	printf '%s\n' "$CHECK"
@@ -265,6 +266,8 @@ if [ "$MODE" = salvage-files ]; then
 	ok "with --salvage: every file listed and absent, or there and identical"
 	run_on ngb-frt-restore status 2>&1 | grep "maintenance: false" >/dev/null || fail "maintenance mode is still on after the salvage"
 	run_on ngb-frt-restore user:list | grep frtest >/dev/null || fail "the backed-up user is missing: the database was not restored"
+	run_on ngb-frt-restore user:list | grep admin >/dev/null || fail "the admin is missing: the database was not restored"
+	docker exec ngb-frt-restore test -d /var/www/html/data/frtest/files/Empty/Nested || fail "the empty folder did not come back with --salvage"
 	[ "$(docker exec ngb-frt-restore cat /var/www/html/data/frtest/files/Docs/note.txt 2>/dev/null)" = "hello disaster recovery" ] \
 		|| printf '%s\n' "$OUT" | grep "Docs/note.txt" >/dev/null || fail "note.txt is neither restored nor listed"
 	run_on ngb-frt-restore backup:status >/dev/null || fail "backup:status fails after the salvage"
@@ -323,7 +326,16 @@ run_on ngb-frt-restore backup:status >/dev/null || fail "backup:status fails aft
 run_on ngb-frt-restore user:list | grep frtest >/dev/null || fail "the backed-up user is missing from the restored database"
 docker exec ngb-frt-restore test -f /var/www/html/data/frtest/files/Docs/note.txt || fail "restored file is missing"
 [ "$(docker exec ngb-frt-restore cat /var/www/html/data/frtest/files/Docs/note.txt)" = "hello disaster recovery" ] || fail "restored file content differs"
-run_on ngb-frt-restore files:scan frtest >/dev/null || fail "files:scan fails after restore"
+if [ "$LEGACY" = legacy ]; then
+	# Backups made before 1.0.3 do not record empty folders
+	docker exec ngb-frt-restore test -e /var/www/html/data/frtest/files/Empty/Nested && fail "an empty folder came back from a backup that does not record them"
+	run_on ngb-frt-restore files:scan frtest >/dev/null || fail "files:scan fails after restore"
+else
+	docker exec ngb-frt-restore test -d /var/www/html/data/frtest/files/Empty/Nested || fail "the empty folder did not come back"
+	run_on ngb-frt-restore files:scan frtest >/dev/null || fail "files:scan fails after restore"
+	docker exec ngb-frt-restore test -d /var/www/html/data/frtest/files/Empty/Nested || fail "files:scan removed the empty folder"
+	ok "the empty folder came back and stays after files:scan"
+fi
 # New rows after the restore: a new file (file cache) and a new user must not collide with
 # restored rows (ID counters after the data).
 docker exec ngb-frt-restore sh -c "echo new > /var/www/html/data/frtest/files/Docs/after-restore.txt && chown www-data /var/www/html/data/frtest/files/Docs/after-restore.txt"

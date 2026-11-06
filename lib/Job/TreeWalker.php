@@ -9,7 +9,9 @@ namespace OCA\NgBackup\Job;
 
 /**
  * Walks one or more source roots in a stable depth-first order (entries of a directory sorted
- * by name, children right after their directory), yielding "<root>/<relative path>" for files.
+ * by name, children right after their directory), yielding "<root>/<relative path>" for files
+ * and for directories with nothing in them to walk (the caller tells them apart with is_dir()).
+ * A root itself without a name is never yielded.
  *
  * The same order is used for comparing paths (compare()), so a walk can resume after a cursor
  * and be merge-joined with the previous snapshot without holding any list in memory.
@@ -66,6 +68,7 @@ final class TreeWalker {
 		}
 		$names = array_values(array_diff($names, ['.', '..']));
 		sort($names, SORT_STRING);
+		$empty = true; // no file or directory below it that is walked, whatever the cursor skips
 		foreach ($names as $name) {
 			$childLogical = $logical === '' ? $name : $logical . '/' . $name;
 			$childAbs = $abs . '/' . $name;
@@ -73,19 +76,25 @@ final class TreeWalker {
 				continue; // never follow symlinks out of the data directory
 			}
 			if (is_dir($childAbs)) {
+				$empty = $empty && $this->isExcluded($childLogical, true);
 				// Skip a directory entirely if everything in it sorts before the cursor.
 				if ($after !== null && self::compare($childLogical, $after) < 0 && !self::isPrefix($childLogical, $after)) {
 					continue;
 				}
 				yield from $this->walkDir($childAbs, $childLogical, $after);
 			} elseif (is_file($childAbs)) {
+				$excluded = $this->isExcluded($childLogical, false);
+				$empty = $empty && $excluded;
 				if ($after !== null && self::compare($childLogical, $after) <= 0) {
 					continue;
 				}
-				if (!$this->isExcluded($childLogical, false)) {
+				if (!$excluded) {
 					yield $childLogical => $childAbs;
 				}
 			}
+		}
+		if ($empty && $logical !== '' && ($after === null || self::compare($logical, $after) > 0)) {
+			yield $logical => $abs;
 		}
 	}
 

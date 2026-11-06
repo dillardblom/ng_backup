@@ -50,6 +50,40 @@ class CatalogTest extends TestCase {
 		$this->assertSame(4, $again->catalogGeneration());
 	}
 
+	public function testTheTrashIsReadInPartsThatTogetherAreAll(): void {
+		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'), $this->anchor);
+		for ($i = 0; $i < 3; $i++) {
+			$repo->forget($repo->backupDirectory($this->src)['snapshot']);
+		}
+		$again = $this->open();
+		$seen = [];
+		// A deadline already past: one entry per request, as on a slow location
+		$after = '';
+		for ($request = 0; count($seen) < 3 && $request < 5; $request++) {
+			$page = $again->trashPage($after, 0.0);
+			$this->assertSame(3, $page['total']);
+			$this->assertCount(1, $page['items']);
+			$seen += $page['items'];
+			$after = (string)array_key_last($page['items']);
+		}
+		$this->assertEqualsCanonicalizing(array_keys($again->trash()), array_keys($seen));
+		$this->assertSame(['total' => 3, 'items' => []], $again->trashPage($after, 0.0));
+		$this->assertCount(3, $again->trashPage('', microtime(true) + 60)['items']);
+	}
+
+	public function testAnEntryThatLeavesTheTrashBetweenPartsMakesNoneComeTwiceOrBeMissed(): void {
+		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'), $this->anchor);
+		for ($i = 0; $i < 3; $i++) {
+			$repo->forget($repo->backupDirectory($this->src)['snapshot']);
+		}
+		$reader = $this->open();
+		$ids = array_keys($reader->trashPage('', microtime(true) + 60)['items']);
+		$first = $reader->trashPage('', 0.0)['items'];
+		$this->assertSame([$ids[0]], array_keys($first));
+		$this->open()->untrash($ids[0]); // another administrator, between two parts
+		$this->assertSame([$ids[1], $ids[2]], array_keys($this->open()->trashPage($ids[0], microtime(true) + 60)['items']));
+	}
+
 	public function testRollbackIsDetected(): void {
 		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'), $this->anchor);
 		$repo->backupDirectory($this->src);
