@@ -11,7 +11,7 @@ Each heading starts with that `<version>`, once: the app store shows a release t
 whose heading starts with its `x.y.z` and ignores anything after it, so `## [1.0.0-rc.6]` would be
 shown under 1.0.0. The git tag of a release candidate goes after the date.
 
-## [1.0.3] - Unreleased
+## [1.0.3] - 2026-11-06
 
 ### Fixed
 - Empty folders are backed up and restored (#27), in `occ backup:restore`, `occ backup:restore:full`

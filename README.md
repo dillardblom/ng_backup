@@ -7,7 +7,7 @@ installations and hosted Nextcloud. (Choosing SMB as a storage backend is the on
 see "Storage backend experiences" below — that requirement comes from files_external, not from
 ng_backup, and applies to any Nextcloud app that writes to an SMB share.)
 
-**Status: 1.0.2, stable.** Disaster recovery has been tested on real installations (see "Tested
+**Status: 1.0.3, stable.** Disaster recovery has been tested on real installations (see "Tested
 disaster recoveries" below). See "Known limitations" below, `PLAN.md` for the design and
 `docs/HOWTO.md` for a step-by-step guide from setup to a tested restore. Server lost? See
 `docs/DISASTER-RECOVERY.md`.
@@ -169,6 +169,7 @@ Full restores onto a fresh server, following only [the guide](docs/DISASTER-RECO
 |---|---|---|---|
 | Production, about 1 TB, 150,000 files (Nextcloud All-in-One) | Hetzner Storage Box (SFTP), Germany → Canada | PostgreSQL → PostgreSQL | 150,622 files restored in about 25 h (13-14 MiB/s), sample identical |
 | The same, 1.0.2 | Hetzner Storage Box (SMB), Germany → Canada | PostgreSQL → PostgreSQL | 150,755 files restored in about 29 h (7-13 MiB/s), going on after a lost connection; sample identical, empty folders not restored ([#27](https://github.com/dillardblom/ng_backup/issues/27)) |
+| 1.0.3, small simulations of 2 GB: as planned, with the restore killed halfway, and with a disk that runs full | Local SFTP server | PostgreSQL → PostgreSQL and MariaDB | all 3,101 user files and all empty folders identical; users, a share and a calendar back |
 | 138 GB simulation: 20 users, calendars, contacts, mail, shares, team folders with an ACL, versions, trash | OVH S3, Warsaw → Canada | MariaDB → PostgreSQL | all 15,772 files and every database count identical |
 | The same | OVH S3 | MariaDB → MariaDB | all 15,772 files and every database count identical |
 | The same | Hetzner Storage Box (SMB), Germany → Canada | MariaDB → SQLite | all 15,772 files and every database count identical (27.6 h, about 1.5 MB/s) |
@@ -265,10 +266,6 @@ What is planned, without dates. Ideas and votes are welcome in the
 [issues](https://github.com/dillardblom/ng_backup/issues); if something you need is listed here,
 a 👍 on its issue helps decide what comes first.
 
-**1.0.3**
-- Empty folders in the backup and the restore
-  ([#27](https://github.com/dillardblom/ng_backup/issues/27)).
-
 **1.1.0**
 - Restore without the recovery kit: the backup key from the location itself, opened with one of
   your passphrases.
@@ -294,12 +291,10 @@ a 👍 on its issue helps decide what comes first.
 
 On the backlog; know them before you rely on NG Backup:
 
-- **Empty folders do not come back.** A backup only records files, so a folder without files is
-  not restored. To be fixed in 1.0.3
-  ([#27](https://github.com/dillardblom/ng_backup/issues/27)).
-- **A full disk during a restore looks like a damaged backup.** The reason shown is "Size mismatch",
-  and with `--salvage` the restore goes on and lists the remaining files. The backup itself is fine:
-  make room and run the restore again. To be fixed in 1.0.3.
+- **Empty folders only come back from backups made with 1.0.3 or newer.** Older restore points do
+  not contain them.
+- **Folders with files in them show the time of the restore**, not their original modification time.
+  The files keep theirs. On the roadmap.
 - **Only the data directory is backed up.** Object storage as primary storage (`objectstore` in
   `config.php`) is not supported: a backup refuses to start there. Folders mounted through the
   External storage app are not in the data directory and are **not included**, without a warning.
