@@ -13,10 +13,11 @@ use OCP\IConfig;
 use OCP\IGroupManager;
 
 /**
- * The daily backup time: "HH:MM" in a time zone. Nextcloud runs PHP in UTC, so a time without a
- * zone meant UTC (issue #19: 03:00 ran at 05:00 in Berlin). A time saved before there was a zone
- * is converted once to the zone of the server or of an administrator, at today's offset: it then
- * shows as it effectively ran (02:30 UTC becomes 04:30 Europe/Berlin in summer).
+ * The time zone times are shown in, and the daily time from before each location had its own
+ * schedule (see LocationSchedule). Nextcloud runs PHP in UTC, so a time without a zone meant UTC
+ * (issue #19: 03:00 ran at 05:00 in Berlin). A time saved before there was a zone is converted once
+ * to the zone of the server or of an administrator, at today's offset: it then shows as it
+ * effectively ran (02:30 UTC becomes 04:30 Europe/Berlin in summer).
  */
 final class Schedule {
 	public const TIME_KEY = 'schedule_time';
@@ -44,27 +45,9 @@ final class Schedule {
 		return ['time' => $time, 'timezone' => $zone];
 	}
 
-	/** @throws \InvalidArgumentException for a malformed time or an unknown zone */
-	public function set(string $time, string $zone): void {
-		if ($time !== '' && !self::validTime($time)) {
-			throw new \InvalidArgumentException('Use HH:MM or empty');
-		}
-		if (!self::validZone($zone)) {
-			throw new \InvalidArgumentException('Unknown time zone: ' . $zone);
-		}
-		$this->appConfig->setValueString(Application::APP_ID, self::ZONE_KEY, $zone);
-		$this->appConfig->setValueString(Application::APP_ID, self::TIME_KEY, $time);
-	}
-
-	/** Today's scheduled moment as a Unix time, in the schedule's zone; null without a schedule. */
-	public function todayAt(?int $now = null): ?int {
-		['time' => $time, 'timezone' => $zone] = $this->get();
-		if ($time === '' || !self::validTime($time)) {
-			return null;
-		}
-		$tz = new \DateTimeZone($zone);
-		$day = (new \DateTimeImmutable('@' . ($now ?? time())))->setTimezone($tz)->format('Y-m-d');
-		return (new \DateTimeImmutable($day . ' ' . $time, $tz))->getTimestamp();
+	/** @return non-empty-string the zone of a location's schedule, or else this one */
+	public function zoneOr(?string $zone): string {
+		return $zone !== null && self::validZone($zone) ? $zone : $this->get()['timezone'];
 	}
 
 	/**

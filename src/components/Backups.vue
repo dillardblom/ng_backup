@@ -5,10 +5,7 @@
 <template>
 	<NcSettingsSection :name="t('ng_backup', 'Backups')"
 		:description="t('ng_backup', 'Backups run in the background through Nextcloud\'s cron. Unchanged files are not read again; only new data is uploaded.')">
-		<div class="ngb-row">
-			<NcTextField v-model="schedule" class="ngb-time" :label="t('ng_backup', 'Daily at (HH:MM, {zone}, empty = off)', { zone: browserZone })" />
-			<NcButton :disabled="schedule === status.schedule && browserZone === status.scheduleTimezone" @click="saveSchedule">{{ t('ng_backup', 'Save') }}</NcButton>
-		</div>
+		<LocationScheduleRow v-for="target in status.targets" :key="target.id" :target="target" @changed="emit('changed')" @error="error = $event" />
 		<div class="ngb-row">
 			<NcTextField v-model="label" class="ngb-label" :maxlength="100" :label="t('ng_backup', 'Label (optional)')"
 				:placeholder="t('ng_backup', 'e.g. before the upgrade to Nextcloud 35')" />
@@ -60,24 +57,19 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import { n, t } from '@nextcloud/l10n'
 import NcButton from '@nextcloud/vue/components/NcButton'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import NcSettingsSection from '@nextcloud/vue/components/NcSettingsSection'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
+import LocationScheduleRow from './LocationScheduleRow.vue'
 import api from '../api.js'
-import { formatDateTime, formatSize, toZone } from '../format.js'
+import { formatDateTime, formatSize } from '../format.js'
 
 const props = defineProps({ status: { type: Object, required: true }, allRuns: { type: Boolean, default: false } })
 const emit = defineEmits(['changed', 'show-all-runs'])
-// The time is saved in the administrator's own zone (the browser's); a schedule saved in another
-// zone is shown in this one, so it reads as the moment it runs here.
-const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-const shown = (s) => (s && props.status.scheduleTimezone && props.status.scheduleTimezone !== browserZone) ? toZone(s, props.status.scheduleTimezone, browserZone) : s
-const schedule = ref(shown(props.status.schedule))
 const error = ref('')
-watch(() => [props.status.schedule, props.status.scheduleTimezone], ([s]) => { schedule.value = shown(s) })
 
 const label = ref('')
 
@@ -96,6 +88,9 @@ const percent = (run) => {
 const runStatus = (run) => {
 	if (run.status !== 'running') {
 		return run.status
+	}
+	if (run.queued) {
+		return t('ng_backup', 'queued, after the backup that is running now')
 	}
 	const detail = run.phase + percent(run)
 	if (run.waitingFor) {
@@ -116,21 +111,10 @@ async function start(target) {
 		error.value = e.message
 	}
 }
-
-async function saveSchedule() {
-	error.value = ''
-	try {
-		await api.setSchedule(schedule.value.trim(), browserZone)
-		emit('changed')
-	} catch (e) {
-		error.value = e.message
-	}
-}
 </script>
 
 <style scoped>
 .ngb-row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
-.ngb-time { max-width: 260px; }
 .ngb-label { max-width: 360px; }
 .ngb-table-wrap { overflow-x: auto; }
 .ngb-table { width: 100%; border-collapse: collapse; }

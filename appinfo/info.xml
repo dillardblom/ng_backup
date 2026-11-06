@@ -90,6 +90,7 @@ you need help with restoring a backup after a crash.]]></description>
         <command>OCA\NgBackup\Command\TargetAppendOnly</command>
         <command>OCA\NgBackup\Command\TargetTrustCurrent</command>
         <command>OCA\NgBackup\Command\TargetLimit</command>
+        <command>OCA\NgBackup\Command\TargetSchedule</command>
         <command>OCA\NgBackup\Command\Trash</command>
         <command>OCA\NgBackup\Command\TrashRestore</command>
         <command>OCA\NgBackup\Command\KeySlots</command>

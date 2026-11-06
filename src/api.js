@@ -34,7 +34,7 @@ export default {
 	setTargetLimit: (id, maxGb) => call('put', `/targets/${id}/limit`, { maxGb }),
 	startBackup: (targetId, label) => call('post', '/backups', { targetId, label }),
 	tick: () => call('post', '/tick'),
-	setSchedule: (time, timezone) => call('put', '/schedule', { time, timezone }),
+	setTargetSchedule: (id, schedule, timezone) => call('put', `/targets/${id}/schedule`, { schedule, timezone }),
 	snapshots: (targetId) => call('get', `/targets/${targetId}/snapshots`),
 	setSnapshotNote: (targetId, snapshotId, note) => call('put', `/targets/${targetId}/snapshots/${snapshotId}/note`, { note }),
 	setSnapshotPinned: (targetId, snapshotId, pinned) => call('put', `/targets/${targetId}/snapshots/${snapshotId}/pin`, { pinned }),

@@ -103,7 +103,10 @@ final class AlertService {
 
 	/** At most one notification per location per day. */
 	public function checkStale(Target $target): void {
-		$last = $this->runs->lastFinished($target->getId(), BackupService::KIND_FULL);
+		if ((string)$target->getSchedule() === '') {
+			return; // no schedule is a choice, as for a location that is only connected now and then
+		}
+		$last =$this->runs->lastFinished($target->getId(), BackupService::KIND_FULL);
 		$lastTime = $last?->getFinishedAt() ?? $target->getCreatedAt();
 		if (time() - $lastTime < self::STALE_AFTER || $this->runs->findRunning($target->getId(), BackupService::KIND_FULL) !== []) {
 			return;

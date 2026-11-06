@@ -329,6 +329,7 @@ On the backlog; know them before you rely on NG Backup:
 | `backup:key:init`, `backup:key:kit`, `backup:key:confirm` | create the key, recovery kit, confirmation |
 | `backup:key:slots`, `backup:key:slot:add/replace/remove` | passphrase slots |
 | `backup:target:backends/add/edit/list/remove/append-only` | backup locations |
+| `backup:target:schedule` | when a location is backed up: off, daily, or every N hours |
 | `backup:run`, `backup:status`, `backup:list` | back up, status (runs of the last 7 days; `--all` for all), restore points |
 | `backup:cancel <run>` | stop a running backup |
 | `backup:browse`, `backup:restore` | browse and restore |

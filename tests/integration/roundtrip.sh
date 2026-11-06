@@ -101,6 +101,24 @@ ok "without system cron: warning in backup:status and the API, backup finished b
 # The Bin reads in parts, as the page does (what is in the parts: CatalogTest)
 api "$API/targets/$TID/trash" | php -r '$p = json_decode(stream_get_contents(STDIN), true); exit(is_int($p["total"] ?? null) && is_array($p["items"] ?? null) && count($p["items"]) <= $p["total"] ? 0 : 1);' || fail "the Bin API does not give a total and items"
 ok "the Bin API reads in parts, with a total"
+# Locations are backed up one after the other: the second one started is queued until the first is done.
+for L in 2 3; do
+  $X sh -c "mkdir -p /tmp/ngb-rt-target$L"
+  occ backup:target:add ci$L local -a null::null -o datadir=/tmp/ngb-rt-target$L --path=repo >/dev/null || fail "target add ci$L"
+done
+IDS=$(api "$API/status" | php -r 'foreach (json_decode(stream_get_contents(STDIN), true)["targets"] as $t) { if ($t["name"] === "ci2" || $t["name"] === "ci3") { echo $t["id"], " "; } }')
+for ID in $IDS; do api -X POST -d "{\"targetId\": $ID, \"label\": \"turn\"}" "$API/backups" >/dev/null || fail "start a backup to location $ID"; done
+occ backup:status | grep "queued" >/dev/null || fail "the second backup is not queued"
+QUEUED=$(api "$API/status" | php -r 'echo count(array_filter(json_decode(stream_get_contents(STDIN), true)["runs"], fn ($r) => $r["queued"]));')
+[ "$QUEUED" = 1 ] || fail "$QUEUED backups queued instead of 1"
+for i in $(seq 1 60); do
+  api -X POST "$API/tick" >/dev/null || fail "tick"
+  RUNNING=$(api "$API/status" | php -r 'echo count(array_filter(json_decode(stream_get_contents(STDIN), true)["runs"], fn ($r) => $r["status"] === "running"));')
+  [ "$RUNNING" != 0 ] || break
+done
+[ "$RUNNING" = 0 ] || fail "the queued backups did not finish"
+occ backup:list ci3 | grep " turn " >/dev/null || fail "the queued backup made no snapshot"
+ok "locations in turn: the second backup queued, and done after the first"
 occ background:cron >/dev/null
 $X php -f /var/www/html/cron.php >/dev/null 2>&1 || true
 occ backup:status | grep "system cron" >/dev/null && fail "backup:status still warns after cron ran"
@@ -108,6 +126,26 @@ sleep 8 # APCu app config cache of the web server
 api "$API/status" | php -r 'exit(json_decode(stream_get_contents(STDIN), true)["cron"]["ok"] ? 0 : 1);' || fail "the status API still reports a missing cron after cron ran"
 ok "with a system cron that ran: no warning in backup:status or the API"
 occ user:delete "$ADM" >/dev/null
+
+# A schedule per location. Choosing a time starts nothing; the moment itself does, and only there.
+JOB=$(occ background-job:list --class='OCA\NgBackup\BackgroundJob\BackupJob' --output=json | php -r 'echo json_decode(stream_get_contents(STDIN), true)[0]["id"];')
+job() { occ background-job:execute "$JOB" --force-execute >/dev/null; }
+occ backup:target:schedule ci off >/dev/null
+occ backup:target:schedule ci3 off >/dev/null
+occ backup:target:schedule ci2 00:00 --timezone=UTC >/dev/null || fail "set a schedule"
+occ backup:target:schedule ci2 | grep "00:00 (UTC)" >/dev/null || fail "schedule not shown"
+job
+[ "$(occ backup:list ci2 | grep -c ' scheduled ')" = 0 ] || fail "choosing a time started a backup"
+occ backup:target:schedule ci2 "$($X date -u -d '+1 minute' +%H:%M)/6" --timezone=UTC >/dev/null || fail "set every 6 hours"
+sleep 65
+job
+occ backup:list ci2 | grep " scheduled " >/dev/null || fail "the scheduled moment started no backup"
+[ "$(occ backup:list ci3 | grep -c ' scheduled ')" = 0 ] || fail "a location that is off was backed up"
+job
+[ "$(occ backup:list ci2 | grep -c ' scheduled ')" = 1 ] || fail "one moment started more than one backup"
+occ backup:target:schedule ci2 nonsense >/dev/null 2>&1 && fail "a bad schedule was accepted"
+for L in 2 3; do occ backup:target:remove ci$L >/dev/null || fail "target remove ci$L"; done
+ok "schedule per location: nothing on choosing a time, one backup at the moment, none when off"
 
 # Checksum audit: shallow (index presence) and deep (download, decrypt, verify every blob).
 occ backup:verify ci "$SNAP" | grep "^OK$" >/dev/null || fail "shallow verify"

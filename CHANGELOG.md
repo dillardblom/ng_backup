@@ -19,8 +19,15 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
 - A note on a restore point that you can change afterwards, on the restore page or with
   `occ backup:note`. Pins and notes are stored encrypted on the location, so a new server sees them.
   An older version of NG Backup can still read the location, but drops them when it writes to it.
+- A schedule per location: off, once a day, or every N hours from a given time, on the page under
+  Backups or with `occ backup:target:schedule`. After the update every location keeps the time that
+  held for all of them; a new location starts with the schedule of the first one.
 
 ### Changed
+- Locations are backed up one after the other: a backup that has to wait shows as queued. A restore
+  point has the time its backup really began, not the time it was queued.
+- Choosing a time no longer starts a backup right away when that time has already passed today.
+- A location without a schedule no longer gets the notification that it has had no recent backup.
 - A file or folder that is left out because of its name now gets a notification of its own, in the
   log and in `occ backup:run`. It says the item is missing from the backup, gives example paths and
   asks to rename it; before, it was reported as unreadable, with advice about permissions.

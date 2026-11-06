@@ -58,6 +58,18 @@ final class BackupService {
 		$this->openedWith = $opened;
 	}
 
+	/**
+	 * The running backups in the order they get their turn: first come, first served. The first one
+	 * runs, the others are queued; only one at a time reads the disks.
+	 *
+	 * @return list<Run>
+	 */
+	public function runsInTurn(): array {
+		$running = $this->runs->findRunning(null, self::KIND_FULL);
+		usort($running, static fn (Run $a, Run $b): int => [$a->getStartedAt(), $a->getId()] <=> [$b->getStartedAt(), $b->getId()]);
+		return $running;
+	}
+
 	public function start(Target $target, string $label = ''): Run {
 		$label = trim($label);
 		if (mb_strlen($label) > self::LABEL_MAX) {
@@ -210,6 +222,10 @@ final class BackupService {
 			$state = json_decode($run->getState(), true, 512, JSON_THROW_ON_ERROR);
 
 			if ($run->getPhase() === 'db') {
+				if (!isset($state['dump'])) {
+					// It may have been queued for hours: the restore point has the time of its data.
+					$state['files']['started'] = gmdate('c');
+				}
 				$dumper = new DbDumper($this->db->getInner(), $this->config->getSystemValueString('dbtableprefix', 'oc_'));
 				$dbStats = $state['dbStats'] ?? [];
 				// With system cron the whole dump usually fits in one step (one transaction, fully

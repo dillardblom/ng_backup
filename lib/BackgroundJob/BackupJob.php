@@ -43,17 +43,16 @@ final class BackupJob extends TimedJob {
 		$this->setTimeSensitivity(IJob::TIME_SENSITIVE);
 	}
 
-	private const MAX_DAILY_ATTEMPTS = 3;
-
 	protected function run($argument): void {
 		$budget = PHP_SAPI === 'cli' ? 240.0 : 20.0;
 		$deadline = microtime(true) + $budget;
 		$this->startScheduled();
-		foreach ($this->runs->findRunning(null, BackupService::KIND_FULL) as $run) {
+		// One after the other: runs that read the same disks at the same time are not faster together.
+		foreach ($this->backups->runsInTurn() as $run) {
 			while (microtime(true) < $deadline && $run->getStatus() === 'running') {
 				$next = $this->backups->step($run, min($deadline, microtime(true) + $budget));
 				if ($next === $run) {
-					break; // step() hands back the same object when another process holds the run's lease
+					break 2; // step() hands back the same object when another process holds the run's lease
 				}
 				$run = $next;
 			}
@@ -102,21 +101,18 @@ final class BackupJob extends TimedJob {
 		$this->appConfig->setValueString(Application::APP_ID, 'last_prune_week', $due);
 	}
 
-	/** Daily schedule: "HH:MM" in the schedule's time zone (see Schedule); empty = no schedule. */
+	/** Start the backups the schedules of the locations ask for; they run in turn (see LocationSchedule). */
 	private function startScheduled(): void {
-		$todayAt = $this->schedule->todayAt();
-		if ($todayAt === null || time() < $todayAt) {
-			return;
-		}
+		$now = time();
 		foreach ($this->targets->list() as $t) {
-			$last = $this->runs->lastFinished($t->getId(), BackupService::KIND_FULL);
-			if ($this->runs->findRunning($t->getId(), BackupService::KIND_FULL) !== [] || ($last !== null && $last->getStartedAt() >= $todayAt)) {
+			$moment = \OCA\NgBackup\Service\LocationSchedule::lastMoment((string)$t->getSchedule(), $this->schedule->zoneOr($t->getScheduleZone()), $now);
+			if ($moment === null || $this->runs->findRunning($t->getId(), BackupService::KIND_FULL) !== []) {
 				continue;
 			}
-			// After a failure: retry at most MAX_DAILY_ATTEMPTS times a day, an hour apart, instead
-			// of starting (and notifying about) a new full run every five minutes all day.
-			$today = $this->runs->startedSince($t->getId(), BackupService::KIND_FULL, $todayAt);
-			if (count($today) >= self::MAX_DAILY_ATTEMPTS || ($today !== [] && time() - (int)$today[0]->getFinishedAt() < 3600)) {
+			$attempts = $this->runs->startedSince($t->getId(), BackupService::KIND_FULL, $moment);
+			if (!\OCA\NgBackup\Service\LocationSchedule::isDue($moment, (int)$t->getScheduleSince(),
+				$this->runs->lastFinished($t->getId(), BackupService::KIND_FULL)?->getStartedAt(),
+				count($attempts), ($attempts[0] ?? null)?->getFinishedAt(), $now)) {
 				continue;
 			}
 			try {

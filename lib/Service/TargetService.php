@@ -78,6 +78,11 @@ final class TargetService {
 		$target->setBasePath(trim($basePath, '/'));
 		$target->setRepositoryId($repo->id());
 		$target->setCreatedAt(time());
+		// Like the location before it: a backup scheme is usually one scheme.
+		$first = $this->mapper->findAll()[0] ?? null;
+		$target->setSchedule($first?->getSchedule() ?? '');
+		$target->setScheduleZone($first?->getScheduleZone());
+		$target->setScheduleSince(time());
 		$target = $this->mapper->insert($target);
 		if (!$created) {
 			// Disaster recovery: occ backup:list reads this local cache, not the repository
@@ -268,6 +273,20 @@ final class TargetService {
 	}
 
 	/** Size limit for the data stored on this location (null = none). */
+	/**
+	 * @param string $schedule see LocationSchedule
+	 * @throws \InvalidArgumentException
+	 */
+	public function setSchedule(Target $target, string $schedule, string $zone): Target {
+		if (!Schedule::validZone($zone)) {
+			throw new \InvalidArgumentException('Unknown time zone: ' . $zone);
+		}
+		$target->setSchedule(LocationSchedule::normalize($schedule));
+		$target->setScheduleZone($zone);
+		$target->setScheduleSince(time());
+		return $this->mapper->update($target);
+	}
+
 	public function setMaxBytes(Target $target, ?int $maxBytes): Target {
 		$target->setMaxBytes($maxBytes);
 		return $this->mapper->update($target);

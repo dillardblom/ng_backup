@@ -79,7 +79,9 @@ occ backup:list
 Later runs upload only changed data. An unchanged run uploads (almost) nothing; the output shows
 the number of uploaded bytes, so check that value when you test incremental behaviour.
 
-Schedule `occ backup:run` from system cron (or use the Administration settings, if you prefer).
+Set when each location is backed up in the Administration settings, or with
+`occ backup:target:schedule offsite 02:00` (once a day), `02:00/6` (every 6 hours from 02:00) or `off`.
+Locations are backed up one after the other.
 
 ## 4. Check the backup regularly
 

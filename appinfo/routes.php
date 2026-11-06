@@ -25,7 +25,7 @@ return [
 		['name' => 'AdminApi#setTargetLimit', 'url' => '/api/targets/{id}/limit', 'verb' => 'PUT'],
 		['name' => 'AdminApi#startBackup', 'url' => '/api/backups', 'verb' => 'POST'],
 		['name' => 'AdminApi#tick', 'url' => '/api/tick', 'verb' => 'POST'],
-		['name' => 'AdminApi#setSchedule', 'url' => '/api/schedule', 'verb' => 'PUT'],
+		['name' => 'AdminApi#setTargetSchedule', 'url' => '/api/targets/{id}/schedule', 'verb' => 'PUT'],
 		['name' => 'AdminApi#snapshots', 'url' => '/api/targets/{targetId}/snapshots', 'verb' => 'GET'],
 		['name' => 'AdminApi#setSnapshotNote', 'url' => '/api/targets/{targetId}/snapshots/{snapshotId}/note', 'verb' => 'PUT'],
 		['name' => 'AdminApi#setSnapshotPinned', 'url' => '/api/targets/{targetId}/snapshots/{snapshotId}/pin', 'verb' => 'PUT'],

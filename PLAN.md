@@ -579,6 +579,10 @@ in README "Known limitations":
   mappen in de backup ontbreken, geeft voorbeelden van de paden en vraagt ze te hernoemen; de volgende
   backup neemt ze mee. Alleen als Nextcloud-melding: de app mailt niet zelf, of meldingen gemaild worden
   is de keuze van de beheerder (besluit 2026-11-06).
+  **Stand op branch `1.1.0` (2026-11-07):** klaar: betere melding, punten 4, 5, 6 en 8. Pin en notitie staan
+  in de catalogus, met een kopie in de database voor de lijsten. Een moment van vóór het instellen van
+  een schema start niets. Geen schema is een keuze: dan ook geen melding "geen recente backup". Nog niet
+  getest: de update vanaf 1.0.3, de pagina in een browser, de tekst van de nieuwe melding in beeld.
   1. `backup:key:import` zonder kit: de sleutel-slots van de locatie (`config`) lezen, met de kit
      als reserve als `config` ontbreekt of niet opent. Vergt een andere volgorde van
      `target:add` en sleutelimport (het gevoeligste pad), daarom niet in rc1. Daarna de
