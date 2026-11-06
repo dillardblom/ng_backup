@@ -438,6 +438,20 @@ in README "Known limitations":
   (1–3 vervangen, 4-bin erbij; in `info.xml` bij de release naar tag v1.0.2 laten wijzen en
   4-bin toevoegen). Getest: unit (208), psalm, integratie NC35 sqlite/pgsql, S3/SFTP/FTP/SMB,
   volledige restore met `--salvage`. **1.0.2 uitgebracht 2026-11-06** (tag `v1.0.2`, PR #28).
+- **Naar 1.0.3, uit de reviews van 1.0.2 (achteraf gedraaid, 2026-11-06):**
+  1. Lege mappen (#27).
+  2. Een volle schijf onder `--salvage` telt als beschadigde backup en de restore gaat door; zonder
+     `--salvage` wijst de melding er ten onrechte naar. `fwrite` controleren, schrijffouten stoppen de
+     restore (`Repository::restoreEntries`; ook `RestoreService::writeFile` nakijken). Beide reviews.
+  3. Hervatten: controle op de doelmap vóór het overslaan, en tijdelijke bestanden ook opruimen in
+     een map waar alles al klopt.
+  4. Alleen `.ngb-restore-spool-<hex>` opruimen.
+  5. Salvage-test: tijdelijke bestanden recursief zoeken; `admin` en `frtest` apart controleren.
+  6. Nog nakijken: lease verversen bij overgeslagen bestanden; fout ná de database-commit
+     (`restoreOwnAppConfig`) en tabellen die na een rollback blijven staan; backups zonder cron
+     via de pagina (eerlijke beurten, stappen die de webtimeout halen); Bin verversen en fouten
+     tonen; SMB-uitzondering bij het openen van een pack onder `--salvage`.
+  Niet doen: bij hervatten de inhoud vergelijken (grootte en mtime is ook het criterium van de backup).
 - **Branches (besluit 2026-11-06):** werk voor een versie op een branch met die naam (`1.0.3`);
   `polish` alleen voor kleine cosmetische zaken, per geval bekijken of en wanneer die gemerged
   worden. SMB staat uit op sub5 en sub6; sub6 is het testaccount, eerst aanzetten voor een SMB-test.
