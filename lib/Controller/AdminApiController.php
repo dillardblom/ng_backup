@@ -179,12 +179,12 @@ final class AdminApiController extends Controller {
 		}
 	}
 
-	public function trash(int $targetId, int $offset = 0): JSONResponse {
+	public function trash(int $targetId, string $after = ''): JSONResponse {
 		try {
 			$delay = $this->keys->deleteDelayDays() * 86400;
 			$repo = $this->targets->repository($this->targets->get((string)$targetId));
 			// In parts, so that the page can show how far it is (a read per removed restore point).
-			$page = $repo->trashPage($offset, microtime(true) + self::TRASH_PAGE_SECONDS);
+			$page = $repo->trashPage($after, microtime(true) + self::TRASH_PAGE_SECONDS);
 			$out = [];
 			foreach ($page['items'] as $id => $info) {
 				$out[] = ['id' => $id, 'label' => $info['label'], 'time' => $info['time'], 'removedAt' => $info['forgottenAt'],

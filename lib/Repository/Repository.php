@@ -818,15 +818,20 @@ final class Repository {
 
 	/**
 	 * Part of trash(), for a page that shows how far it is: each entry is a read of its own on the
-	 * location. Reads on from $offset until $deadline (microtime(true)), at least one entry.
+	 * location. Reads the entries with an id after $after, in order, until $deadline
+	 * (microtime(true)), at least one. The id, not a position: a cleanup that changes the trash
+	 * between two parts then makes no entry come twice or be missed.
 	 *
 	 * @return array{total: int, items: array<string, array<string, mixed>>}
 	 */
-	public function trashPage(int $offset, float $deadline): array {
+	public function trashPage(string $after, float $deadline): array {
 		$ids = array_map('strval', array_keys($this->catalog->trash));
 		sort($ids, SORT_STRING);
 		$items = [];
-		foreach (array_slice($ids, max(0, $offset)) as $id) {
+		foreach ($ids as $id) {
+			if (strcmp($id, $after) <= 0) {
+				continue;
+			}
 			try {
 				$items[$id] = $this->trashInfo($id);
 			} catch (\Throwable) {

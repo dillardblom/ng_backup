@@ -78,10 +78,11 @@ class EmptyDirsTest extends TestCase {
 		file_put_contents("$this->src/data/alice/files/\xff.txt", 'x');
 		$state = BackupRun::start(['data' => "$this->src/data"]);
 		for ($i = 0; $i < 50 && $state['phase'] !== 'commit'; $i++) {
-			$state = BackupRun::step($this->repo(), $state, microtime(true) + 30);
+			// A step per entry, state through JSON: as separate processes would
+			$state = json_decode(json_encode(BackupRun::step($this->repo(), $state, 0.0), JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
 		}
 		$this->assertSame('commit', $state['phase']);
-		$this->assertSame(4, $state['stats']['unreadable']);
+		$this->assertSame(4, $state['stats']['unreadable'], 'each reported once, over several steps');
 		$this->repo()->recordSnapshot($state['snapshot']);
 
 		$this->assertSame(['data/alice/files/Hollow/Nested', 'data/skipped/inner'], array_column($this->repo()->emptyDirs($state['snapshot']), 0));

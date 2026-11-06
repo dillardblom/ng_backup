@@ -62,9 +62,9 @@ final class BackupRun {
 				if (!mb_check_encoding($logical, 'UTF-8') || !Repository::isSafePath($logical)) {
 					// A name a snapshot cannot hold (a backslash, a control character, not UTF-8). One
 					// such path must not make a backup fail, or the whole snapshot unreadable later.
+					// The cursor stays where it is: the state is JSON, which cannot hold such a name. A
+					// next step meets it again, and it is reported once.
 					self::recordUnreadable($state, $stats, mb_scrub($logical, 'UTF-8'));
-					$state['cur'] = null;
-					$state['after'] = $logical;
 					continue;
 				}
 				if (is_dir($path)) {

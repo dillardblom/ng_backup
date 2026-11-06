@@ -99,7 +99,7 @@ done
 occ backup:list ci | grep " page " >/dev/null || fail "the snapshot of the ticked backup is not listed"
 ok "without system cron: warning in backup:status and the API, backup finished by $i ticks of the open page"
 # The Bin reads in parts, as the page does (what is in the parts: CatalogTest)
-api "$API/targets/$TID/trash?offset=0" | php -r '$p = json_decode(stream_get_contents(STDIN), true); exit(is_int($p["total"] ?? null) && is_array($p["items"] ?? null) && count($p["items"]) <= $p["total"] ? 0 : 1);' || fail "the Bin API does not give a total and items"
+api "$API/targets/$TID/trash" | php -r '$p = json_decode(stream_get_contents(STDIN), true); exit(is_int($p["total"] ?? null) && is_array($p["items"] ?? null) && count($p["items"]) <= $p["total"] ? 0 : 1);' || fail "the Bin API does not give a total and items"
 ok "the Bin API reads in parts, with a total"
 occ background:cron >/dev/null
 $X php -f /var/www/html/cron.php >/dev/null 2>&1 || true

@@ -78,13 +78,13 @@ async function loadTarget(target, load) {
 	reading.value = { name: target.name, total: null, done: 0 }
 	const items = []
 	for (;;) {
-		const page = await api.trash(target.id, items.length)
+		const page = await api.trash(target.id, items.length ? items[items.length - 1].id : '')
 		if (load !== current) {
 			return
 		}
 		items.push(...page.items)
 		reading.value = { name: target.name, total: page.total, done: Math.min(items.length, page.total) }
-		if (items.length >= page.total || !page.items.length) {
+		if (!page.items.length || items.length >= page.total) {
 			break
 		}
 	}
