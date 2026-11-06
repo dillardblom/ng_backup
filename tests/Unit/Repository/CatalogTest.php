@@ -50,6 +50,26 @@ class CatalogTest extends TestCase {
 		$this->assertSame(4, $again->catalogGeneration());
 	}
 
+	public function testTheTrashIsReadInPartsThatTogetherAreAll(): void {
+		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'), $this->anchor);
+		for ($i = 0; $i < 3; $i++) {
+			$repo->forget($repo->backupDirectory($this->src)['snapshot']);
+		}
+		$again = $this->open();
+		$seen = [];
+		// A deadline already past: one entry per request, as on a slow location
+		for ($request = 0; count($seen) < 3 && $request < 5; $request++) {
+			$page = $again->trashPage(count($seen), 0.0);
+			$this->assertSame(3, $page['total']);
+			$this->assertCount(1, $page['items']);
+			$seen += $page['items'];
+		}
+		$this->assertSame(array_keys($again->trash()), array_intersect(array_keys($again->trash()), array_keys($seen)));
+		$this->assertCount(3, $seen);
+		$this->assertSame(['total' => 3, 'items' => []], $again->trashPage(3, 0.0));
+		$this->assertCount(3, $again->trashPage(0, microtime(true) + 60)['items']);
+	}
+
 	public function testRollbackIsDetected(): void {
 		$repo = Repository::initWithKey($this->backend, $this->keys, $this->keys->wrap('pw'), $this->anchor);
 		$repo->backupDirectory($this->src);

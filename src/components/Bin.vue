@@ -6,7 +6,17 @@
 	<NcSettingsSection :name="t('ng_backup', 'Bin')"
 		:description="t('ng_backup', 'Restore points that were removed, most of them by the retention policy. They can be brought back until they are deleted permanently.')">
 		<NcNoteCard v-if="error" type="error">{{ error }}</NcNoteCard>
-		<NcLoadingIcon v-if="loading" :size="32" />
+		<div v-if="reading" class="ngb-reading" role="status">
+			<template v-if="reading.total === null">
+				<NcLoadingIcon :size="20" />
+				<span>{{ t('ng_backup', 'Connecting to {location} …', { location: reading.name }) }}</span>
+			</template>
+			<template v-else>
+				<span>{{ t('ng_backup', 'Reading removed restore points from {location}: {done} of {total}', { location: reading.name, done: reading.done, total: reading.total }) }}</span>
+				<NcProgressBar :value="reading.total ? Math.round(100 * reading.done / reading.total) : 0" />
+			</template>
+			<p class="ngb-muted">{{ t('ng_backup', 'This can take a while: every removed restore point is read from the location.') }}</p>
+		</div>
 		<NcNoteCard v-else-if="empty" type="info">{{ t('ng_backup', 'The bin is empty.') }}</NcNoteCard>
 
 		<template v-for="target in status.targets" :key="'trash' + target.id">
@@ -39,12 +49,13 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { n, t } from '@nextcloud/l10n'
 import { confirmPassword } from '@nextcloud/password-confirmation'
 import NcButton from '@nextcloud/vue/components/NcButton'
 import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
+import NcProgressBar from '@nextcloud/vue/components/NcProgressBar'
 import NcSettingsSection from '@nextcloud/vue/components/NcSettingsSection'
 import api from '../api.js'
 import { formatDate, formatDateTime } from '../format.js'
@@ -56,21 +67,49 @@ const emit = defineEmits(['changed'])
 const RETENTION = 'retention policy'
 const retentionInfo = ref(false)
 const trash = reactive({})
-const loading = ref(true)
+const reading = ref({ name: '', total: null, done: 0 }) // the location being read; null when done
 const error = ref('')
 const empty = computed(() => props.status.targets.every(target => !trash[target.id]?.length))
 
-async function loadTrash() {
-	for (const target of props.status.targets) {
-		try {
-			trash[target.id] = await api.trash(target.id)
-		} catch (e) {
-			trash[target.id] = []
+let current = 0 // the newest load; an older one stops (another took over, or the tab was left)
+onBeforeUnmount(() => { current++ })
+
+async function loadTarget(target, load) {
+	reading.value = { name: target.name, total: null, done: 0 }
+	const items = []
+	for (;;) {
+		const page = await api.trash(target.id, items.length)
+		if (load !== current) {
+			return
+		}
+		items.push(...page.items)
+		reading.value = { name: target.name, total: page.total, done: Math.min(items.length, page.total) }
+		if (items.length >= page.total || !page.items.length) {
+			break
 		}
 	}
-	loading.value = false
+	trash[target.id] = items.sort((a, b) => String(b.time ?? '').localeCompare(String(a.time ?? '')))
 }
-watch(() => props.status.targets.map(tg => tg.id).join(','), loadTrash, { immediate: true })
+
+async function loadTrash() {
+	const load = ++current
+	const failed = []
+	for (const target of props.status.targets) {
+		try {
+			await loadTarget(target, load)
+		} catch (e) {
+			// keep what was shown: a location that cannot be reached does not mean its bin is empty
+			failed.push(target.name + (e?.message ? ': ' + e.message : ''))
+		}
+		if (load !== current) {
+			return
+		}
+	}
+	error.value = failed.length ? t('ng_backup', 'The bin could not be read from {locations}', { locations: failed.join('; ') }) : ''
+	reading.value = null
+}
+// Again when a run ends: a cleanup moves restore points here.
+watch(() => props.status.targets.map(tg => tg.id).join(',') + '|' + (props.status.runs ?? []).filter(run => run.status !== 'running').map(run => run.id).join(','), loadTrash, { immediate: true })
 
 async function untrash(target, item) {
 	error.value = ''
@@ -88,6 +127,8 @@ async function untrash(target, item) {
 <style scoped>
 .ngb-info { background: none; border: none; padding: 0 4px; min-height: auto; cursor: pointer; color: var(--color-primary-element); }
 .ngb-muted { color: var(--color-text-maxcontrast); }
+.ngb-reading { margin: 12px 0; display: flex; flex-direction: column; gap: 6px; max-width: 600px; }
+.ngb-reading p { margin: 0; }
 .ngb-trash { margin: 12px 0; }
 .ngb-trash h3 { font-weight: bold; }
 </style>

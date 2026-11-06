@@ -75,6 +75,12 @@ final class RestoreService {
 			}
 			$children[$name] = $c;
 		}
+		foreach ($this->targets->repository($target)->emptyDirs($snapshotId) as [$dir]) {
+			if ($prefix === '' || str_starts_with($dir, $prefix)) {
+				$name = explode('/', substr($dir, strlen($prefix)), 2)[0];
+				$children[$name] ??= ['name' => $name, 'type' => 'dir', 'size' => 0, 'mtime' => null, 'files' => 0];
+			}
+		}
 		ksort($children, SORT_STRING);
 		return array_values($children);
 	}
@@ -123,7 +129,17 @@ final class RestoreService {
 				$entries[substr($e['p'], strlen($source) + 1)] = $e;
 			}
 		}
-		if ($entries === []) {
+		// Folders without anything in them, relative to $source ('' when $source itself is one).
+		/** @var array<array-key, true> $emptyDirs a folder called "2026" is an integer key */
+		$emptyDirs = [];
+		foreach ($single ? [] : $repo->emptyDirs($snapshotId) as [$dir]) {
+			if ($dir === $source) {
+				$emptyDirs[''] = true;
+			} elseif (str_starts_with($dir, $source . '/')) {
+				$emptyDirs[substr($dir, strlen($source) + 1)] = true;
+			}
+		}
+		if ($entries === [] && $emptyDirs === []) {
 			throw new NotFoundException("Nothing at $source in snapshot $snapshotId");
 		}
 
@@ -156,9 +172,13 @@ final class RestoreService {
 			}
 		}
 
+		foreach (array_keys($emptyDirs) as $dir) {
+			$this->ensureFolder($dest, (string)$dir);
+		}
+
 		$trashed = 0;
 		if ($mode === self::MODE_REPLACE && !$single) {
-			$trashed = $this->trashExtras($dest, '', array_flip(array_keys($names)));
+			$trashed = $this->trashExtras($dest, '', array_flip(array_keys($names)) + $emptyDirs);
 		}
 		return ['restored' => $restored, 'trashed' => $trashed, 'target' => $uid . ':' . $userFolder->getRelativePath($dest->getPath())];
 	}
@@ -262,7 +282,7 @@ final class RestoreService {
 		foreach ($folder->getDirectoryListing() as $node) {
 			$rel = $prefix === '' ? $node->getName() : $prefix . '/' . $node->getName();
 			if ($node instanceof Folder) {
-				$hasKept = false;
+				$hasKept = isset($keep[$rel]); // a folder that was empty in the snapshot
 				foreach (array_keys($keep) as $k) {
 					if (str_starts_with((string)$k, $rel . '/')) {
 						$hasKept = true;

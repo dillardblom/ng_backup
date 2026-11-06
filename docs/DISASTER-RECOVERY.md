@@ -123,10 +123,12 @@ without `--install-apps`:
     occ maintenance:mode --off && occ backup:restore:full offsite <snapshot> --salvage --force
 
 - Files that cannot be read are left out and listed at the end; everything else is restored.
-- **Check the disk first if the reason is "Size mismatch".** In this version a full disk looks like
-  damaged data: the message then points at `--salvage`, and with `--salvage` the restore goes on and
-  lists the remaining files. The backup itself is fine: make room and run the restore again as in
-  step 8, without `--salvage` unless the backup is damaged as well. To be fixed in 1.0.3.
+- A full disk is not damage: the restore stops, also with `--salvage`, and says so. Make room and
+  run the restore again as in step 8.
+- **On version 1.0.2, check the disk first if the reason is "Size mismatch".** There a full disk
+  looks like damaged data: the message points at `--salvage`, and with `--salvage` the restore goes
+  on and lists the remaining files. The backup itself is fine. Update NG Backup, make room and run
+  the restore again as in step 8.
 - If the database cannot be restored (its dump is damaged, or it does not fit this
   installation), the database stays as the fresh installation made it, and the data directory
   and config of the backup go to a folder of their own in the data directory,
@@ -149,9 +151,9 @@ The command then ends with exit code 2 instead of 0. The same option exists for
 - From Nextcloud All-in-One to a regular server: also check the cache settings (`memcache.*`,
   `redis`), which point at AIO's containers.
 - Log in, open a few files, a calendar and a contact.
-- Empty folders do not come back: a backup only records files (to be fixed in 1.0.3, see
-  [issue #27](https://github.com/dillardblom/ng_backup/issues/27)). `occ files:scan` then removes
-  them from the file cache, so it reports them as removed.
+- Empty folders only come back from backups made with version 1.0.3 or newer. With an older
+  restore point they are gone: `occ files:scan` then removes them from the file cache, so it reports
+  them as removed.
 - Start background jobs again (cron), as in step 2 in reverse.
 
 **10. Point your domain at the new server** and check that clients reconnect.

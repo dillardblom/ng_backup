@@ -452,6 +452,14 @@ in README "Known limitations":
      via de pagina (eerlijke beurten, stappen die de webtimeout halen); Bin verversen en fouten
      tonen; SMB-uitzondering bij het openen van een pack onder `--salvage`.
   Niet doen: bij hervatten de inhoud vergelijken (grootte en mtime is ook het criterium van de backup).
+  **Stand op branch `1.0.3` (2026-11-06):** punten 1-6 gebouwd. Lege mappen staan in het metarecord
+  van de snapshot, niet tussen de bestanden: 1.0.2 en ouder lezen zo'n snapshot gewoon en slaan alleen
+  de lege mappen over. Geen webtimeout-wijziging zonder cron: alleen in de code nagelopen, niet getest
+  (Nextcloud zet de PHP-tijdslimiet ruim, een gestopte stap wordt overgedaan); wel eerlijke beurten.
+  Bin leest in delen met teller en balk (besluit 2026-11-06, ook met oog op meerdere backups per
+  dag). Getest: unit (volle schijf op echte tmpfs), integratie NC35 sqlite/pgsql/mysql, sftp, salvage,
+  salvage-files; Bin in een echte browser met vertraagde verzoeken (1 van 7 t/m 7). Nog: kleine
+  volledige simulaties, reviews vóór de PR, README-regels bij de versiecommit.
 - **Branches (besluit 2026-11-06):** werk voor een versie op een branch met die naam (`1.0.3`);
   `polish` alleen voor kleine cosmetische zaken, per geval bekijken of en wanneer die gemerged
   worden. SMB staat uit op sub5 en sub6; sub6 is het testaccount, eerst aanzetten voor een SMB-test.

@@ -186,6 +186,7 @@
       <code><![CDATA[$this->db]]></code>
       <code><![CDATA[$this->db]]></code>
       <code><![CDATA[$this->db]]></code>
+      <code><![CDATA[$this->db]]></code>
       <code><![CDATA[TransactionIsolationLevel]]></code>
       <code><![CDATA[\Doctrine\DBAL\ParameterType]]></code>
       <code><![CDATA[\Doctrine\DBAL\ParameterType]]></code>

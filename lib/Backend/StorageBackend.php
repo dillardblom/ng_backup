@@ -124,7 +124,13 @@ final class StorageBackend implements IBackend, IReadsAhead {
 			// null: not supported or failing for now; false: not opened, which need not mean
 			// missing. Either way the storage's own stream decides.
 		}
-		$fh = $this->storage->fopen($this->abs($path), 'r');
+		try {
+			$fh = $this->storage->fopen($this->abs($path), 'r');
+		} catch (\Exception $e) {
+			// Some storages throw for what is not a missing file (SMB: a connection that broke).
+			// As a BackendException, the caller reads once more and --salvage can go on.
+			throw new BackendException('Cannot read ' . $path . ': ' . $e->getMessage(), 0, $e);
+		}
 		if ($fh === false) {
 			throw new BackendException('Not found: ' . $path);
 		}

@@ -157,13 +157,18 @@ final class DbDumper {
 		}
 		// Tables the backup knows the structure of are created first (DDL is not transactional
 		// everywhere); tables it does not know are left out, as asked.
-		foreach ($missing as $table) {
-			if (isset($manifest['tables'][$table]['schema'])) {
-				$this->db->createSchemaManager()->createTable(self::tableFromStructure($table, $manifest['tables'][$table]['schema'], $this->tableOptions()));
-				$report['created'][] = $table;
-			} else {
-				$report['missing'][] = $table;
+		try {
+			foreach ($missing as $table) {
+				if (isset($manifest['tables'][$table]['schema'])) {
+					$this->db->createSchemaManager()->createTable(self::tableFromStructure($table, $manifest['tables'][$table]['schema'], $this->tableOptions()));
+					$report['created'][] = $table;
+				} else {
+					$report['missing'][] = $table;
+				}
 			}
+		} catch (\Throwable $e) {
+			$this->dropCreatedTables($report);
+			throw $e;
 		}
 		$total = 0;
 		$foreignKeys = [];
@@ -242,9 +247,27 @@ final class DbDumper {
 			if (in_array('SET FOREIGN_KEY_CHECKS = 1', $foreignKeys, true)) {
 				$this->db->executeStatement('SET FOREIGN_KEY_CHECKS = 1');
 			}
+			$this->dropCreatedTables($report);
 			throw $e;
 		}
 		return $total;
+	}
+
+	/**
+	 * The restore did not go through: a rollback does not undo CREATE TABLE everywhere. Left behind,
+	 * the empty tables of an app would stop that app's installation later ("table already exists").
+	 *
+	 * @param array{created: list<string>, ...} $report
+	 */
+	private function dropCreatedTables(array &$report): void {
+		foreach ($report['created'] as $table) {
+			try {
+				$this->db->createSchemaManager()->dropTable($table);
+			} catch (\Throwable) {
+				// the error that brought us here is the one to report; a run again uses the table
+			}
+		}
+		$report['created'] = [];
 	}
 
 	/**

@@ -44,6 +44,8 @@ final class Repository {
 	private ?int $maxBytes = null;
 	private Catalog $catalog;
 	private PackReader $packReader;
+	/** @var array<string, array<string, mixed>> meta record of the snapshot read last */
+	private array $lastMeta = [];
 	/** verify() lists the pack folders from this many packs on (see presentPacks()); tests lower it. */
 	public int $listPacksAbove = 256;
 
@@ -257,8 +259,8 @@ final class Repository {
 		// that was being written when the process was killed stays (8 MiB, DR test 2026-11-05)
 		$stale = glob(rtrim($target, '/') . '/.ngb-restore-spool-*', GLOB_ONLYDIR);
 		foreach ($stale === false ? [] : $stale as $dir) {
-			if (is_link($dir)) {
-				continue;
+			if (is_link($dir) || preg_match('/^\.ngb-restore-spool-[0-9a-f]{8}$/', basename($dir)) !== 1) {
+				continue; // not a spool of ours, whatever it is called
 			}
 			$files = glob($dir . '/*');
 			foreach ($files === false ? [] : $files as $file) {
@@ -313,40 +315,39 @@ final class Repository {
 			if (!self::underPrefix($entry['p'], $prefix)) {
 				continue;
 			}
+			if ($heartbeat !== null) {
+				$heartbeat(); // also for a long row of files that are skipped or have no data
+			}
 			$dest = self::destination($target, $entry['p'], $prefix, $stripPrefix);
-			if ($keepUnchanged && self::inPlace($dest, $entry)) {
-				// below the target as written by an earlier run of this restore (checked then)
-				$count++;
-				continue;
-			}
-			if (!is_dir(dirname($dest))) {
-				mkdir(dirname($dest), 0700, true);
-			}
-			// Defence in depth: the resolved directory must stay below the target (no symlink escapes).
-			$base = realpath($target);
-			$dir = realpath(dirname($dest));
-			if ($base === false || $dir === false || ($dir !== $base && !str_starts_with($dir, $base . '/')) || is_link($dest)) {
-				throw new RepositoryException('Refusing to write outside the restore directory: ' . $entry['p']);
+			$dir = self::directoryInTarget($target, dirname($dest), $entry['p']);
+			if (is_link($dest)) {
+				throw new RestoreTargetException('Refusing to write outside the restore directory: ' . $entry['p']);
 			}
 			if (!isset($cleaned[$dir])) {
 				self::removeStaleTemporaries($dir);
 				$cleaned[$dir] = true;
+			}
+			if ($keepUnchanged && self::inPlace($dest, $entry)) {
+				$count++;
+				continue;
 			}
 			// Write next to the destination and rename after all blobs verified: at most one file
 			// is ever present twice.
 			$tmp = $dest . '.ngb-restore-' . bin2hex(random_bytes(6));
 			$out = @fopen($tmp, 'xb'); // fails if anything (including a symlink) already exists there
 			if ($out === false) {
-				throw new RepositoryException('Cannot create a temporary file for ' . $entry['p']);
+				throw new RestoreTargetException('Cannot create a temporary file for ' . $entry['p'] . ' (disk full, or no permission?)');
 			}
 			try {
 				foreach ($entry['b'] as $id) {
-					fwrite($out, $this->restoreBlob($id, $plan));
+					self::writeAll($out, $this->restoreBlob($id, $plan), $entry['p']);
 					if ($heartbeat !== null) {
 						$heartbeat();
 					}
 				}
-				fclose($out);
+				if (!@fclose($out)) {
+					throw new RestoreTargetException('Cannot write ' . $entry['p'] . ' to the restore directory (disk full?)');
+				}
 				clearstatcache(true, $tmp);
 				if (filesize($tmp) !== $entry['s']) {
 					throw new RepositoryException('Size mismatch restoring ' . $entry['p']);
@@ -363,17 +364,100 @@ final class Repository {
 				}
 				$skipped[$entry['p']] = $e->getMessage();
 				continue;
+			} catch (\Throwable $e) {
+				if (is_resource($out)) {
+					@fclose($out);
+				}
+				@unlink($tmp);
+				throw $e;
 			}
 			if (!rename($tmp, $dest)) {
 				@unlink($tmp);
-				throw new RepositoryException('Cannot put the restored file in place: ' . $entry['p']);
+				throw new RestoreTargetException('Cannot put the restored file in place: ' . $entry['p']);
 			}
 			if (!touch($dest, $entry['m'])) {
-				throw new RepositoryException('Cannot set the modification time of ' . $entry['p']);
+				throw new RestoreTargetException('Cannot set the modification time of ' . $entry['p']);
 			}
 			$count++;
 		}
+		// Last: a file can only be restored into a folder that exists, and the meta record was
+		// read along with the files, so this asks nothing more of the location.
+		foreach ($this->emptyDirs($snapshotId) as [$path, $mtime]) {
+			if (self::underPrefix($path, $prefix)) {
+				self::restoreEmptyDir($target, self::destination($target, $path, $prefix, $stripPrefix), $path, $mtime);
+			}
+		}
 		return $count;
+	}
+
+	/**
+	 * The folders without anything in them that a snapshot recorded (none before 1.0.3).
+	 *
+	 * @return list<array{0: string, 1: int}> path, modification time
+	 */
+	public function emptyDirs(string $snapshotId): array {
+		$meta = $this->lastMeta[$snapshotId] ?? $this->snapshotMeta($snapshotId);
+		$dirs = $meta['emptyDirs'] ?? [];
+		foreach (is_array($dirs) ? $dirs : [null] as $dir) {
+			if (!is_array($dir) || !is_string($dir[0] ?? null) || !self::isSafePath($dir[0]) || !is_int($dir[1] ?? null)) {
+				throw new RepositoryException('Invalid empty folder in snapshot ' . $snapshotId);
+			}
+		}
+		/** @var list<array{0: string, 1: int}> */
+		return $dirs;
+	}
+
+	private static function restoreEmptyDir(string $target, string $dest, string $path, int $mtime): void {
+		if (is_link($dest)) {
+			throw new RestoreTargetException('Refusing to write outside the restore directory: ' . $path);
+		}
+		$existed = is_dir($dest);
+		self::directoryInTarget($target, $dest, $path);
+		if (!$existed && !@touch($dest, $mtime)) {
+			throw new RestoreTargetException('Cannot set the modification time of ' . $path);
+		}
+	}
+
+	/**
+	 * Make sure a folder exists below the target, without following a link out of it: what exists
+	 * of the path is checked before anything is created.
+	 *
+	 * @return string the folder's real path
+	 */
+	private static function directoryInTarget(string $target, string $dir, string $path): string {
+		if (!is_dir($target) && !@mkdir($target, 0700, true) && !is_dir($target)) {
+			throw new RestoreTargetException('Cannot create the restore directory ' . $target);
+		}
+		$base = realpath($target);
+		$existing = $dir;
+		while (!file_exists($existing) && !is_link($existing) && dirname($existing) !== $existing) {
+			$existing = dirname($existing);
+		}
+		$real = realpath($existing);
+		if ($base === false || $real === false || ($real !== $base && !str_starts_with($real, $base . '/'))) {
+			throw new RestoreTargetException('Refusing to write outside the restore directory: ' . $path);
+		}
+		if ($existing === $dir) {
+			if (!is_dir($real)) {
+				throw new RestoreTargetException('Cannot create the folder for ' . $path . ': a file is in the way');
+			}
+			return $real;
+		}
+		if (!@mkdir($dir, 0700, true) && !is_dir($dir)) {
+			throw new RestoreTargetException('Cannot create the folder for ' . $path . ' (disk full, no permission, or a file in the way?)');
+		}
+		return (string)realpath($dir);
+	}
+
+	/**
+	 * Write all of $data, or stop: a short write leaves a file that looks damaged only by its size.
+	 *
+	 * @param resource $out
+	 */
+	public static function writeAll($out, string $data, string $path): void {
+		if (@fwrite($out, $data) !== strlen($data)) {
+			throw new RestoreTargetException('Cannot write ' . $path . ' to the restore directory (disk full?)');
+		}
 	}
 
 	/** Where restore() writes the snapshot path $path. */
@@ -720,6 +804,29 @@ final class Repository {
 			$this->backend->delete('trash/info/' . $id);
 		}
 		return array_keys($doomed);
+	}
+
+	/**
+	 * Part of trash(), for a page that shows how far it is: each entry is a read of its own on the
+	 * location. Reads on from $offset until $deadline (microtime(true)), at least one entry.
+	 *
+	 * @return array{total: int, items: array<string, array<string, mixed>>}
+	 */
+	public function trashPage(int $offset, float $deadline): array {
+		$ids = array_map('strval', array_keys($this->catalog->trash));
+		sort($ids, SORT_STRING);
+		$items = [];
+		foreach (array_slice($ids, max(0, $offset)) as $id) {
+			try {
+				$items[$id] = $this->trashInfo($id);
+			} catch (\Throwable) {
+				throw new RepositoryException("Trash entry $id listed in the catalog is missing on the location (possible tampering)");
+			}
+			if (microtime(true) >= $deadline) {
+				break;
+			}
+		}
+		return ['total' => count($ids), 'items' => $items];
 	}
 
 	private function trashInfo(string $snapshotId): array {
@@ -1281,7 +1388,10 @@ final class Repository {
 		$this->cipher->decrypt($fh, $plain, 'snapshot:' . $snapshotId);
 		fclose($fh);
 		rewind($plain);
-		fgets($plain); // meta line
+		$meta = json_decode((string)fgets($plain), true);
+		if (is_array($meta)) {
+			$this->lastMeta = [$snapshotId => $meta]; // a snapshot never changes
+		}
 		while (($line = fgets($plain)) !== false) {
 			$entry = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
 			if (!is_array($entry) || !is_string($entry['p'] ?? null) || !self::isSafePath($entry['p'])

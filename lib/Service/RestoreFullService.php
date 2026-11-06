@@ -175,6 +175,8 @@ final class RestoreFullService {
 			if ($dbError === null) {
 				try {
 					$this->restoreDatabase($repo, $meta, $manifest, $dbReport, $beat, $skipMissingTables);
+				} catch (DatabaseAlreadyRestoredException $e) {
+					throw $e;
 				} catch (\Throwable $e) {
 					if (!$salvage) {
 						throw $e;
@@ -259,8 +261,20 @@ final class RestoreFullService {
 		$dumper = new DbDumper($this->db->getInner(), $prefix);
 		try {
 			$dumper->restore($repo, $manifest, $dbReport, $beat, $skipMissingTables);
-		} finally {
+		} catch (\Throwable $e) {
+			try {
+				$this->restoreOwnAppConfig($ownAppConfig);
+			} catch (\Throwable) {
+				// rolled back, so they are still there: the error that brought us here is the one to report
+			}
+			throw $e;
+		}
+		try {
 			$this->restoreOwnAppConfig($ownAppConfig);
+		} catch (\Throwable $e) {
+			// The old server's database is in place by now: not a case for "the database stays as
+			// the fresh installation made it" under --salvage. A run again restores these rows.
+			throw new DatabaseAlreadyRestoredException('The database was restored, but NG Backup could not put back its own settings: ' . $e->getMessage(), 0, $e);
 		}
 	}
 
