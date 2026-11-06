@@ -24,6 +24,8 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
 - A restore that goes on after a stop also removes the temporary files in folders where every file
   is already in place, and checks that those folders are inside the restore directory before it
   leaves their files alone.
+- After a restore that was killed and then ran again, a backup no longer has to wait up to two hours
+  for the locks of the killed run.
 - A restore only removes read-ahead folders of its own (`.ngb-restore-spool-` with 8 hex digits).
 - A restore keeps its lock on the location during a long row of files that are already in place.
 - A database restore that fails no longer leaves behind tables it created, which could stop the

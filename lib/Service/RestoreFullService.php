@@ -151,6 +151,12 @@ final class RestoreFullService {
 			// The database cannot go into this installation; the files can.
 			$check['dbUnreadable'] = 'the database cannot be restored here: ' . $this->describeBlockers($check);
 		}
+		if ($interrupted) {
+			// A restore that was killed leaves its leases, for up to two hours: they would keep
+			// the first backup of the recovered server waiting after this restore completes.
+			// In maintenance mode, on a partly restored instance, nothing else reads the location.
+			$this->leases->dropShared(PruneService::lockKey($target));
+		}
 		$appConfig->setValueInt(\OCA\NgBackup\AppInfo\Application::APP_ID, self::INTERRUPTED_KEY, time());
 		$result = $this->restoreInMaintenance($target, $snapshotId, $skipMissingTables, $check, $salvage);
 		$appConfig->deleteKey(\OCA\NgBackup\AppInfo\Application::APP_ID, self::INTERRUPTED_KEY);

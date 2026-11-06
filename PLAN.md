@@ -458,8 +458,16 @@ in README "Known limitations":
   (Nextcloud zet de PHP-tijdslimiet ruim, een gestopte stap wordt overgedaan); wel eerlijke beurten.
   Bin leest in delen met teller en balk (besluit 2026-11-06, ook met oog op meerdere backups per
   dag). Getest: unit (volle schijf op echte tmpfs), integratie NC35 sqlite/pgsql/mysql, sftp, salvage,
-  salvage-files; Bin in een echte browser met vertraagde verzoeken (1 van 7 t/m 7). Nog: kleine
-  volledige simulaties, reviews vóór de PR, README-regels bij de versiecommit.
+  salvage-files; Bin in een echte browser met vertraagde verzoeken (1 van 7 t/m 7). Nog: reviews
+  vóór de PR, README-regels bij de versiecommit.
+  **Simulaties (2026-11-06, NC 34.0.4, 2 GB, lokale SFTP, `~/dev-local/ngb-sim/sim.sh`):** normaal
+  (pgsql), stop en hervat (pgsql → MariaDB, restore met kill -9 gestopt), volle schijf met `--salvage`:
+  alle drie geslaagd, alle 3.101 gebruikersbestanden en 7 lege mappen gelijk, share, agenda en WebDAV
+  werken. Vond één fout, opgelost: na een kill bleven vergrendelingen tot 2 uur staan, waardoor de
+  backup van stap 11 werd geweigerd. `files:scan` "Updated" zijn in de gemeten run alleen mappen
+  (mtime van mappen wordt niet teruggezet, dus nieuwe mtime en etag; bestanden ongemoeid). "Removed":
+  o.a. `cache` van een gebruiker, die de backup uitsluit. Waarschijnlijk verklaart dit ook de 50.080
+  "updated" op nc01, niet op nc01 zelf vastgesteld.
 - **Branches (besluit 2026-11-06):** werk voor een versie op een branch met die naam (`1.0.3`);
   `polish` alleen voor kleine cosmetische zaken, per geval bekijken of en wanneer die gemerged
   worden. SMB staat uit op sub5 en sub6; sub6 is het testaccount, eerst aanzetten voor een SMB-test.

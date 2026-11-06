@@ -79,7 +79,7 @@ final class BackupService {
 		try {
 			return $this->leases->with(PruneService::lockKey($target), LeaseService::EXCLUSIVE, 60, fn () => $this->createRun($target, $label));
 		} catch (LockedException) {
-			throw new \RuntimeException('A cleanup or another start for ' . $target->getName() . ' is running; try again later');
+			throw new \RuntimeException('A cleanup, a restore or another start for ' . $target->getName() . ' is running, or one was stopped by force (that clears by itself within two hours); try again later');
 		}
 	}
 

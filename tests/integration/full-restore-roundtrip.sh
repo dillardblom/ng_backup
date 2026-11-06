@@ -326,10 +326,16 @@ run_on ngb-frt-restore backup:status >/dev/null || fail "backup:status fails aft
 run_on ngb-frt-restore user:list | grep frtest >/dev/null || fail "the backed-up user is missing from the restored database"
 docker exec ngb-frt-restore test -f /var/www/html/data/frtest/files/Docs/note.txt || fail "restored file is missing"
 [ "$(docker exec ngb-frt-restore cat /var/www/html/data/frtest/files/Docs/note.txt)" = "hello disaster recovery" ] || fail "restored file content differs"
-docker exec ngb-frt-restore test -d /var/www/html/data/frtest/files/Empty/Nested || fail "the empty folder did not come back"
-run_on ngb-frt-restore files:scan frtest >/dev/null || fail "files:scan fails after restore"
-docker exec ngb-frt-restore test -d /var/www/html/data/frtest/files/Empty/Nested || fail "files:scan removed the empty folder"
-ok "the empty folder came back and stays after files:scan"
+if [ "$LEGACY" = legacy ]; then
+	# Backups made before 1.0.3 do not record empty folders
+	docker exec ngb-frt-restore test -e /var/www/html/data/frtest/files/Empty/Nested && fail "an empty folder came back from a backup that does not record them"
+	run_on ngb-frt-restore files:scan frtest >/dev/null || fail "files:scan fails after restore"
+else
+	docker exec ngb-frt-restore test -d /var/www/html/data/frtest/files/Empty/Nested || fail "the empty folder did not come back"
+	run_on ngb-frt-restore files:scan frtest >/dev/null || fail "files:scan fails after restore"
+	docker exec ngb-frt-restore test -d /var/www/html/data/frtest/files/Empty/Nested || fail "files:scan removed the empty folder"
+	ok "the empty folder came back and stays after files:scan"
+fi
 # New rows after the restore: a new file (file cache) and a new user must not collide with
 # restored rows (ID counters after the data).
 docker exec ngb-frt-restore sh -c "echo new > /var/www/html/data/frtest/files/Docs/after-restore.txt && chown www-data /var/www/html/data/frtest/files/Docs/after-restore.txt"

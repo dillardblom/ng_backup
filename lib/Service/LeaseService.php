@@ -76,6 +76,15 @@ final class LeaseService {
 		$qb->executeStatement();
 	}
 
+	/** Remove the shared leases on $name, for a caller that knows their holders were stopped. */
+	public function dropShared(string $name): void {
+		$qb = $this->db->getQueryBuilder();
+		$qb->delete('ngb_leases')
+			->where($qb->expr()->eq('name', $qb->createNamedParameter($name)))
+			->andWhere($qb->expr()->eq('mode', $qb->createNamedParameter(self::SHARED)));
+		$qb->executeStatement();
+	}
+
 	/** Wraps $refresh so calling it often (per file, per row batch) only touches the database every $seconds. */
 	public static function throttled(callable $refresh, int $seconds = 60): \Closure {
 		$last = time();
