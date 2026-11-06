@@ -117,6 +117,11 @@ first. If none is better, `--salvage` restores whatever can be read:
 
     occ backup:restore:full offsite <snapshot> --install-apps --salvage
 
+If a restore already stopped halfway, run it as in step 8: maintenance mode off, with `--force` and
+without `--install-apps`:
+
+    occ maintenance:mode --off && occ backup:restore:full offsite <snapshot> --salvage --force
+
 - Files that cannot be read are left out and listed at the end; everything else is restored.
 - If the database cannot be restored (its dump is damaged, or it does not fit this
   installation), the database stays as the fresh installation made it, and the data directory
