@@ -221,14 +221,21 @@ final class Repository {
 	 *             "$target/<full logical path>" (disaster recovery: restoring e.g. "data/" or
 	 *             "config/" directly into the real data/config directory, not a subdirectory
 	 *             named after the prefix). Ignored when $prefix is '' (nothing to strip).
+	 * @param array<string, string>|null $skipped salvage: an array to collect the files that could
+	 *             not be read or decrypted (path => reason), which are then left out instead of
+	 *             stopping the restore; null (default) stops at the first such file
+	 * @param bool $keepUnchanged leave a file that is already in place with the size and
+	 *             modification time of the snapshot, as a backup takes such a file as unchanged:
+	 *             a restore that was stopped and runs again goes on where it was, without reading
+	 *             what it already restored from the location again
 	 */
-	public function restore(string $snapshotId, string $target, string $prefix = '', bool $stripPrefix = false, ?callable $heartbeat = null): int {
+	public function restore(string $snapshotId, string $target, string $prefix = '', bool $stripPrefix = false, ?callable $heartbeat = null, ?array &$skipped = null, bool $keepUnchanged = false): int {
 		if ($prefix !== '' && !self::isSafePath(rtrim($prefix, '/'))) {
 			throw new RepositoryException('Invalid path prefix');
 		}
-		$plan = $this->readAhead($snapshotId, $prefix, $target);
+		$plan = $this->readAhead($snapshotId, $prefix, $target, $stripPrefix, $keepUnchanged);
 		try {
-			return $this->restoreEntries($snapshotId, $target, $prefix, $stripPrefix, $heartbeat, $plan);
+			return $this->restoreEntries($snapshotId, $target, $prefix, $stripPrefix, $heartbeat, $plan, $skipped, $keepUnchanged);
 		} finally {
 			$plan?->close();
 			if ($plan !== null) {
@@ -242,19 +249,32 @@ final class Repository {
 	 * pass over the snapshot lists the ranges of packs it needs, in order. The spool is a
 	 * folder in the target, which has room for the restore anyway.
 	 */
-	private function readAhead(string $snapshotId, string $prefix, string $target): ?ReadAheadPlan {
+	private function readAhead(string $snapshotId, string $prefix, string $target, bool $stripPrefix, bool $keepUnchanged): ?ReadAheadPlan {
 		if (!$this->backend instanceof IReadsAhead || !$this->backend->canReadAhead()) {
 			return null;
 		}
-		// what a restore that was stopped left behind: empty, its files were unlinked when opened
+		// what a restore that was stopped left behind: its files are unlinked once opened, but one
+		// that was being written when the process was killed stays (8 MiB, DR test 2026-11-05)
 		$stale = glob(rtrim($target, '/') . '/.ngb-restore-spool-*', GLOB_ONLYDIR);
 		foreach ($stale === false ? [] : $stale as $dir) {
+			if (is_link($dir)) {
+				continue;
+			}
+			$files = glob($dir . '/*');
+			foreach ($files === false ? [] : $files as $file) {
+				if (is_file($file) && !is_link($file)) {
+					@unlink($file);
+				}
+			}
 			@rmdir($dir);
 		}
 		$plan = new ReadAheadPlan(rtrim($target, '/') . '/.ngb-restore-spool-' . bin2hex(random_bytes(4)));
 		try {
 			foreach ($this->streamEntries($snapshotId) as $entry) {
 				if (!self::underPrefix($entry['p'], $prefix)) {
+					continue;
+				}
+				if ($keepUnchanged && self::inPlace(self::destination($target, $entry['p'], $prefix, $stripPrefix), $entry)) {
 					continue;
 				}
 				foreach ($entry['b'] as $id) {
@@ -285,18 +305,20 @@ final class Repository {
 		return $plan;
 	}
 
-	private function restoreEntries(string $snapshotId, string $target, string $prefix, bool $stripPrefix, ?callable $heartbeat, ?ReadAheadPlan $plan): int {
+	/** @param array<string, string>|null $skipped see restore() */
+	private function restoreEntries(string $snapshotId, string $target, string $prefix, bool $stripPrefix, ?callable $heartbeat, ?ReadAheadPlan $plan, ?array &$skipped, bool $keepUnchanged): int {
 		$count = 0;
 		$cleaned = [];
 		foreach ($this->streamEntries($snapshotId) as $entry) {
 			if (!self::underPrefix($entry['p'], $prefix)) {
 				continue;
 			}
-			$relPath = $entry['p'];
-			if ($stripPrefix && $prefix !== '') {
-				$relPath = $entry['p'] === rtrim($prefix, '/') ? basename($entry['p']) : substr($entry['p'], strlen($prefix));
+			$dest = self::destination($target, $entry['p'], $prefix, $stripPrefix);
+			if ($keepUnchanged && self::inPlace($dest, $entry)) {
+				// below the target as written by an earlier run of this restore (checked then)
+				$count++;
+				continue;
 			}
-			$dest = rtrim($target, '/') . '/' . $relPath;
 			if (!is_dir(dirname($dest))) {
 				mkdir(dirname($dest), 0700, true);
 			}
@@ -317,16 +339,30 @@ final class Repository {
 			if ($out === false) {
 				throw new RepositoryException('Cannot create a temporary file for ' . $entry['p']);
 			}
-			foreach ($entry['b'] as $id) {
-				fwrite($out, $this->restoreBlob($id, $plan));
-				if ($heartbeat !== null) {
-					$heartbeat();
+			try {
+				foreach ($entry['b'] as $id) {
+					fwrite($out, $this->restoreBlob($id, $plan));
+					if ($heartbeat !== null) {
+						$heartbeat();
+					}
 				}
-			}
-			fclose($out);
-			if (filesize($tmp) !== $entry['s']) {
-				unlink($tmp);
-				throw new RepositoryException('Size mismatch restoring ' . $entry['p']);
+				fclose($out);
+				clearstatcache(true, $tmp);
+				if (filesize($tmp) !== $entry['s']) {
+					throw new RepositoryException('Size mismatch restoring ' . $entry['p']);
+				}
+			} catch (RepositoryException|BackendException|\OCA\NgBackup\Crypto\CryptoException $e) {
+				// What the location gave back for this file is missing or damaged. Writing to the
+				// target (below) is not part of this: a full disk must still stop the restore.
+				if (is_resource($out)) {
+					fclose($out);
+				}
+				@unlink($tmp);
+				if ($skipped === null) {
+					throw $e;
+				}
+				$skipped[$entry['p']] = $e->getMessage();
+				continue;
 			}
 			if (!rename($tmp, $dest)) {
 				@unlink($tmp);
@@ -338,6 +374,26 @@ final class Repository {
 			$count++;
 		}
 		return $count;
+	}
+
+	/** Where restore() writes the snapshot path $path. */
+	private static function destination(string $target, string $path, string $prefix, bool $stripPrefix): string {
+		$relPath = $path;
+		if ($stripPrefix && $prefix !== '') {
+			$relPath = $path === rtrim($prefix, '/') ? basename($path) : substr($path, strlen($prefix));
+		}
+		return rtrim($target, '/') . '/' . $relPath;
+	}
+
+	/**
+	 * A regular file (no link) at $dest with the size and modification time of the snapshot
+	 * entry: what a backup takes as unchanged, and what a finished restore of it leaves.
+	 *
+	 * @param array{s: int, m: int, ...} $entry
+	 */
+	private static function inPlace(string $dest, array $entry): bool {
+		clearstatcache(true, $dest);
+		return !is_link($dest) && is_file($dest) && filesize($dest) === $entry['s'] && filemtime($dest) === $entry['m'];
 	}
 
 	/** $prefix is "" (everything) or ends with "/"; the path without that "/" is a file to restore too. */

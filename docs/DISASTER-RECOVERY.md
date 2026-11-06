@@ -103,11 +103,30 @@ mode on yourself before, it stays on: switch it off with `occ maintenance:mode -
 If it stops halfway, maintenance mode stays on (the instance may be partly restored). Fix the cause,
 then switch maintenance mode off and run the restore again with `--force`, in one line (the message
 prints it): `occ maintenance:mode --off && occ backup:restore:full <location> <snapshot> --force`.
-Leave out `--install-apps` this time, so that the instance is open only for the seconds until the
+It goes on where it stopped: data files that are already in place with the size and modification
+time of the backup are left, so only the rest comes from the location again (since 1.0.2; before,
+it started over). The database is restored again in full, which takes minutes. Leave out `--install-apps` this time, so that the instance is open only for the seconds until the
 restore has switched maintenance mode on again; apps the first run could not install are listed at
 the end of the restore, install those afterwards.
 If occ then says that Nextcloud or one of the apps requires an upgrade, the database is already
 the old server's: run `occ upgrade` first, then the same command with `--force`.
+
+**If the backup itself is damaged** (the restore stops with "Decryption failed", "Blob
+verification failed" or a file that is missing on the location), try an older restore point
+first. If none is better, `--salvage` restores whatever can be read:
+
+    occ backup:restore:full offsite <snapshot> --install-apps --salvage
+
+- Files that cannot be read are left out and listed at the end; everything else is restored.
+- If the database cannot be restored (its dump is damaged, or it does not fit this
+  installation), the database stays as the fresh installation made it, and the data directory
+  and config of the backup go to a folder of their own in the data directory,
+  `ngb-salvage-<snapshot>`. Each user's files are in `data/<user>/files` there: create the users
+  again and copy their files back by hand (then `occ files:scan --all`). Calendars, contacts and
+  shares are in the database and cannot be recovered this way.
+
+The command then ends with exit code 2 instead of 0. The same option exists for
+`occ backup:restore`, to restore single folders.
 
 **9. After the restore.** These worked in our tests:
 
@@ -121,6 +140,9 @@ the old server's: run `occ upgrade` first, then the same command with `--force`.
 - From Nextcloud All-in-One to a regular server: also check the cache settings (`memcache.*`,
   `redis`), which point at AIO's containers.
 - Log in, open a few files, a calendar and a contact.
+- Empty folders do not come back: a backup only records files (to be fixed in 1.0.3, see
+  [issue #27](https://github.com/dillardblom/ng_backup/issues/27)). `occ files:scan` then removes
+  them from the file cache, so it reports them as removed.
 - Start background jobs again (cron), as in step 2 in reverse.
 
 **10. Point your domain at the new server** and check that clients reconnect.

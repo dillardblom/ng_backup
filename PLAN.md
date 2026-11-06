@@ -392,9 +392,59 @@ in README "Known limitations":
   gids (SFTP, Storage Box) → rc4 uitbrengen en om tests vragen → zelf een volledige DR van een
   productie-instantie van ~250 GB via S3 en via SMB. Drie volledige DR-restores vóór 1.0.0.
   Problemen of meldingen van gebruikers: rc5.
-- **1.0.1** (klaar voor release 2026-11-01): alleen de kleine punten (besluit 2026-10-30): 4, 6–13. Punten 1, 2 en 5 gaan naar
+- **1.0.2** (plan akkoord 2026-11-04): punten 1, 2 en 5 hieronder, de Bin, nieuwe screenshots en
+  het polish-punt over de schatting van `target:add`. Besluiten 2026-11-04:
+  - `--salvage` haalt ook bij een kapotte database terug wat kan: bestanden zijn per gebruiker
+    gescheiden en het waardevolst. Kan de database niet terug (dump onleesbaar, of past niet op
+    deze installatie), dan blijft de verse database staan en gaan data en config van de backup
+    naar `<datadir>/ngb-salvage-<snapshot>/`; vanaf daar is het handwerk. Exitcode 2.
+  - De DR-test met een backup mét tabelstructuur, zonder `--skip-missing-tables` (punt 3), is
+    nog niet gedaan en wordt ingepland vóór de release van 1.0.2. Ingepland (2026-11-04): een
+    verse snapshot van nc01 (gemaakt met 1.0.1, dus met tabelstructuur) volgens de DR-gids
+    terugzetten op VM 980 met de 1.0.2-build, over **SMB** (Storage Box; besluit 2026-11-04:
+    SMB in plaats van SFTP, zodat de DR-test de nieuwe SMB-leescode op echte schaal en over de
+    echte lijn vanuit Canada test; vorige meting 2,6 MiB/s, verwachting ~1 dag voor 1 TB), zonder
+    `--skip-missing-tables`; daarna `--salvage` op een deel van de bestanden (moet hetzelfde
+    resultaat geven, exitcode 0). Uitvoeren met Dillard, die VM 980 klaarzet; deze week, vóór
+    de release. Screenshots akkoord (2026-11-04).
+  **DR-test 1.0.2 over SMB (VM 980, snapshot a86271ed van nc01, 983 GiB, gestart 2026-11-04):**
+  index lezen 8 uur (~1 bestand/s; daarna versneld naar 0,66 s/bestand, gemeten vanaf VM 980);
+  restore zonder opties (geen `--install-apps`, geen `--skip-missing-tables`) liep ~12 MiB/s
+  (SFTP eerder 2,8-7,6; SMB vóór 1.0.2 2,6). Na 392 GiB viel de SMB-verbinding weg en bleef de
+  restore op 100% CPU hangen: de smbclient-extensie geeft bij een mislukte read een string met
+  lengte -1. Opgelost (controle + nieuwe verbinding), plus hervatten: `--force` laat bestanden met
+  dezelfde grootte en mtime staan. Hervat 2026-11-05 07:21 UTC na `maintenance:mode --off`
+  volgens de gids; binnen 10 min voorbij de 392 GiB. SMB op sub5 na de test weer uitzetten.
+  **Resultaat (klaar 2026-11-06 02:11 UTC, nazorg 02:27):** hervatte run 18 u 50 min, exit 0, 150.755
+  bestanden; 7-13 MiB/s (langzamer vanaf ~18 uur Duitse tijd, oorzaak niet vastgesteld). Vergeleken
+  met nc01: 150.467 van 150.758 bestanden gelijk in grootte en mtime, 397 op hash zonder verschil;
+  gebruikers, agenda's, contacten, shares en Deck gelijk; bestanden, agenda en contacten via WebDAV
+  getest als gebruiker. `backup:restore --salvage` op 16.904 bestanden: exit 0, geen verschil. Niet
+  vastgesteld: de 50.080 "updated" bij `files:scan`. Zonder `--install-apps` 51 van de 81 apps aan.
+  VM's 980-982 en de sim-backups op OVH en sub6 opgeruimd.
+  **Naar 1.0.3 (besluit 2026-11-06):** lege mappen komen niet terug (3.982 op nc01, 2.076 daarvan in
+  `files`, verklaart vrijwel zeker de 2.370 "removed" bij `files:scan`). De backup legt alleen
+  bestanden vast (`walk()`), dus oudere snapshots hebben ze niet. Voor een DR acceptabel, wel
+  fixen; issue #27. Daarna kleine volledige simulaties; een DR van 1 TB is hiervoor niet nodig.
+  **Salvage vóór de release getest (besluit 2026-11-06):** nieuwe modus `salvage-files` in
+  `full-restore-roundtrip.sh`, ook in CI: één pack beschadigd en één weg. Eerst stopt de restore,
+  daarna `--salvage --force` volgens de gids. Vond één fout: bij een ontbrekend bestand wees de
+  melding niet naar `--salvage` (opgelost).
+  Stand 2026-11-04 (`polish`, gepusht): cron-waarschuwing + tick vanaf de pagina +
+  voortgang van de db-fase; `--salvage` voor `backup:restore` en `backup:restore:full`; S3
+  vooruitlezen (8 ranges tegelijk, met `SaveAs` naar de spool); SMB in leesacties van 8 MiB
+  (gemeten met netem, 130 ms RTT: 4,5 → 18 MiB/s per leesactie; een volledige restore over SMB
+  met vertraging is nog niet gemeten); Bin-tabblad; schatting `target:add`; nieuwe screenshots
+  (1–3 vervangen, 4-bin erbij; in `info.xml` bij de release naar tag v1.0.2 laten wijzen en
+  4-bin toevoegen). Getest: unit (208), psalm, integratie NC35 sqlite/pgsql, S3/SFTP/FTP/SMB,
+  volledige restore met `--salvage`. Nog te doen: DR-test, release.
+- **1.0.1** (uitgebracht 2026-11-01): alleen de kleine punten (besluit 2026-10-30): 4, 6–13. Punten 1, 2 en 5 gaan naar
   1.0.2 (README-roadmap aangepast); punt 3 is een test, ingepland voor de week van 2 november,
-  niet aangekondigd en los van de release.
+  niet aangekondigd en los van de release. Voor 1.0.2 ook: nieuwe screenshots (het labelveld bij
+  "Back up now" en het tabblad Docs staan er nog niet op; besluit 2026-11-01), en de prullenbak
+  van herstelpunten naar een eigen tabblad "Bin" naast "Backup and restore", "Settings" en "Docs":
+  onder de lijst met herstelpunten vervuilt hij het scherm (vooral met wat het bewaarbeleid erin
+  zet; besluit 2026-11-01). Nieuwe screenshots daarna, zodat de Bin er ook op staat.
   1. **Naar 1.0.2.** (Naar rc4: herstelsnelheid over SFTP.) S3 leest al 16 tegelijk bij index en tree, maar een
      restore leest de packs nog één voor één: ook vooruitlezen via de S3-client.
   2. **Naar 1.0.2.** Achtergrondjobs zonder systeem-cron (issue #13; besluit 2026-10-19). De PR die dit

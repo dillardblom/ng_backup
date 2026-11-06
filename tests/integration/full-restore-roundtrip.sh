@@ -2,13 +2,18 @@
 # Disaster recovery: occ backup:key:import + backup:target:add + backup:restore:full on a
 # SECOND, fresh Nextcloud instance that never saw the first one, sharing only the backup
 # location (a local directory, bind-mounted into both containers) -- see PLAN.md 3.7.
-# Usage: full-restore-roundtrip.sh <nextcloud-image-tag> [sqlite|pgsql|mysql] [legacy|sftp|to-pgsql|to-mysql|to-sqlite]
+# Usage: full-restore-roundtrip.sh <nextcloud-image-tag> [sqlite|pgsql|mysql] [legacy|sftp|salvage|salvage-files|to-pgsql|to-mysql|to-sqlite]
 #   e.g. full-restore-roundtrip.sh 35-apache pgsql
+# With "salvage-files" one pack is damaged and another is gone from the location. The restore must
+# stop and point at --salvage; run again as the guide says, it restores the database and every file
+# that can be read, and lists the rest (exit 2). NGB_FRT_DATA_MB sets the amount of data (default 200).
 # With "sftp" the location is an SFTP server instead of a shared directory, and the origin has a
 # file spread over several packs: the restore reads them ahead on connections of its own.
 # With "to-<db>" the restore instance runs that database whatever the origin runs (a MySQL or
 # SQLite backup records no ID counters; after the restore new rows must not collide with restored
 # ones, whatever the database on either side).
+# With "salvage" the snapshot's database dump is damaged on the location: the restore must stop
+# without changing anything, and with --salvage put the files in a folder of their own.
 # With "legacy" the origin runs NG Backup 1.0.0-rc.1 (0.9.7), whose backups do not record the
 # structure of their tables: the restore must then leave the tables of the disabled app out
 # with --skip-missing-tables, as for a real backup made before 1.0.0-rc.2.
@@ -34,7 +39,7 @@ cleanup() {
 	docker network rm "$NET" >/dev/null 2>&1 || true
 	docker run --rm -v "$SHARED:/target" alpine sh -c 'rm -rf /target/*' >/dev/null 2>&1 || true
 	rmdir "$SHARED" 2>/dev/null || true
-	rm -f /tmp/ngb-frt-kit.json /tmp/ngb-frt-pass
+	rm -f /tmp/ngb-frt-kit.json /tmp/ngb-frt-pass /tmp/ngb-frt-sums
 	[ -n "${LEGACY_DIR:-}" ] && rm -rf "$LEGACY_DIR"
 	return 0
 }
@@ -103,6 +108,17 @@ if [ "$MODE" = sftp ]; then
 	docker exec ngb-frt-origin sh -c "head -c 90000000 /dev/urandom > /var/www/html/data/frtest/files/Docs/large.bin && chown www-data:www-data /var/www/html/data/frtest/files/Docs/large.bin"
 	LARGE_SUM=$(docker exec ngb-frt-origin sha256sum /var/www/html/data/frtest/files/Docs/large.bin | cut -d' ' -f1)
 fi
+if [ "$MODE" = salvage-files ]; then
+	# Half in large files that fill packs of their own, half in files of 1 MiB; incompressible
+	DATA_MB=${NGB_FRT_DATA_MB:-200}
+	docker exec -e DATA_MB="$DATA_MB" ngb-frt-origin sh -c '
+		cd /var/www/html/data/frtest/files && mkdir -p Large Small/a Small/b
+		i=0; while [ $((i * 50)) -lt $((DATA_MB / 2)) ]; do head -c 52428800 /dev/urandom > Large/f$i.bin; i=$((i + 1)); done
+		i=0; while [ $i -lt $((DATA_MB / 2)) ]; do head -c 1048576 /dev/urandom > Small/$([ $((i % 2)) = 0 ] && echo a || echo b)/f$i.bin; i=$((i + 1)); done
+		chown -R www-data:www-data . && find . -type f -print0 | xargs -0 sha256sum > /tmp/frt-sums'
+	docker cp ngb-frt-origin:/tmp/frt-sums /tmp/ngb-frt-sums
+	ok "origin has $DATA_MB MiB of test data, $(wc -l < /tmp/ngb-frt-sums) files"
+fi
 run_on ngb-frt-origin files:scan frtest >/dev/null
 
 # SQL on an instance's own database (pgsql/mysql only)
@@ -135,6 +151,24 @@ RUN_OUT=$(run_on ngb-frt-origin backup:run offsite -l disaster-test)
 SNAP=$(printf '%s\n' "$RUN_OUT" | head -1 | awk -F'snapshot ' '{print $2}' | tr -d ',')
 [ -n "$SNAP" ] || fail "no snapshot id from backup:run"
 ok "test data backed up, snapshot $SNAP"
+if [ "$MODE" = salvage ]; then
+	# The database dump of this snapshot damaged on the location: a byte flipped in its manifest
+	docker exec -u www-data ngb-frt-origin php -r '$p = "/mnt/shared/repo/db/" . $argv[1]; $d = file_get_contents($p); $i = intdiv(strlen($d), 2); $d[$i] = ~$d[$i]; file_put_contents($p, $d);' "$SNAP" \
+		|| fail "damage the database dump"
+	ok "database dump of the snapshot damaged on the location"
+fi
+if [ "$MODE" = salvage-files ]; then
+	# The two largest packs hold user files for sure: bytes flipped in one, the other gone
+	docker exec -u www-data ngb-frt-origin php -r '
+		$packs = glob("/mnt/shared/repo/packs/*/*");
+		usort($packs, fn ($a, $b) => filesize($b) <=> filesize($a));
+		count($packs) >= 3 or exit(1);
+		$h = fopen($packs[0], "r+b");
+		for ($o = 4096; $o < filesize($packs[0]); $o += 1048576) { fseek($h, $o); $b = fread($h, 16); fseek($h, $o); fwrite($h, ~$b); }
+		fclose($h);
+		unlink($packs[1]);' || fail "damage the packs"
+	ok "one pack damaged and one pack gone on the location"
+fi
 
 docker cp ngb-frt-origin:/tmp/kit.json /tmp/ngb-frt-kit.json
 docker exec ngb-frt-origin sh -c "cat /tmp/pass" > /tmp/ngb-frt-pass
@@ -163,6 +197,82 @@ printf '%s\n' "$LIST_OUT" | grep -q "$SNAP" || {
 	fail "the origin's snapshot is not listed after connecting the location"
 }
 ok "recovery kit imported, existing repository adopted, snapshot visible"
+
+if [ "$MODE" = salvage ]; then
+	set +e
+	OUT=$(run_on ngb-frt-restore backup:restore:full offsite "$SNAP" --no-interaction 2>&1); CODE=$?
+	set -e
+	[ "$CODE" = 1 ] || { printf '%s\n' "$OUT" | tail -20; fail "a restore with a damaged database dump did not stop (exit $CODE)"; }
+	printf '%s\n' "$OUT" | grep -- "--salvage" >/dev/null || { printf '%s\n' "$OUT" | tail -20; fail "the stopped restore does not point at --salvage"; }
+	run_on ngb-frt-restore status 2>&1 | grep "maintenance: false" >/dev/null || fail "maintenance mode stayed on after a restore that changed nothing"
+	ok "damaged database dump: the restore stops before changing anything and points at --salvage"
+	set +e
+	OUT=$(run_on ngb-frt-restore backup:restore:full offsite "$SNAP" --no-interaction --salvage 2>&1); CODE=$?
+	set -e
+	[ "$CODE" = 2 ] || { printf '%s\n' "$OUT" | tail -30; fail "restore:full --salvage exited with $CODE, not 2"; }
+	SALVAGE=/var/www/html/data/ngb-salvage-${SNAP:0:12}
+	printf '%s\n' "$OUT" | grep "$SALVAGE" >/dev/null || { printf '%s\n' "$OUT" | tail -30; fail "the output does not name the salvage folder"; }
+	[ "$(docker exec ngb-frt-restore cat "$SALVAGE/data/frtest/files/Docs/note.txt")" = "hello disaster recovery" ] || fail "the user's file is not in the salvage folder"
+	docker exec ngb-frt-restore test -f "$SALVAGE/config/config.php" || fail "config.php is not in the salvage folder"
+	run_on ngb-frt-restore user:list | grep frtest >/dev/null && fail "the fresh database was changed (the backed-up user is there)"
+	run_on ngb-frt-restore status 2>&1 | grep "maintenance: false" >/dev/null || fail "maintenance mode is still on after the salvage"
+	run_on ngb-frt-restore backup:status >/dev/null || fail "backup:status fails after the salvage"
+	ok "with --salvage: the fresh database untouched, data and config of the backup in $SALVAGE (exit 2)"
+	echo "FULL RESTORE ROUNDTRIP PASS ($DB, salvage)"
+	exit 0
+fi
+
+if [ "$MODE" = salvage-files ]; then
+	set +e
+	OUT=$(run_on ngb-frt-restore backup:restore:full offsite "$SNAP" --no-interaction 2>&1); CODE=$?
+	set -e
+	[ "$CODE" = 1 ] || { printf '%s\n' "$OUT" | tail -20; fail "a restore with damaged data did not stop (exit $CODE)"; }
+	printf '%s\n' "$OUT" | grep -- "--salvage" >/dev/null || { printf '%s\n' "$OUT" | tail -20; fail "the stopped restore does not point at --salvage"; }
+	run_on ngb-frt-restore status 2>&1 | grep "maintenance: true" >/dev/null || fail "maintenance mode is off after a restore that stopped halfway"
+	ok "damaged data: the restore stops, keeps maintenance mode on and points at --salvage"
+
+	# As the guide and the message say: maintenance mode off and again, now with --salvage
+	run_on ngb-frt-restore maintenance:mode --off >/dev/null || fail "maintenance mode off"
+	set +e
+	OUT=$(run_on ngb-frt-restore backup:restore:full offsite "$SNAP" --no-interaction --salvage --force 2>&1); CODE=$?
+	set -e
+	[ "$CODE" = 2 ] || { printf '%s\n' "$OUT" | tail -30; fail "restore:full --salvage exited with $CODE, not 2"; }
+	printf '%s\n' "$OUT" | grep "could not be restored" >/dev/null || { printf '%s\n' "$OUT" | tail -30; fail "the damaged files are not listed"; }
+	printf '%s\n' "$OUT" | grep "ngb-salvage-" >/dev/null && { printf '%s\n' "$OUT" | tail -30; fail "the database was given up, only files are damaged"; }
+	docker cp /tmp/ngb-frt-sums ngb-frt-restore:/tmp/frt-sums
+	printf '%s\n' "$OUT" | docker exec -i ngb-frt-restore sh -c 'cat > /tmp/frt-out'
+	# Every file: listed and not there, or there and bit-identical
+	CHECK=$(docker exec ngb-frt-restore php -r '
+		$root = "/var/www/html/data/frtest/files/"; $listed = []; $reasons = [];
+		foreach (file("/tmp/frt-out", FILE_IGNORE_NEW_LINES) as $l) {
+			if (preg_match("#^  (?:data/)?frtest/files/(.+?): (.*)$#", $l, $m)) { $listed[$m[1]] = true; $reasons[] = $m[2]; }
+		}
+		$same = 0; $gone = 0; $bad = [];
+		foreach (file("/tmp/frt-sums", FILE_IGNORE_NEW_LINES) as $l) {
+			[$sum, $p] = preg_split("/\s+/", $l, 2); $p = substr($p, 2);
+			if (isset($listed[$p])) { file_exists($root . $p) ? $bad[] = "listed but there: $p" : $gone++; continue; }
+			if (!file_exists($root . $p)) { $bad[] = "not listed and not there: $p"; continue; }
+			hash_file("sha256", $root . $p) === $sum ? $same++ : $bad[] = "different: $p";
+		}
+		$temps = glob($root . "*/*.ngb-restore-*") ?: [];
+		foreach ($temps as $t) { $bad[] = "temporary left: $t"; }
+		echo "same=$same gone=$gone bad=", count($bad), "\n", implode("\n", array_slice($bad, 0, 10)), "\n";
+		echo "reasons: ", implode(" | ", array_unique(array_map(fn ($r) => substr(preg_replace("#[0-9a-f]{16,}#", "<id>", $r), 0, 70), $reasons))), "\n";')
+	printf '%s\n' "$CHECK"
+	printf '%s\n' "$CHECK" | grep -q " bad=0" || fail "files after the salvage are not as listed"
+	printf '%s\n' "$CHECK" | grep -qE "same=[1-9]" || fail "nothing was restored"
+	printf '%s\n' "$CHECK" | grep -qE "gone=[1-9]" || fail "no user file was hit by the damage"
+	ok "with --salvage: every file listed and absent, or there and identical"
+	run_on ngb-frt-restore status 2>&1 | grep "maintenance: false" >/dev/null || fail "maintenance mode is still on after the salvage"
+	run_on ngb-frt-restore user:list | grep frtest >/dev/null || fail "the backed-up user is missing: the database was not restored"
+	[ "$(docker exec ngb-frt-restore cat /var/www/html/data/frtest/files/Docs/note.txt 2>/dev/null)" = "hello disaster recovery" ] \
+		|| printf '%s\n' "$OUT" | grep "Docs/note.txt" >/dev/null || fail "note.txt is neither restored nor listed"
+	run_on ngb-frt-restore backup:status >/dev/null || fail "backup:status fails after the salvage"
+	run_on ngb-frt-restore files:scan frtest >/dev/null || fail "files:scan fails after the salvage"
+	ok "the database and config are the old server's, the instance works"
+	echo "FULL RESTORE ROUNDTRIP PASS ($DB, salvage-files)"
+	exit 0
+fi
 
 RESTORE_OPTS=(--no-interaction --install-apps)
 if [ "$LEGACY" = legacy ] && [ "$DB" != sqlite ]; then

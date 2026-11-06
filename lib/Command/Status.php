@@ -9,6 +9,7 @@ namespace OCA\NgBackup\Command;
 
 use OCA\NgBackup\Db\RunMapper;
 use OCA\NgBackup\Format;
+use OCA\NgBackup\Service\CronHealth;
 use OCA\NgBackup\Service\KeyService;
 use OCA\NgBackup\Service\Schedule;
 use OCA\NgBackup\Service\TargetService;
@@ -29,6 +30,7 @@ final class Status extends Command {
 		private RunMapper $runs,
 		private VerifyService $verify,
 		private Schedule $schedule,
+		private CronHealth $cron,
 	) {
 		parent::__construct();
 	}
@@ -40,6 +42,10 @@ final class Status extends Command {
 
 	protected function execute(InputInterface $input, OutputInterface $output): int {
 		$zone = $this->schedule->get()['timezone'];
+		$cronProblem = CronHealth::describe($this->cron->check());
+		if ($cronProblem !== null) {
+			$output->writeln('<error>' . $cronProblem . '</error>');
+		}
 		if (!$this->keys->isInitialized()) {
 			$output->writeln('Key: <error>not created</error> (occ backup:key:init)');
 		} else {
@@ -57,7 +63,7 @@ final class Status extends Command {
 		$shown = $this->runs->findShown($all ? null : time() - self::RECENT_DAYS * 86400);
 		foreach ($shown as $r) {
 			$s = json_decode($r->getStats() ?? '{}', true)['files'] ?? [];
-			$rows[] = [$r->getId(), $names[$r->getTargetId()] ?? '#' . $r->getTargetId(), $r->getKind(), $r->getStatus() . ($r->getStatus() === 'running' ? ' (' . $r->getPhase() . self::percent($r) . ')' : ''),
+			$rows[] = [$r->getId(), $names[$r->getTargetId()] ?? '#' . $r->getTargetId(), $r->getKind(), $r->getStatus() === 'running' ? self::runningStatus($r) : $r->getStatus(),
 				Format::time($r->getStartedAt(), $zone), $r->getFinishedAt() ? Format::duration($r->getFinishedAt() - $r->getStartedAt()) : '',
 				$s['files'] ?? '', isset($s['bytes']) ? self::size((int)$s['bytes']) : '',
 				isset($s['uploaded']) ? self::size((int)$s['uploaded']) : '', mb_strimwidth((string)$r->getError(), 0, 50, '…')];
@@ -88,8 +94,24 @@ final class Status extends Command {
 		return sprintf('%.1f TiB', $b);
 	}
 
+	/** " 47/183 tables" in the database phase, " 68%" or " ~68%" in the files phase; empty without a figure */
 	private static function percent(\OCA\NgBackup\Db\Run $r): string {
 		$p = \OCA\NgBackup\Job\BackupRun::progressOf($r);
-		return $p === null ? '' : sprintf(' %s%d%%', $p['approximate'] ? '~' : '', (int)floor($p['fraction'] * 100.0));
+		if ($p === null) {
+			return '';
+		}
+		if (isset($p['tables'], $p['totalTables'])) {
+			return sprintf(': %d/%d tables', $p['tables'], $p['totalTables']);
+		}
+		return sprintf(' %s%d%%', $p['approximate'] ? '~' : '', (int)floor($p['fraction'] * 100.0));
+	}
+
+	/** "running (db: 47/183 tables)", or "waiting for background jobs (last step 12 min ago)" */
+	private static function runningStatus(\OCA\NgBackup\Db\Run $r): string {
+		$waiting = $r->getKind() === \OCA\NgBackup\Service\BackupService::KIND_FULL ? CronHealth::waitingFor($r) : null;
+		if ($waiting !== null) {
+			return 'waiting for background jobs (' . $r->getPhase() . self::percent($r) . ', last step ' . CronHealth::ago($waiting) . ')';
+		}
+		return 'running (' . $r->getPhase() . self::percent($r) . ')';
 	}
 }

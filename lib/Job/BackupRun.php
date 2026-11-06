@@ -176,18 +176,26 @@ final class BackupRun {
 	}
 
 	/**
-	 * progress() of a run, while it is in its files phase.
+	 * progress() of a run in its files phase; in its database phase, the tables dumped so far.
 	 *
-	 * @return array{fraction: float, approximate: bool}|null
+	 * @return array{fraction: float, approximate: bool, tables?: int, totalTables?: int}|null
 	 */
 	public static function progressOf(\OCA\NgBackup\Db\Run $run): ?array {
-		if ($run->getStatus() !== \OCA\NgBackup\Db\Run::RUNNING || $run->getPhase() !== 'files') {
+		if ($run->getStatus() !== \OCA\NgBackup\Db\Run::RUNNING || !in_array($run->getPhase(), ['db', 'files'], true)) {
 			return null;
 		}
 		try {
 			$state = json_decode($run->getState(), true, 512, JSON_THROW_ON_ERROR);
 		} catch (\JsonException) {
 			return null;
+		}
+		if ($run->getPhase() === 'db') {
+			// Tables dumped so far, as of the last step (none known before the first step ends)
+			$tables = count($state['dump']['tables'] ?? []);
+			return $tables > 0
+				? ['fraction' => min(1.0, ($state['dump']['i'] ?? 0) / $tables), 'approximate' => false,
+					'tables' => (int)($state['dump']['i'] ?? 0), 'totalTables' => $tables]
+				: null;
 		}
 		return is_array($state['files'] ?? null) ? self::progress($state['files']) : null;
 	}
