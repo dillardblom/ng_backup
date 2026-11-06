@@ -300,6 +300,14 @@
       <code><![CDATA[$t]]></code>
     </UndefinedDocblockClass>
   </file>
+  <file src="lib/Migration/Version000007Date20261107000000.php">
+    <UndefinedDocblockClass>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+    </UndefinedDocblockClass>
+  </file>
   <file src="lib/Migration/Version000005Date20261002040000.php">
     <UndefinedDocblockClass>
       <code><![CDATA[$t]]></code>

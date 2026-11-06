@@ -292,9 +292,27 @@ final class AdminApiController extends Controller {
 		$out = [];
 		foreach ($this->snapshots->findForTarget($targetId) as $s) {
 			$out[] = ['id' => $s->getSnapshotId(), 'kind' => $s->getKind(), 'label' => $s->getLabel(), 'createdAt' => $s->getCreatedAt(),
-				'files' => $s->getFiles(), 'bytes' => $s->getBytes()];
+				'files' => $s->getFiles(), 'bytes' => $s->getBytes(), 'note' => $s->getNote(), 'pinned' => (bool)$s->getPinned()];
 		}
 		return new JSONResponse($out);
+	}
+
+	public function setSnapshotNote(int $targetId, string $snapshotId, string $note = ''): JSONResponse {
+		try {
+			$this->prune->setNote($this->targets->get((string)$targetId), $snapshotId, $note);
+		} catch (\Throwable $e) {
+			return new JSONResponse(['error' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
+		}
+		return new JSONResponse(['ok' => true]);
+	}
+
+	public function setSnapshotPinned(int $targetId, string $snapshotId, bool $pinned = true): JSONResponse {
+		try {
+			$this->prune->setPinned($this->targets->get((string)$targetId), $snapshotId, $pinned);
+		} catch (\Throwable $e) {
+			return new JSONResponse(['error' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
+		}
+		return new JSONResponse(['ok' => true]);
 	}
 
 	public function browse(int $targetId, string $snapshotId, string $path = ''): JSONResponse {
@@ -341,7 +359,7 @@ final class AdminApiController extends Controller {
 		if ($r->getSnapshotId() !== null) {
 			try {
 				$s = $this->snapshots->findOne($r->getTargetId(), $r->getSnapshotId());
-				$snapshot = ['createdAt' => $s->getCreatedAt(), 'label' => $s->getLabel()];
+				$snapshot = ['createdAt' => $s->getCreatedAt(), 'label' => $s->getLabel(), 'note' => $s->getNote(), 'pinned' => (bool)$s->getPinned()];
 			} catch (\Throwable) {
 				// Snapshot already pruned or trashed: the run keeps its id, just not the date.
 			}

@@ -13,6 +13,13 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
 
 ## [Unreleased]
 
+### Added
+- Pin a restore point, on the restore page or with `occ backup:pin`: the retention policy leaves it
+  alone, for example the one from before an upgrade. Unpinning notifies all administrators.
+- A note on a restore point that you can change afterwards, on the restore page or with
+  `occ backup:note`. Pins and notes are stored encrypted on the location, so a new server sees them.
+  An older version of NG Backup can still read the location, but drops them when it writes to it.
+
 ### Changed
 - A file or folder that is left out because of its name now gets a notification of its own, in the
   log and in `occ backup:run`. It says the item is missing from the backup, gives example paths and

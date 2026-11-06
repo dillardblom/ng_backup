@@ -208,7 +208,25 @@ final class TargetService {
 		return $result;
 	}
 
+	/** Update the local copy of a snapshot's note or pin, if the snapshot is listed here at all. */
+	public function syncSnapshot(Target $target, string $snapshotId, ?string $note = null, ?bool $pinned = null): void {
+		try {
+			$s = $this->snapshots->findOne($target->getId(), $snapshotId);
+		} catch (DoesNotExistException) {
+			return;
+		}
+		if ($note !== null) {
+			$s->setNote($note !== '' ? $note : null);
+		}
+		if ($pinned !== null) {
+			$s->setPinned($pinned);
+		}
+		$this->snapshots->update($s);
+	}
+
 	private function adoptSnapshots(Target $target, Repository $repo): void {
+		$notes = $repo->snapshotNotes();
+		$pinned = array_flip($repo->pinnedSnapshots());
 		foreach ($repo->listSnapshots() as $snapshotId) {
 			try {
 				$this->snapshots->findOne($target->getId(), $snapshotId);
@@ -227,6 +245,8 @@ final class TargetService {
 				$s->setCreatedAt((int)strtotime((string)($meta['time'] ?? 'now')));
 				$s->setFiles((int)($meta['stats']['files'] ?? 0));
 				$s->setBytes((int)($meta['stats']['bytes'] ?? 0));
+				$s->setNote($notes[$snapshotId] ?? null);
+				$s->setPinned(isset($pinned[$snapshotId]));
 				$this->snapshots->insert($s);
 			} catch (\Throwable $e) {
 				Server::get(\Psr\Log\LoggerInterface::class)->warning('NG Backup: snapshot ' . $snapshotId . ' on ' . $target->getName() . ' not listed: ' . $e->getMessage(), ['exception' => $e]);

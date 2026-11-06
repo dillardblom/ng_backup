@@ -134,6 +134,49 @@ final class Repository {
 		return $this->catalog->gen;
 	}
 
+	/** @return list<string> snapshots the retention policy leaves alone */
+	public function pinnedSnapshots(): array {
+		return array_map('strval', array_keys($this->catalog->pinned));
+	}
+
+	/** @return array<string, string> snapshot id => note */
+	public function snapshotNotes(): array {
+		return $this->catalog->notes;
+	}
+
+	public function setPinned(string $snapshotId, bool $pinned): void {
+		$this->requireSnapshot($snapshotId);
+		if (isset($this->catalog->pinned[$snapshotId]) === $pinned) {
+			return;
+		}
+		if ($pinned) {
+			$this->catalog->pinned[$snapshotId] = true;
+		} else {
+			unset($this->catalog->pinned[$snapshotId]);
+		}
+		$this->catalog->write();
+	}
+
+	/** A note kept in the catalog: unlike the label inside the snapshot, it can change afterwards. */
+	public function setSnapshotNote(string $snapshotId, string $note): void {
+		$this->requireSnapshot($snapshotId);
+		if (($this->catalog->notes[$snapshotId] ?? '') === $note) {
+			return;
+		}
+		if ($note === '') {
+			unset($this->catalog->notes[$snapshotId]);
+		} else {
+			$this->catalog->notes[$snapshotId] = $note;
+		}
+		$this->catalog->write();
+	}
+
+	private function requireSnapshot(string $snapshotId): void {
+		if (!isset($this->catalog->snapshots[$snapshotId])) {
+			throw new \InvalidArgumentException('There is no snapshot ' . $snapshotId . ' on this location');
+		}
+	}
+
 	/** Index files downloaded when this repository was opened (0 when the local cache was complete). */
 	public function indexDownloads(): int {
 		return $this->index->downloaded;

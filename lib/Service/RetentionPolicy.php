@@ -29,6 +29,19 @@ final class RetentionPolicy {
 	}
 
 	/**
+	 * keep() for the snapshots that are not pinned, plus the pinned ones. A pinned snapshot does not
+	 * take the place of a daily, weekly or monthly one.
+	 *
+	 * @param array<string, int> $snapshots id => unix time
+	 * @param list<string> $pinned
+	 * @return array<string, list<string>>
+	 */
+	public function keepWithPinned(array $snapshots, array $pinned): array {
+		$pins = array_intersect_key($snapshots, array_flip($pinned));
+		return $this->keep(array_diff_key($snapshots, $pins)) + array_fill_keys(array_keys($pins), ['pinned']);
+	}
+
+	/**
 	 * @param array<string, int> $snapshots id => unix time
 	 * @return array<string, list<string>> id => reasons it is kept (ids not in the result are removed)
 	 */

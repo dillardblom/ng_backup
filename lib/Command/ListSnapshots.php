@@ -40,14 +40,14 @@ final class ListSnapshots extends Command {
 		foreach ($targets as $t) {
 			foreach ($this->snapshots->findForTarget($t->getId()) as $s) {
 				$rows[] = [$t->getName(), $s->getSnapshotId(), Format::time($s->getCreatedAt(), $zone), $s->getKind(),
-					$s->getFiles(), sprintf('%.1f GiB', ($s->getBytes() ?? 0) / 1073741824), $s->getLabel() ?? ''];
+					$s->getFiles(), sprintf('%.1f GiB', ($s->getBytes() ?? 0) / 1073741824), $s->getPinned() ? 'yes' : '', $s->getLabel() ?? '', $s->getNote() ?? ''];
 			}
 		}
 		if ($rows === []) {
 			$output->writeln('No snapshots yet (occ backup:run).');
 			return 0;
 		}
-		(new Table($output))->setHeaders(['location', 'snapshot', "date ($zone)", 'kind', 'files', 'size', 'label'])->setRows($rows)->render();
+		(new Table($output))->setHeaders(['location', 'snapshot', "date ($zone)", 'kind', 'files', 'size', 'pinned', 'label', 'note'])->setRows($rows)->render();
 		return 0;
 	}
 }

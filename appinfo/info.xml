@@ -83,6 +83,8 @@ you need help with restoring a backup after a crash.]]></description>
         <command>OCA\NgBackup\Command\ListSnapshots</command>
         <command>OCA\NgBackup\Command\Browse</command>
         <command>OCA\NgBackup\Command\Restore</command>
+        <command>OCA\NgBackup\Command\Pin</command>
+        <command>OCA\NgBackup\Command\Note</command>
         <command>OCA\NgBackup\Command\Prune</command>
         <command>OCA\NgBackup\Command\Retention</command>
         <command>OCA\NgBackup\Command\TargetAppendOnly</command>

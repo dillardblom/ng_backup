@@ -173,7 +173,12 @@ occ backup:prune offsite --dry-run   # show first
 occ backup:prune offsite             # apply the policy; forgotten snapshots go to the trash first
 occ backup:trash                  # list the trash
 occ backup:trash:restore offsite <id>
+occ backup:pin offsite <id>          # keep this restore point; --unpin to undo
+occ backup:note offsite <id> "text"  # a note you can change later; without text it is removed
 ```
+
+The retention policy leaves a pinned restore point alone, and a pinned one does not take the place of
+a daily, weekly or monthly one. Pin and note are stored on the location, so a new server sees them too.
 
 Snapshots are kept according to the policy, and their data is deleted only after the deletion delay
 (set with `backup:key:init --delete-delay-days`). `occ backup:prune offsite --dry-run` shows what would be

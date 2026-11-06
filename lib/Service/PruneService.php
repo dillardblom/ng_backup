@@ -11,6 +11,7 @@ use OCA\NgBackup\AppInfo\Application;
 use OCA\NgBackup\Db\RunMapper;
 use OCA\NgBackup\Db\SnapshotMapper;
 use OCA\NgBackup\Db\Target;
+use OCA\NgBackup\Repository\Repository;
 use OCP\IAppConfig;
 use OCP\Lock\ILockingProvider;
 use OCP\Lock\LockedException;
@@ -31,6 +32,54 @@ final class PruneService {
 		private KeyService $keys,
 		private LeaseService $leases,
 	) {
+	}
+
+	/** Characters of a note on a snapshot (the column holds 1000) */
+	public const NOTE_MAX = 500;
+
+	/** Pin or unpin a snapshot: the retention policy leaves a pinned one alone. */
+	public function setPinned(Target $target, string $snapshotId, bool $pinned): void {
+		$changed = $this->changeCatalog($target, function (Repository $repo) use ($snapshotId, $pinned): bool {
+			$was = in_array($snapshotId, $repo->pinnedSnapshots(), true);
+			$repo->setPinned($snapshotId, $pinned);
+			return $was !== $pinned;
+		});
+		$this->targets->syncSnapshot($target, $snapshotId, pinned: $pinned);
+		if ($changed) {
+			// Unpinning opens the way to removing it, so every administrator hears about that.
+			$this->alerts->securityEvent($pinned ? 'snapshot_pinned' : 'snapshot_unpinned', ['target' => $target->getName(), 'snapshot' => $snapshotId], !$pinned);
+		}
+	}
+
+	public function setNote(Target $target, string $snapshotId, string $note): void {
+		$note = trim((string)preg_replace('/[\x00-\x1f\x7f]+/', ' ', $note));
+		if (!mb_check_encoding($note, 'UTF-8')) {
+			throw new \InvalidArgumentException('A note must be valid UTF-8');
+		}
+		if (mb_strlen($note) > self::NOTE_MAX) {
+			throw new \InvalidArgumentException('A note has at most ' . self::NOTE_MAX . ' characters');
+		}
+		$this->changeCatalog($target, function (Repository $repo) use ($snapshotId, $note): bool {
+			$repo->setSnapshotNote($snapshotId, $note);
+			return true;
+		});
+		$this->targets->syncSnapshot($target, $snapshotId, note: $note);
+	}
+
+	/**
+	 * Write to the catalog next to a running backup or restore, which only takes it for a moment to
+	 * commit. Not during a cleanup, which holds a repository opened earlier and writes from that.
+	 *
+	 * @param callable(Repository): bool $change
+	 */
+	private function changeCatalog(Target $target, callable $change): bool {
+		try {
+			return $this->leases->with(self::lockKey($target), LeaseService::SHARED, 300,
+				fn (): bool => $this->leases->with(self::catalogLockKey($target), LeaseService::EXCLUSIVE, 300,
+					fn (): bool => $change($this->targets->repository($target))));
+		} catch (LockedException) {
+			throw new \RuntimeException('A cleanup of ' . $target->getName() . ' or another change to its restore points is in progress; try again later');
+		}
 	}
 
 	public function untrash(Target $target, string $snapshotId): void {
@@ -87,6 +136,7 @@ final class PruneService {
 		$s->setCreatedAt((int)strtotime((string)($meta['time'] ?? 'now')));
 		$s->setFiles((int)($meta['stats']['files'] ?? 0));
 		$s->setBytes((int)($meta['stats']['bytes'] ?? 0));
+		$s->setNote($repo->snapshotNotes()[$snapshotId] ?? null);
 		try {
 			$this->snapshots->insert($s);
 		} catch (\Throwable) {
@@ -208,7 +258,7 @@ final class PruneService {
 				$meta = $repo->snapshotMeta($id);
 				$times[$id] = (int)strtotime((string)($meta['time'] ?? '@0'));
 			}
-			$keep = $this->policy()->keep($times);
+			$keep = $this->policy()->keepWithPinned($times, $repo->pinnedSnapshots());
 			$forget = array_values(array_diff(array_keys($times), array_keys($keep)));
 			$actor = $scheduled ? 'retention policy' : $this->alerts->actor();
 			$purged = [];

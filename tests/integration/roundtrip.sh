@@ -120,6 +120,17 @@ ok "database dump and restore"
 
 # Retention, trash and catalog.
 occ backup:retention --last=1 --daily=0 --weekly=0 --monthly=0 >/dev/null
+# A pinned restore point stays, and a note can change afterwards.
+FIRST=$(occ backup:list ci | awk -F'|' '!f && / first /{gsub(/ /,"",$3); print $3; f=1}')
+occ backup:pin ci "$FIRST" >/dev/null || fail "pin"
+occ backup:note ci "$FIRST" "a note made later" >/dev/null || fail "note"
+occ backup:list ci | grep " first " | grep " yes " | grep "a note made later" >/dev/null || fail "pin and note not listed"
+occ backup:prune ci --dry-run | grep "would forget 1 " >/dev/null || fail "a pinned snapshot would be removed"
+occ backup:pin ci "$FIRST" --unpin >/dev/null || fail "unpin"
+occ backup:prune ci --dry-run | grep "would forget 2 " >/dev/null || fail "an unpinned snapshot would stay"
+occ backup:note ci "$FIRST" >/dev/null || fail "remove note"
+occ backup:list ci | grep -q "a note made later" && fail "note not removed"
+ok "pin and note on a restore point"
 occ backup:prune ci | grep "forgot 2" >/dev/null || fail "prune" # first and second; "page" (above) is the last
 occ backup:trash ci | grep " first " >/dev/null || fail "trash"
 TID=$(occ backup:trash ci | awk -F'|' '!f && / first /{gsub(/ /,"",$3); print $3; f=1}')

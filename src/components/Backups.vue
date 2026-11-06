@@ -37,7 +37,7 @@
 						<td>{{ formatDateTime(run.startedAt) }}</td>
 						<td>{{ targetName(run.targetId) }}</td>
 						<td>{{ run.kind }}</td>
-						<td>{{ run.snapshot ? formatDateTime(run.snapshot.createdAt) + (run.snapshot.label ? ' – ' + run.snapshot.label : '') : '' }}</td>
+						<td>{{ run.snapshot ? (run.snapshot.pinned ? '📌 ' : '') + formatDateTime(run.snapshot.createdAt) + (run.snapshot.label ? ' – ' + run.snapshot.label : '') + (run.snapshot.note ? ' – ' + run.snapshot.note : '') : '' }}</td>
 						<td :class="'ngb-' + run.status">{{ runStatus(run) }}{{ run.error ? ': ' + run.error : '' }}</td>
 						<td>{{ run.stats?.files?.files ?? run.stats?.restored ?? '' }}</td>
 						<td>{{ run.stats?.files ? formatSize(run.stats.files.bytes) : '' }}</td>

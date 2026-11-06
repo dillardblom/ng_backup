@@ -333,6 +333,7 @@ On the backlog; know them before you rely on NG Backup:
 | `backup:cancel <run>` | stop a running backup |
 | `backup:browse`, `backup:restore` | browse and restore |
 | `backup:retention`, `backup:prune`, `backup:trash`, `backup:trash:restore` | retention, cleanup, trash |
+| `backup:pin`, `backup:note` | keep a restore point, a note you can change later |
 | `backup:verify` | checksum audit of a restore point (`--deep` downloads and decrypts everything) |
 | `backup:restore:full` | whole-server restore onto a fresh installation (after `backup:key:import`) |
 | `backup:key:import` | import a recovery kit on a fresh installation |
