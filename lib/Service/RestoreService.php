@@ -150,6 +150,7 @@ final class RestoreService {
 		} elseif ($mode !== self::MODE_MERGE && $mode !== self::MODE_REPLACE) {
 			throw new \InvalidArgumentException("Unknown mode $mode");
 		}
+		$destExisted = $parentRel === '' || $userFolder->nodeExists($parentRel);
 		$dest = $this->ensureFolder($userFolder, $parentRel);
 		$names = $single ? [basename($rel) => $entries['']] : $entries;
 
@@ -174,7 +175,7 @@ final class RestoreService {
 
 		foreach ($emptyDirs as $dir => $mtime) {
 			$dir = (string)$dir;
-			$existed = $dir === '' || $dest->nodeExists($dir); // one that is there keeps its own time
+			$existed = $dir === '' ? $destExisted : $dest->nodeExists($dir); // one that is there keeps its own time
 			$folder = $this->ensureFolder($dest, $dir);
 			if (!$existed) {
 				$folder->touch($mtime);
