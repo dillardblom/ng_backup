@@ -6,6 +6,10 @@
 	<NcSettingsSection :name="t('ng_backup', 'Backups')"
 		:description="t('ng_backup', 'Backups run in the background through Nextcloud\'s cron. Unchanged files are not read again; only new data is uploaded.')">
 		<LocationScheduleRow v-for="target in status.targets" :key="target.id" :target="target" @changed="emit('changed')" @error="error = $event" />
+		<NcCheckboxRadioSwitch :model-value="status.heavyJobs.enabled" @update:model-value="savePause">
+			{{ t('ng_backup', 'Pause heavy background jobs (Memories, Recognize, Preview Generator, full text search, antivirus scan) while a backup runs, at most 6 hours in a row') }}
+		</NcCheckboxRadioSwitch>
+		<p v-if="status.heavyJobs.jobs.length" class="ngb-muted">{{ t('ng_backup', 'Paused now: {jobs}', { jobs: status.heavyJobs.jobs.join(', ') }) }}</p>
 		<div class="ngb-row">
 			<NcTextField v-model="label" class="ngb-label" :maxlength="100" :label="t('ng_backup', 'Label (optional)')"
 				:placeholder="t('ng_backup', 'e.g. before the upgrade to Nextcloud 35')" />
@@ -60,6 +64,7 @@
 import { ref } from 'vue'
 import { n, t } from '@nextcloud/l10n'
 import NcButton from '@nextcloud/vue/components/NcButton'
+import NcCheckboxRadioSwitch from '@nextcloud/vue/components/NcCheckboxRadioSwitch'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import NcSettingsSection from '@nextcloud/vue/components/NcSettingsSection'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
@@ -100,6 +105,16 @@ const runStatus = (run) => {
 }
 const isRunning = (targetId) => props.status.runs.some(r => r.targetId === targetId && r.kind === 'full' && r.status === 'running')
 const targetName = (id) => props.status.targets.find(tg => tg.id === id)?.name ?? '#' + id
+
+async function savePause(enabled) {
+	error.value = ''
+	try {
+		await api.setPauseHeavyJobs(enabled)
+		emit('changed')
+	} catch (e) {
+		error.value = e.message
+	}
+}
 
 async function start(target) {
 	error.value = ''

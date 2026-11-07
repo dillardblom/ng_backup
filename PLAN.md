@@ -579,7 +579,11 @@ in README "Known limitations":
   mappen in de backup ontbreken, geeft voorbeelden van de paden en vraagt ze te hernoemen; de volgende
   backup neemt ze mee. Alleen als Nextcloud-melding: de app mailt niet zelf, of meldingen gemaild worden
   is de keuze van de beheerder (besluit 2026-11-06).
-  **Stand op branch `1.1.0` (2026-11-07):** klaar: betere melding, punten 4, 5, 6 en 8. Pin en notitie staan
+  **Stand op branch `1.1.0` (2026-11-07):** klaar: betere melding, punten 2, 4, 5, 6 en 8, en de maptijden
+  (`files:scan` na een volledige restore: 0 "Updated" in de simulatie; opslag gepakt in het metarecord).
+  Punt 2 reserveert de jobs in `oc_jobs` met één tijdstempel, alleen wat Nextcloud op dat moment zou kunnen
+  starten; 6 uur aan, dan 1 uur vrij; bij een crash geeft Nextcloud de reservering na 12 uur zelf vrij;
+  de logregels staan op niveau info, dus standaard niet zichtbaar. Pin en notitie staan
   in de catalogus, met een kopie in de database voor de lijsten. Een moment van vóór het instellen van
   een schema start niets. Geen schema: geen melding "geen recente backup", wel een melding aan alle
   beheerders bij het uitzetten en een herinnering, wekelijks zolang een andere locatie een schema heeft,

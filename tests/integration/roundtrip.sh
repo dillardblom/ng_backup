@@ -136,6 +136,33 @@ done
 [ "$RUNNING" = 0 ] || fail "the queued backups did not finish"
 occ backup:list ci3 | grep " turn " >/dev/null || fail "the queued backup made no snapshot"
 ok "locations in turn: the second backup queued, and done after the first"
+# Heavy background jobs of other apps wait during a backup, and only then. Ticks keep this one moving.
+HEAVY='OCA\Recognize\BackgroundJobs\NgbTestJob'
+reserved() { $X php -r 'require "lib/base.php"; $q = \OC::$server->get(\OCP\IDBConnection::class)->getQueryBuilder(); echo (int)$q->select("reserved_at")->from("jobs")->where($q->expr()->eq("class", $q->createNamedParameter($argv[1])))->executeQuery()->fetchOne();' "$HEAVY"; }
+tick_until_done() {
+  for i in $(seq 1 60); do
+    api -X POST "$API/tick" >/dev/null || fail "tick"
+    RUNNING=$(api "$API/status" | php -r 'echo count(array_filter(json_decode(stream_get_contents(STDIN), true)["runs"], fn ($r) => $r["status"] === "running"));')
+    [ "$RUNNING" != 0 ] || return 0
+  done
+  fail "the backup did not finish"
+}
+$X php -r 'require "lib/base.php"; \OC::$server->get(\OCP\BackgroundJob\IJobList::class)->add($argv[1]);' "$HEAVY" || fail "add a job"
+[ "$(reserved)" = 0 ] || fail "a new job is reserved"
+L3=$(echo "$IDS" | awk '{print $2}')
+api -X POST -d "{\"targetId\": $L3, \"label\": \"heavy\"}" "$API/backups" >/dev/null || fail "start a backup"
+tick_until_done
+[ "$(reserved)" != 0 ] || fail "the job was not paused during the backup"
+api -X POST "$API/tick" >/dev/null
+[ "$(reserved)" = 0 ] || fail "the job stays paused after the backup"
+occ backup:pause-jobs off >/dev/null || fail "turn off"
+sleep 8 # APCu app config cache of the web server
+api -X POST -d "{\"targetId\": $L3, \"label\": \"heavy\"}" "$API/backups" >/dev/null || fail "start a backup"
+tick_until_done
+[ "$(reserved)" = 0 ] || fail "the job was paused with the setting off"
+occ backup:pause-jobs on >/dev/null
+$X php -r 'require "lib/base.php"; \OC::$server->get(\OCP\BackgroundJob\IJobList::class)->remove($argv[1]);' "$HEAVY"
+ok "heavy background jobs: paused during a backup, back after it, left alone with the setting off"
 occ background:cron >/dev/null
 $X php -f /var/www/html/cron.php >/dev/null 2>&1 || true
 occ backup:status | grep "system cron" >/dev/null && fail "backup:status still warns after cron ran"

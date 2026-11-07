@@ -25,6 +25,10 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
 - All folders get their original modification time back on a restore, not only the empty ones, from
   the first backup made with this version. An older version of NG Backup can still read new restore
   points. A restore through Nextcloud into a folder that is already there leaves its time alone.
+- Heavy background jobs (Memories, Recognize, Preview Generator, full text search, the antivirus
+  background scan) pause while a backup runs, at most 6 hours in a row, then they get an hour. No app
+  is turned off, and a job that is running goes on. On by default; turn it off under Backups or with
+  `occ backup:pause-jobs off`.
 
 ### Changed
 - Locations are backed up one after the other: a backup that has to wait shows as queued. A restore

@@ -48,6 +48,7 @@ final class AdminApiController extends Controller {
 		private \OCA\NgBackup\Service\KeySlotService $slots,
 		private \OCA\NgBackup\Service\PruneService $prune,
 		private \OCA\NgBackup\Service\Schedule $schedule,
+		private \OCA\NgBackup\Service\HeavyJobPause $heavyJobs,
 		private \OCA\NgBackup\Service\CronHealth $cron,
 	) {
 		parent::__construct(Application::APP_ID, $request);
@@ -77,7 +78,13 @@ final class AdminApiController extends Controller {
 			'olderRuns' => $allRuns ? 0 : $this->runs->countAll() - count($shown),
 			'recentDays' => \OCA\NgBackup\Command\Status::RECENT_DAYS,
 			'cron' => $this->cron->check(),
+			'heavyJobs' => $this->heavyJobs->status(),
 		]);
+	}
+
+	public function setPauseHeavyJobs(bool $enabled): JSONResponse {
+		$this->heavyJobs->setEnabled($enabled);
+		return new JSONResponse(['enabled' => $enabled]);
 	}
 
 	/** Seconds of backup work one tick() does: well within a normal web request. */
@@ -97,6 +104,7 @@ final class AdminApiController extends Controller {
 		}
 		$deadline = microtime(true) + self::TICK_SECONDS;
 		$stepped = 0;
+		$this->heavyJobs->sync($this->backups->runsInTurn() !== []);
 		foreach ($this->backups->runsInTurn() as $run) {
 			if (microtime(true) >= $deadline) {
 				break;

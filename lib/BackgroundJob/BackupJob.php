@@ -33,6 +33,7 @@ final class BackupJob extends TimedJob {
 		private IAppConfig $appConfig,
 		private LoggerInterface $logger,
 		private \OCA\NgBackup\Service\Schedule $schedule,
+		private \OCA\NgBackup\Service\HeavyJobPause $heavyJobs,
 	) {
 		parent::__construct($time);
 		// Well below the usual 5-minute cron interval: the last run is stamped a moment after cron
@@ -47,6 +48,7 @@ final class BackupJob extends TimedJob {
 		$budget = PHP_SAPI === 'cli' ? 240.0 : 20.0;
 		$deadline = microtime(true) + $budget;
 		$this->startScheduled();
+		$this->heavyJobs->sync($this->backups->runsInTurn() !== []);
 		// One after the other: runs that read the same disks at the same time are not faster together.
 		foreach ($this->backups->runsInTurn() as $run) {
 			while (microtime(true) < $deadline && $run->getStatus() === 'running') {
