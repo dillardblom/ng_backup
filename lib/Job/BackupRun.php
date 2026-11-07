@@ -52,14 +52,30 @@ final class BackupRun {
 			$stats = $state['stats'];
 			$walker = new TreeWalker($state['roots'], $state['exclude'], function (string $logical) use (&$state, &$stats): void {
 				self::recordUnreadable($state, $stats, $logical);
-			});
+			}, true);
 			$parent = new ParentCursor($repo, $state['parent'], $state['parentPos']);
 			$lines = [];
 			$emptyDirs = [];
+			$folders = [];
 			$finishedWalk = true;
 
 			foreach ($walker->walk($state['after']) as $logical => $path) {
-				if (!mb_check_encoding($logical, 'UTF-8') || !Repository::isSafePath($logical)) {
+				$safe = mb_check_encoding($logical, 'UTF-8') && Repository::isSafePath($logical);
+				if ($walker->atFolderWithContent()) {
+					// Only its time: what is in it is reported by itself, and a bad name in the path of
+					// each of those is what gets reported. The cursor stays for such a name, see below.
+					$mtime = $safe ? @filemtime($path) : false;
+					if ($safe && $mtime !== false) {
+						$folders[] = json_encode([$logical, $mtime], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+						$state['after'] = $logical;
+						if (microtime(true) >= $deadline) {
+							$finishedWalk = false;
+							break;
+						}
+					}
+					continue;
+				}
+				if (!$safe) {
 					// A name a snapshot cannot hold (a backslash, a control character, not UTF-8). One
 					// such path must not make a backup fail, or the whole snapshot unreadable later.
 					// The cursor stays where it is: the state is JSON, which cannot hold such a name. A
@@ -164,6 +180,11 @@ final class BackupRun {
 				$writer->write(implode("\n", $emptyDirs) . "\n");
 				$state['dirSegments'][] = $writer->finish();
 			}
+			if ($folders !== []) {
+				$writer = $repo->blobWriter($stats);
+				$writer->write(implode("\n", $folders) . "\n");
+				$state['folderSegments'][] = $writer->finish();
+			}
 			$repo->flushPacks();
 			$state['parentPos'] = $parent->position();
 			$state['stats'] = $stats;
@@ -186,10 +207,14 @@ final class BackupRun {
 					$emptyDirs[] = json_decode($line, true, 8, JSON_THROW_ON_ERROR);
 				}
 			}
+			// The times of the other folders too, packed: every look at a snapshot's meta record reads
+			// this, and a string of a few hundred KiB costs that far less than tens of thousands of arrays.
+			$folders = isset($state['folderSegments']) ? implode("\n", iterator_to_array($repo->readLines(array_values(array_merge(...$state['folderSegments']))), false)) : '';
 			$repo->putSnapshot($state['snapshot'],
 				['time' => $state['started'], 'parent' => $state['parent'], 'label' => $state['label'],
 					'roots' => array_keys($state['roots']), 'stats' => $state['stats'],
-					'warnings' => self::warnings($state)] + ($emptyDirs === [] ? [] : ['emptyDirs' => $emptyDirs]) + $state['meta'],
+					'warnings' => self::warnings($state)] + ($emptyDirs === [] ? [] : ['emptyDirs' => $emptyDirs])
+					+ ($folders === '' ? [] : ['folderTimes' => base64_encode((string)gzdeflate($folders))]) + $state['meta'],
 				$repo->readLines(array_values(array_merge(...$state['segments']))));
 			$state['phase'] = 'commit';
 		}

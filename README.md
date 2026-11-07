@@ -293,8 +293,9 @@ On the backlog; know them before you rely on NG Backup:
 
 - **Empty folders only come back from backups made with 1.0.3 or newer.** Older restore points do
   not contain them.
-- **Folders with files in them show the time of the restore**, not their original modification time.
-  The files keep theirs. On the roadmap.
+- **Folders with files in them only get their original modification time back from backups made with
+  1.1.0 or newer.** From older restore points they show the time of the restore; the files keep theirs.
+  A restore through Nextcloud into a folder that is already there leaves that folder's time alone.
 - **Only the data directory is backed up.** Object storage as primary storage (`objectstore` in
   `config.php`) is not supported: a backup refuses to start there. Folders mounted through the
   External storage app are not in the data directory and are **not included**, without a warning.

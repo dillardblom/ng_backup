@@ -435,7 +435,39 @@ final class Repository {
 				self::restoreEmptyDir($target, $dest, $path, $mtime);
 			}
 		}
+		// Very last, nothing is written in them any more. Also on a run that goes on after a stop, and
+		// the deepest first. The time is not worth stopping for: all the files are there by now.
+		foreach (array_reverse($this->folderTimes($snapshotId)) as [$path, $mtime]) {
+			if (!self::underPrefix($path, $prefix) || ($stripPrefix && $path === rtrim($prefix, '/'))) {
+				continue; // the target itself is not ours to change
+			}
+			if ($heartbeat !== null) {
+				$heartbeat();
+			}
+			$dest = self::destination($target, $path, $prefix, $stripPrefix);
+			@touch(self::directoryInTarget($target, $dest, $path), $mtime);
+		}
 		return $count;
+	}
+
+	/**
+	 * The folders with something in them that a snapshot recorded, parents before children (none
+	 * before 1.1.0). Damage here is no reason to give up on the files of a restore.
+	 *
+	 * @return list<array{0: string, 1: int}> path, modification time
+	 */
+	public function folderTimes(string $snapshotId): array {
+		$meta = $this->lastMeta[$snapshotId] ?? $this->snapshotMeta($snapshotId);
+		$packed = is_string($meta['folderTimes'] ?? null) ? base64_decode($meta['folderTimes'], true) : false;
+		$plain = $packed === false ? false : @gzinflate($packed);
+		$folders = [];
+		foreach ($plain === false ? [] : explode("\n", $plain) as $line) {
+			$folder = json_decode($line, true);
+			if (is_array($folder) && is_string($folder[0] ?? null) && self::isSafePath($folder[0]) && is_int($folder[1] ?? null)) {
+				$folders[] = [$folder[0], $folder[1]];
+			}
+		}
+		return $folders;
 	}
 
 	/**

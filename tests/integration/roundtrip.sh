@@ -23,12 +23,15 @@ ok "key, kit code and confirmation"
 occ backup:target:add ci $TARGET_ARGS --path=repo >/dev/null || fail "target add"
 ok "location added"
 
-# Test data: a user with files.
+# Test data: a user with files. No skeleton files on the first login, below, in the middle of the checks.
+occ config:system:set skeletondirectory --value='' >/dev/null
+occ config:system:set templatedirectory --value='' >/dev/null
 $X sh -c "OC_PASS='Roundtrip-pw-2026' php occ user:add --password-from-env $U >/dev/null"
 # large.bin (40 MB) fills more than one pack: a restore to a directory reads ahead over several ranges
 $X sh -c "mkdir -p $DATA/$U/files/Docs/Sub $DATA/$U/files/Docs/Empty/Nested $DATA/$U/files/Hollow && touch -d @1700000000 $DATA/$U/files/Hollow && for i in 1 2 3 4 5; do head -c 300000 /dev/urandom > $DATA/$U/files/Docs/f\$i.bin; done; echo hello > $DATA/$U/files/Docs/Sub/note.txt; head -c 6000000 /dev/urandom > $DATA/$U/files/big.bin; head -c 40000000 /dev/urandom > $DATA/$U/files/large.bin"
+$X sh -c "touch -d @1600000000 $DATA/$U/files/Docs/Sub $DATA/$U/files/Docs"
 occ files:scan "$U" >/dev/null
-SUM_BEFORE=$($X sh -c "cd $DATA/$U/files && find . -type f -print0 | sort -z | xargs -0 md5sum | md5sum")
+SUM_BEFORE=$($X sh -c "cd $DATA/$U/files && find . -type f -print0 | sort -z | xargs -0 md5sum")
 
 occ backup:run ci -l first >/dev/null || fail "first backup"
 SECOND=$(occ backup:run ci -l second)
@@ -44,6 +47,14 @@ occ files:scan "$U" >/dev/null
 occ backup:restore ci "$SNAP" "data/$U/files/Docs" -m new-folder >/dev/null || fail "restore new-folder"
 $X sh -c "ls $DATA/$U/files | grep -q '^Restored '" || fail "no Restored folder"
 $X sh -c "test -d $DATA/$U/files/Restored\ */Docs/Empty/Nested" || fail "the empty folder is not in the Restored folder"
+# Folders with files: on disk and in what Nextcloud shows, the parent as well as the child.
+RDIR=$($X sh -c "cd $DATA/$U/files && ls -d Restored\ *")
+[ "$($X sh -c "stat -c %Y $DATA/$U/files/Restored\ */Docs/Sub")" = 1600000000 ] || fail "a folder with files did not get its time back"
+[ "$($X sh -c "stat -c %Y $DATA/$U/files/Restored\ */Docs")" = 1600000000 ] || fail "the parent folder did not get its time back"
+DAV=$($X curl -sf -u "$U:Roundtrip-pw-2026" -X PROPFIND -H 'Depth: 1' "http://localhost/remote.php/dav/files/$U/$(php -r 'echo rawurlencode($argv[1]);' "$RDIR")/Docs/") || fail "PROPFIND"
+[ "$(echo "$DAV" | grep -o 'Sun, 13 Sep 2020 12:26:40 GMT' | wc -l)" = 2 ] || fail "Nextcloud does not show the time of the folders: $(echo "$DAV" | grep -o '<d:getlastmodified>[^<]*' | sort | uniq -c)"
+occ backup:restore ci "$SNAP" "data/$U/files/Docs/Sub" -m merge >/dev/null || fail "restore into a folder that is there"
+[ "$($X stat -c %Y "$DATA/$U/files/Docs/Sub")" != 1600000000 ] || fail "a folder that was already there got the old time"
 occ backup:browse ci "$SNAP" "data/$U/files" | grep Hollow >/dev/null || fail "an empty folder is not shown when browsing the snapshot"
 occ backup:restore ci "$SNAP" "data/$U/files/Hollow" -m merge >/dev/null || fail "restore of a folder that was empty"
 $X sh -c "test -d $DATA/$U/files/Hollow" || fail "the empty folder did not come back by itself"
@@ -52,8 +63,8 @@ occ backup:restore ci "$SNAP" "data/$U/files/Docs" -m replace >/dev/null || fail
 $X sh -c "test -d $DATA/$U/files/Docs/Empty/Nested" || fail "replace did not bring back the empty folder, or moved it to the trash"
 ok "empty folders: restored in each mode, by themselves and shown when browsing"
 $X sh -c "rm -rf '$DATA/$U/files/Restored '*" ; occ files:scan "$U" >/dev/null
-SUM_AFTER=$($X sh -c "cd $DATA/$U/files && find . -type f -print0 | sort -z | xargs -0 md5sum | md5sum")
-[ "$SUM_BEFORE" = "$SUM_AFTER" ] || fail "files differ after restore"
+SUM_AFTER=$($X sh -c "cd $DATA/$U/files && find . -type f -print0 | sort -z | xargs -0 md5sum")
+[ "$SUM_BEFORE" = "$SUM_AFTER" ] || fail "files differ after restore: $(diff <(echo "$SUM_BEFORE") <(echo "$SUM_AFTER") | cut -c1-120)"
 $X sh -c "ls $DATA/$U/files_trashbin/files/ | grep -q '^extra.txt'" || fail "extra file not in trash"
 ok "restore new-folder and replace: files identical, extra file in the trash"
 
@@ -67,7 +78,7 @@ ok "restore of one file to a directory; the temporary of a stopped restore remov
 
 # All of the user's files to a directory: over S3 and SFTP the packs are read ahead
 occ backup:restore ci "$SNAP" "data/$U/files" -d /tmp/ngb-rt-dir >/dev/null || fail "restore of a folder to a directory"
-SUM_DIR=$($X sh -c "cd /tmp/ngb-rt-dir/data/$U/files && find . -type f -print0 | sort -z | xargs -0 md5sum | md5sum")
+SUM_DIR=$($X sh -c "cd /tmp/ngb-rt-dir/data/$U/files && find . -type f -print0 | sort -z | xargs -0 md5sum")
 [ "$SUM_BEFORE" = "$SUM_DIR" ] || fail "the files restored to a directory differ"
 $X sh -c "ls -A /tmp/ngb-rt-dir | grep -q ngb-restore-spool" && fail "the read-ahead spool was left in the directory"
 $X sh -c "test -d /tmp/ngb-rt-dir/data/$U/files/Docs/Empty/Nested" || fail "the empty folder is not in the directory"

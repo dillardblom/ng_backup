@@ -22,6 +22,9 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
 - A schedule per location: off, once a day, or every N hours from a given time, on the page under
   Backups or with `occ backup:target:schedule`. After the update every location keeps the time that
   held for all of them; a new location starts with the schedule of the first one.
+- All folders get their original modification time back on a restore, not only the empty ones, from
+  the first backup made with this version. An older version of NG Backup can still read new restore
+  points. A restore through Nextcloud into a folder that is already there leaves its time alone.
 
 ### Changed
 - Locations are backed up one after the other: a backup that has to wait shows as queued. A restore
