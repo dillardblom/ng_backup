@@ -40,6 +40,9 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
 - The key page warns against creating a new key when you are restoring a server.
 
 ### Changed
+- Reading files for a backup is much faster on disks where every request waits, such as network and
+  cloud volumes: files are read in pieces of 4 MiB instead of 8 KiB. On a test server the disk
+  delivered 27 MiB/s instead of 5 MiB/s.
 - Locations are backed up one after the other: a backup that has to wait shows as queued. A restore
   point has the time its backup really began, not the time it was queued.
 - Choosing a time no longer starts a backup right away when that time has already passed today.

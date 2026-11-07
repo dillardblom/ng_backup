@@ -193,6 +193,23 @@ final class Repository {
 		return $config;
 	}
 
+	/**
+	 * Open a local file to read it in whole blobs. PHP reads a file in pieces of 8 KiB by default;
+	 * on a disk where each request waits (a network or cloud volume) that made reading five times
+	 * slower: 5 MiB/s instead of 27 MiB/s on nc01. Without PHP's read buffer every fread() of a
+	 * blob is one request to the disk.
+	 *
+	 * @return resource|false
+	 */
+	public static function openForReading(string $path) {
+		$fh = @fopen($path, 'rb');
+		if ($fh !== false) {
+			stream_set_read_buffer($fh, 0);
+			stream_set_chunk_size($fh, self::BLOB_SIZE);
+		}
+		return $fh;
+	}
+
 	private static function configMatches(array $config, KeyRing $keys): bool {
 		try {
 			return isset($config['check'], $config['id'])
@@ -1148,7 +1165,10 @@ final class Repository {
 		for ($attempt = 1; $attempt <= 3; $attempt++) {
 			$before = self::fileVersion($path);
 			$blobs = [];
-			$fh = fopen($path, 'rb');
+			$fh = self::openForReading($path);
+			if ($fh === false) {
+				throw new RepositoryException('Cannot read ' . $path);
+			}
 			while (($data = self::readFull($fh, self::BLOB_SIZE)) !== '') {
 				$blobs[] = $this->storeBlob($data, $packs, $stats);
 			}

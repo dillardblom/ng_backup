@@ -120,7 +120,7 @@ final class BackupRun {
 					if ($cur === null || $cur['path'] !== $logical) {
 						$cur = ['path' => $logical, 'offset' => 0, 'blobs' => [], 'version' => $version];
 					}
-					$fh = @fopen($path, 'rb');
+					$fh = Repository::openForReading($path);
 					if ($fh === false) {
 						self::recordUnreadable($state, $stats, $logical);
 						$state['cur'] = null;
