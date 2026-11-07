@@ -18,6 +18,7 @@ use OCA\NgBackup\Crypto\StreamCipher;
  *
  * Layout on the backend:
  *   config                 plaintext JSON: format version, repository id, wrapped master key
+ *   settings               encrypted JSON: settings fixed at installation (deletion delay)
  *   packs/xx/<packId>      encrypted blobs + encrypted pack header
  *   index/<packId>         encrypted list of the blobs in that pack
  *   snapshots/<snapId>     encrypted JSON lines: one meta line, then one line per file
@@ -28,6 +29,7 @@ use OCA\NgBackup\Crypto\StreamCipher;
 final class Repository {
 	public const FORMAT = 1;
 	public const BLOB_SIZE = 4 * 1048576;
+	private const SETTINGS = 'settings';
 	private const FLAG_DEFLATE = 1;
 	/** Blobs from this size on get a quick compression test before the full compression. */
 	private const DEFLATE_PROBE_FROM = 256 * 1024;
@@ -79,7 +81,7 @@ final class Repository {
 		// opens this data; refuse instead.
 		foreach (['index', 'snapshots', 'trash/snapshots', 'catalog'] as $dir) {
 			if ($backend->listFiles($dir) !== []) {
-				throw new RepositoryException("This location holds backup data ($dir/) but no repository config could be read: not creating a new repository over it. Check the connection and the folder; a missing config can be restored from the recovery kit.");
+				throw new RepositoryException("This location holds backup data ($dir/) but no repository config could be read: not creating a new repository over it. Check the connection and the folder. If the config is really gone, occ backup:target:add with --repair-config writes it again with this server's key (on a new server: import the recovery kit first, occ backup:key:import).");
 			}
 		}
 		$id = bin2hex(random_bytes(16));
@@ -95,12 +97,7 @@ final class Repository {
 	/** @param ?callable(int, int): void $progress index files downloaded so far, and in all (see BlobIndex::load()) */
 	public static function openWithKey(IBackend $backend, KeyRing $keys, ?IIndexCache $cache = null, ?ICatalogAnchor $anchor = null, ?callable $progress = null): self {
 		$config = self::readConfig($backend);
-		try {
-			$ok = isset($config['check']) && (new StreamCipher($keys))->decryptString((string)base64_decode($config['check'], true), 'config-check') === $config['id'];
-		} catch (\OCA\NgBackup\Crypto\CryptoException) {
-			$ok = false;
-		}
-		if (!$ok) {
+		if (!self::configMatches($config, $keys)) {
 			throw new RepositoryException('This repository was created with a different key');
 		}
 		$repo = new self($backend, $keys, $config['id']);
@@ -194,6 +191,97 @@ final class Repository {
 			throw new RepositoryException('Unsupported repository format');
 		}
 		return $config;
+	}
+
+	private static function configMatches(array $config, KeyRing $keys): bool {
+		try {
+			return isset($config['check'], $config['id'])
+				&& (new StreamCipher($keys))->decryptString((string)base64_decode((string)$config['check'], true), 'config-check') === $config['id'];
+		} catch (\OCA\NgBackup\Crypto\CryptoException) {
+			return false;
+		}
+	}
+
+	/**
+	 * The passphrase-wrapped key slots in the config at this location: disaster recovery without
+	 * the recovery kit, where any one of their passphrases gives back the master key.
+	 */
+	public static function wrappedKeyAt(IBackend $backend): array {
+		$config = self::readConfig($backend);
+		if (!isset($config['key']) || !is_array($config['key'])) {
+			throw new RepositoryException('The repository config at this location holds no key');
+		}
+		return $config['key'];
+	}
+
+	/** Whether the repository at this location was created with this key. Does not read the index. */
+	public static function madeWithKey(IBackend $backend, KeyRing $keys): bool {
+		return self::configMatches(self::readConfig($backend), $keys);
+	}
+
+	/**
+	 * Settings of the installation that never change (the deletion delay), sealed with the
+	 * master key so that, unlike the config and the recovery kit, nobody can alter them unseen.
+	 * Empty when the location has none yet (made before 1.1.0, until its next backup) or they
+	 * cannot be read.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function settingsAt(IBackend $backend, KeyRing $keys): array {
+		try {
+			if (!$backend->exists(self::SETTINGS)) {
+				return [];
+			}
+			$fh = $backend->get(self::SETTINGS);
+			$raw = (string)stream_get_contents($fh);
+			fclose($fh);
+			$settings = json_decode((new StreamCipher($keys))->decryptString($raw, 'settings'), true, 16, JSON_THROW_ON_ERROR);
+			return is_array($settings) ? $settings : [];
+		} catch (BackendException|\OCA\NgBackup\Crypto\CryptoException|\JsonException) {
+			return [];
+		}
+	}
+
+	/**
+	 * Write the settings once; a location that has them keeps them. The repository id goes with
+	 * them: with it and the key from the recovery kit, a lost config can be written again.
+	 */
+	public function recordSettings(array $settings): void {
+		if ($this->backend->exists(self::SETTINGS)) {
+			return;
+		}
+		$settings['repository'] = $this->repositoryId;
+		self::putString($this->backend, self::SETTINGS, $this->cipher->encryptString(json_encode($settings, JSON_THROW_ON_ERROR), 'settings'));
+	}
+
+	/** Whether the location holds backup data, with or without a config. */
+	public static function holdsData(IBackend $backend): bool {
+		foreach (['index', 'snapshots', 'catalog'] as $dir) {
+			if ($backend->listFiles($dir) !== []) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Write a lost config again, from the key (recovery kit) and the repository id in the
+	 * sealed settings. Only where there is no config and the settings open with this key, so
+	 * nothing that works is ever overwritten and a wrong key writes nothing.
+	 */
+	public static function repairConfig(IBackend $backend, KeyRing $keys, array $wrappedKey): void {
+		if ($backend->exists('config')) {
+			throw new RepositoryException('This location has a config: nothing to repair, leave out --repair-config');
+		}
+		$id = self::settingsAt($backend, $keys)['repository'] ?? null;
+		if (!is_string($id) || !preg_match('/^[0-9a-f]{32}$/', $id)) {
+			throw new RepositoryException($backend->exists(self::SETTINGS)
+				? 'The settings at this location do not open with this key: the recovery kit is of another server, or the settings are damaged. The config cannot be written again.'
+				: 'This location has no settings file (it was backed up only by NG Backup before 1.1.0), so its config cannot be written again.');
+		}
+		$config = ['format' => self::FORMAT, 'id' => $id, 'created' => gmdate('c'), 'key' => $wrappedKey,
+			'check' => base64_encode((new StreamCipher($keys))->encryptString($id, 'config-check')), 'repaired' => true];
+		self::putString($backend, 'config', json_encode($config, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
 	}
 
 	/** Replace the passphrase-wrapped key slots in this repository's config (after a slot change). */

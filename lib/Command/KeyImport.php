@@ -32,6 +32,9 @@ For a fresh installation only (occ backup:key:init must not have been run here y
 of the kit's passphrase slots to recover the original master key, so occ backup:target:add opens
 the existing repository on the location instead of creating a new, empty one.
 
+No kit? Skip this command: occ backup:target:add then takes the key from the location with one
+of the old server's passphrases. The kit still helps when the location's config file is damaged.
+
 Example:
   occ backup:key:import /root/ng_backup-recovery-kit.json
   occ backup:target:add offsite sftp -a password::password -o host=... -o user=... -o password=...

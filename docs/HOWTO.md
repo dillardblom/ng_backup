@@ -157,6 +157,10 @@ occ backup:list offsite                              # the snapshots must be lis
 occ backup:restore:full offsite <snapshot>
 ```
 
+Without the kit, leave out `backup:key:import`: `backup:target:add` finds the backups and takes
+the key from the location with a passphrase (`--passphrase-file=/path/passphrase`, or it asks).
+Backups then wait until a new kit is downloaded and confirmed.
+
 The command refuses on an installation that already has more than one user, and asks before it
 starts; `--force` skips both (also needed to rerun it after it stopped halfway).
 

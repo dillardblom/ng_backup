@@ -5,7 +5,8 @@ Nextcloud back from an NG Backup location. Do them in this order.
 
 ## What you need
 
-- [ ] The **recovery kit** file (`ng_backup-kit.json`) and **one passphrase** of it.
+- [ ] **One passphrase** of the old server, and if you have it, the **recovery kit** file
+      (`ng_backup-kit.json`).
 - [ ] The **connection details of the backup location**: host, user, password or keys, bucket, folder.
 - [ ] A new server with the **same Nextcloud major version** as the old one (for example 34),
       a database (PostgreSQL, MySQL/MariaDB or SQLite; it may differ from the old one) and room for
@@ -15,8 +16,10 @@ Nextcloud back from an NG Backup location. Do them in this order.
 - [ ] A list of the apps that are **not in the app store** (your own builds, apps copied in by
       hand). Keep their packages somewhere safe beforehand.
 
-No kit? If the location still holds its `config` file, the key is there too, but this version
-can only import it from a kit. Keep the kit off the server, next to the passphrase.
+No kit? Since version 1.1.0 the passphrase is enough: the key is also stored on the location (in
+its `config` file), locked with the same passphrases. Skip step 4. The kit is still the safer
+copy: it helps when that file on the location is damaged. Keep it off the server, next to the
+passphrase.
 
 ## Steps
 
@@ -40,7 +43,8 @@ This keeps the new server quiet (no mail syncs, no notifications, no backups) un
 
 **3. Install NG Backup** (the same version or newer) and enable it.
 
-**4. Import the backup key.** Copy the kit to the new server so the web server user can read it.
+**4. Import the backup key** (with a kit; without one, go to step 5). Copy the kit to the new
+server so the web server user can read it.
 
 From your own computer:
 
@@ -67,13 +71,20 @@ the index and shows how far it is, for example
 
     occ backup:target:add offsite sftp -a password::password -o host=... -o user=... -o password=... -o root=... --path=...
 
-If it says "No backup key yet", the key is not imported. Run step 4:
+Without a kit (step 4 skipped), it finds the backups and asks for a passphrase of the old server;
+you type it yourself. It then shows the key fingerprint and the deletion delay of the old server.
+A wrong passphrase changes nothing: run the command again. Backups made before version 1.1.0 did
+not store the deletion delay on the location; it is then set to 7 days.
 
-    occ backup:key:import /tmp/ng_backup-kit.json
+If it says that the location's **config file is gone**, the key is only in the recovery kit:
+import it (step 4), then add the location with `--repair-config` at the end of the same command.
+That writes the config again from the kit; it works for locations backed up by version 1.1.0 or
+newer.
 
-Do **not** run `backup:key:init`, even though the message suggests it: that makes a brand new key,
-and your backups were encrypted with the old one. NG Backup then refuses the location ("created
-with a different key").
+If it says "No backup key yet, and no backups at this location", the connection details or
+`--path` differ from the old server's. Check them; do **not** run `backup:key:init`: that makes a
+brand new key, and your backups were encrypted with the old one. NG Backup then refuses the
+location ("created with a different key").
 
 **6. List the restore points** and pick one, normally the newest:
 
@@ -163,6 +174,10 @@ The command then ends with exit code 2 instead of 0. The same option exists for
 
 **11. Make a backup of the new server** to the same location (`occ backup:run offsite`). The old
 server must stay off: two servers must never write to the same location.
+
+Restored without a kit? Then backups wait until you have a new one: download it on the backup
+page (or `occ backup:key:kit --output=...`), store it off the server and confirm it
+(`occ backup:key:confirm`).
 
 ## Never
 

@@ -91,18 +91,36 @@ final class KeyService {
 			throw new \InvalidArgumentException('Not a NG Backup recovery kit file');
 		}
 		$keys = KeyRing::unwrapAny($kit['wrapped_key'], $passphrase);
-		$this->appConfig->setValueString(Application::APP_ID, self::KEY_MASTER,
-			$this->crypto->encrypt(base64_encode($keys->exportMasterKey())), true, true);
-		$this->cached = $keys;
-		$this->appConfig->setValueString(Application::APP_ID, self::KEY_WRAPPED, json_encode($kit['wrapped_key'], JSON_THROW_ON_ERROR), true, true);
-		$this->appConfig->setValueString(Application::APP_ID, self::KEY_FINGERPRINT, $this->fingerprintOf($keys), true);
 		// Kits from before this field existed fall back to the default.
-		$delay = (int)($kit['delete_delay_days'] ?? self::DEFAULT_DELETE_DELAY);
-		$this->appConfig->setValueInt(Application::APP_ID, self::KEY_DELETE_DELAY, ($delay >= 1 && $delay <= 365) ? $delay : self::DEFAULT_DELETE_DELAY, true);
-		$this->appConfig->setValueInt(Application::APP_ID, self::KEY_KIT_VERSION, (int)($kit['kit_version'] ?? 1), true);
+		$this->store($keys, $kit['wrapped_key'], (int)($kit['delete_delay_days'] ?? self::DEFAULT_DELETE_DELAY), (int)($kit['kit_version'] ?? 1));
 		// Having and successfully using a real kit file is stronger proof than the normal
 		// download-and-confirm flow it replaces.
 		$this->confirmRecoveryKit('cli-import');
+	}
+
+	/**
+	 * Disaster recovery without the recovery kit: adopt the master key that a passphrase opened
+	 * from the key slots in a location's config (TargetService::addWithPassphrase). There is no
+	 * kit, so none is confirmed: backups wait until a new kit is downloaded and confirmed.
+	 *
+	 * @param ?int $deleteDelayDays from the location's sealed settings, null when it has none
+	 */
+	public function adoptKey(KeyRing $keys, array $wrappedKey, ?int $deleteDelayDays): void {
+		if ($this->isInitialized()) {
+			throw new \RuntimeException('A backup key already exists');
+		}
+		$this->store($keys, $wrappedKey, $deleteDelayDays ?? self::DEFAULT_DELETE_DELAY, 1);
+	}
+
+	private function store(KeyRing $keys, array $wrappedKey, int $deleteDelayDays, int $kitVersion): void {
+		$this->appConfig->setValueString(Application::APP_ID, self::KEY_MASTER,
+			$this->crypto->encrypt(base64_encode($keys->exportMasterKey())), true, true);
+		$this->cached = $keys;
+		$this->appConfig->setValueString(Application::APP_ID, self::KEY_WRAPPED, json_encode($wrappedKey, JSON_THROW_ON_ERROR), true, true);
+		$this->appConfig->setValueString(Application::APP_ID, self::KEY_FINGERPRINT, $this->fingerprintOf($keys), true);
+		$this->appConfig->setValueInt(Application::APP_ID, self::KEY_DELETE_DELAY,
+			($deleteDelayDays >= 1 && $deleteDelayDays <= 365) ? $deleteDelayDays : self::DEFAULT_DELETE_DELAY, true);
+		$this->appConfig->setValueInt(Application::APP_ID, self::KEY_KIT_VERSION, max(1, $kitVersion), true);
 	}
 
 	/**

@@ -225,6 +225,8 @@ final class BackupService {
 				if (!isset($state['dump'])) {
 					// It may have been queued for hours: the restore point has the time of its data.
 					$state['files']['started'] = gmdate('c');
+					// Locations from before 1.1.0 get their sealed settings at their next backup.
+					$this->targets->recordSettings($repo);
 				}
 				$dumper = new DbDumper($this->db->getInner(), $this->config->getSystemValueString('dbtableprefix', 'oc_'));
 				$dbStats = $state['dbStats'] ?? [];

@@ -4,8 +4,11 @@
 -->
 <template>
 	<NcSettingsSection :name="t('ng_backup', 'Backup key and recovery kit')"
-		:description="t('ng_backup', 'All backups are encrypted with one key. The server keeps it for scheduled backups. To restore on a new server you need the recovery kit and one of the passphrases.')">
+		:description="t('ng_backup', 'All backups are encrypted with one key. The server keeps it for scheduled backups. To restore on a new server you need one of the passphrases; the recovery kit also helps when the key on the backup location is damaged.')">
 		<!-- 1. Create the key -->
+		<NcNoteCard v-if="!status.key.initialized" type="warning">
+			{{ t('ng_backup', 'Restoring a server after a crash? Do not create a key here: a new key cannot read your backups. Follow the disaster recovery guide instead (occ backup:target:add asks for one of your passphrases, or import the recovery kit with occ backup:key:import).') }}
+		</NcNoteCard>
 		<form v-if="!status.key.initialized" class="ngb-form" @submit.prevent="createKey">
 			<NcTextField v-model="label" :label="t('ng_backup', 'Who keeps this passphrase (e.g. Safe, CTO)')" />
 			<NcPasswordField v-model="pass1" :label="t('ng_backup', 'Passphrase (at least 16 characters)')" autocomplete="new-password" />

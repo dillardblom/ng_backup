@@ -87,8 +87,9 @@ All backups of an installation are encrypted with one master key.
 - The **recovery kit** is your own copy of that encrypted key. Still keep it off the server and
   off the location: an attacker who gets write access to the location can damage or delete its
   `config` file on purpose, and without the kit that makes every backup there unreadable.
-- For a **restore on a new server** (disaster recovery) you currently need the **recovery kit**
-  and **one passphrase**.
+- For a **restore on a new server** (disaster recovery) **one passphrase** is enough: the new
+  server takes the key from the location. With the **recovery kit** you can restore even when the
+  location's `config` file is damaged or gone.
 - Planned: an option to not store the key on the location at all. Then the kit is the only copy,
   and losing it means losing every backup; that option will come with an explicit warning.
 - Up to **three passphrases** ("slots") can open the key, so one person leaving or dying does not

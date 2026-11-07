@@ -592,6 +592,13 @@ in README "Known limitations":
      als reserve als `config` ontbreekt of niet opent. Vergt een andere volgorde van
      `target:add` en sleutelimport (het gevoeligste pad), daarom niet in rc1. Daarna de
      DR-test op PVE02 herhalen zonder kit.
+     **Gebouwd (2026-11-07):** `backup:target:add` op een server zonder sleutel kijkt eerst of de
+     locatie een repository heeft, vraagt dan een wachtwoordzin (of `--passphrase-file`), opent de
+     slots uit `config`, controleert de sleutel tegen de `check` en slaat hem pas dan op; geen
+     kitbevestiging, dus backups wachten op een nieuwe kit. Nieuw bestand `settings` op de locatie,
+     versleuteld met de hoofdsleutel en eenmalig geschreven (bij `target:add` en bij het begin van
+     een backup): de verwijdertermijn, anders de standaard 7 dagen. Getest: unit-tests en
+     `full-restore-roundtrip.sh 35-apache pgsql no-kit`. Nog open: de DR-test op PVE02 zonder kit.
   2. Instelling "zware achtergrondjobs pauzeren tijdens een backup" (standaard aan, uit te zetten):
      Memories, files_antivirus BackgroundScanner, Recognize, Preview Generator, fulltextsearch.
      Via de reservering/last_run van die jobs (geen apps uitzetten), crashbestendig, maximaal

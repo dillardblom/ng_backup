@@ -52,11 +52,14 @@ final class TargetService {
 	 * @param ?callable(int, int): void $progress reading an existing repository's index: files done, and in all
 	 * @return array{target: Target, created: bool}
 	 */
-	public function add(string $name, string $backend, string $auth, array $options, string $basePath, ?callable $progress = null): array {
+	public function add(string $name, string $backend, string $auth, array $options, string $basePath, ?callable $progress = null, bool $repairConfig = false): array {
 		$this->validateName($name);
 		$this->requireUsableBackend($backend);
 		$keys = $this->keys->keyRing();
-		$storageBackend = $this->buildBackend($backend, $auth, $options, $basePath);
+		$storageBackend = $this->buildBackend($backend, $auth, $options, $basePath, !$repairConfig);
+		if ($repairConfig) {
+			Repository::repairConfig($storageBackend, $keys, $this->keys->wrappedKey());
+		}
 		if ($storageBackend->exists('config')) {
 			$repo = Repository::openWithKey($storageBackend, $keys, $this->indexCache, $this->anchor, $progress);
 			$created = false;
@@ -64,6 +67,7 @@ final class TargetService {
 			$repo = Repository::initWithKey($storageBackend, $keys, $this->keys->wrappedKey(), $this->anchor);
 			$created = true;
 		}
+		$this->recordSettings($repo);
 
 		foreach ($this->mapper->findAll() as $existing) {
 			if ($existing->getRepositoryId() === $repo->id()) {
@@ -91,6 +95,65 @@ final class TargetService {
 			$this->adoptSnapshots($target, $repo);
 		}
 		return ['target' => $target, 'created' => $created];
+	}
+
+	public const LOCATION_REPOSITORY = 'repository';
+	public const LOCATION_DATA_WITHOUT_CONFIG = 'data-without-config';
+	public const LOCATION_EMPTY = 'empty';
+
+	/**
+	 * What these settings lead to: a repository, backup data whose config is gone, or nothing
+	 * of NG Backup. Creates nothing.
+	 *
+	 * @return self::LOCATION_*
+	 */
+	public function locationState(string $backend, string $auth, array $options, string $basePath): string {
+		$this->requireUsableBackend($backend);
+		$storage = $this->buildBackend($backend, $auth, $options, $basePath, false);
+		if ($storage->exists('config')) {
+			return self::LOCATION_REPOSITORY;
+		}
+		return Repository::holdsData($storage) ? self::LOCATION_DATA_WITHOUT_CONFIG : self::LOCATION_EMPTY;
+	}
+
+	/**
+	 * Disaster recovery without the recovery kit, on an installation without a backup key: take
+	 * the key from the location's config with one of its passphrases, then add the location as
+	 * usual. The key is only kept when it really is the one the repository was made with.
+	 *
+	 * @param array<string, mixed> $options
+	 * @param ?callable(int, int): void $progress
+	 * @return array{target: Target, created: bool, deleteDelayDays: ?int} the deletion delay the location had stored, if any
+	 * @throws \OCA\NgBackup\Crypto\CryptoException wrong passphrase
+	 */
+	public function addWithPassphrase(string $name, string $backend, string $auth, array $options, string $basePath,
+		#[\SensitiveParameter] string $passphrase, ?callable $progress = null): array {
+		if ($this->keys->isInitialized()) {
+			throw new \RuntimeException('A backup key already exists here');
+		}
+		$this->validateName($name);
+		$this->requireUsableBackend($backend);
+		$storageBackend = $this->buildBackend($backend, $auth, $options, $basePath, false);
+		if (!$storageBackend->exists('config')) {
+			throw new \InvalidArgumentException("No NG Backup repository found in folder '" . trim($basePath, '/') . "'");
+		}
+		$wrapped = Repository::wrappedKeyAt($storageBackend);
+		$keys = \OCA\NgBackup\Crypto\KeyRing::unwrapAny($wrapped, $passphrase);
+		if (!Repository::madeWithKey($storageBackend, $keys)) {
+			throw new \RuntimeException('The key in the config at this location does not open its backups: the config is damaged or was replaced. Only the recovery kit can help now: occ backup:key:import <kit file>, then this command again.');
+		}
+		$delay = Repository::settingsAt($storageBackend, $keys)['delete_delay_days'] ?? null;
+		$delay = is_int($delay) ? $delay : null;
+		$this->keys->adoptKey($keys, $wrapped, $delay);
+		return $this->add($name, $backend, $auth, $options, $basePath, $progress) + ['deleteDelayDays' => $delay];
+	}
+
+	/** Seal the settings fixed at installation on the location, once. A failure is tried again at the next backup. */
+	public function recordSettings(Repository $repo): void {
+		try {
+			$repo->recordSettings(['delete_delay_days' => $this->keys->deleteDelayDays()]);
+		} catch (\Throwable) {
+		}
 	}
 
 	/**

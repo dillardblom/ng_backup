@@ -29,6 +29,15 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
   background scan) pause while a backup runs, at most 6 hours in a row, then they get an hour. No app
   is turned off, and a job that is running goes on. On by default; turn it off under Backups or with
   `occ backup:pause-jobs off`.
+- Disaster recovery without the recovery kit: on a new server without a backup key,
+  `occ backup:target:add` finds the backups on the location and takes their key from there with one
+  of the old server's passphrases. Backups then wait until a new recovery kit is confirmed. The
+  deletion delay is now also stored on the location, sealed with the key, from its first backup
+  with this version; a location backed up only by an older version gives the default of 7 days.
+- `occ backup:target:add --repair-config`: when the config file of a location is gone, the recovery
+  kit writes it again (for locations backed up by this version or newer). Before, the message said
+  this was possible, but it was not.
+- The key page warns against creating a new key when you are restoring a server.
 
 ### Changed
 - Locations are backed up one after the other: a backup that has to wait shows as queued. A restore
