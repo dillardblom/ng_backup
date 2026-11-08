@@ -278,7 +278,13 @@ a 👍 on its issue helps decide what comes first.
   before an upgrade).
 - An option to pause heavy background jobs (such as Memories, Recognize or the Preview
   Generator) while a backup runs.
-- Faster backups: reading and uploading at the same time.
+- Faster backups: files are read in large pieces (on a test server 27 MiB/s instead of 5 MiB/s).
+- A backup key made by mistake on a server that is being restored can make way for the key of
+  the backups, as long as it was never used.
+
+**1.2.0**
+- Faster backups over a long line: several uploads at the same time, with a setting
+  (2 by default) to suit the server and the size of the backup.
 
 **Later**
 - A full restore onto the existing installation, without first installing a fresh Nextcloud, in a
