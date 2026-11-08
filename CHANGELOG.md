@@ -34,8 +34,9 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
   `occ backup:target:add` finds the backups on the location and takes their key from there with one
   of the old server's passphrases. Backups then wait until a new recovery kit is confirmed. The
   deletion delay is now also stored on the location, sealed with the key, from its first backup
-  with this version; a location backed up only by an older version gives the default of 7 days,
-  and so does a settings file that cannot be read (the command then says so).
+  with this version; a location backed up only by an older version gives the default of 7 days.
+  When the settings on the location cannot be read, the longest delay (365 days) is taken, so
+  nothing leaves the Bin sooner than on the old server; the command says so.
 - A passphrase change that cannot reach a location (offline at the time) now reaches it at the
   location's next backup, so a new server can open it with the new passphrase.
 - `occ backup:target:add --repair-config`: when the config file of a location is gone, the recovery

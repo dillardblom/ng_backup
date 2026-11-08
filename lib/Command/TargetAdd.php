@@ -164,7 +164,7 @@ HELP);
 			$days = 'Deletion delay for forgotten snapshots: <info>' . $this->keys->deleteDelayDays() . '</info> days';
 			$output->writeln(match (true) {
 				($r['deleteDelayDays'] ?? null) !== null => $days . ' (from the location).',
-				$r['settingsUnreadable'] ?? false => '<comment>' . $days . ' (the default: the settings file on the location could not be read, it may be damaged). If this server used a longer delay, removed restore points leave the Bin sooner than before.</comment>',
+				$r['settingsUnreadable'] ?? false => '<comment>' . $days . ' (the longest: the settings on the location could not be read or hold no valid delay, so nothing leaves the Bin sooner than on the old server; removed restore points take space for that long).</comment>',
 				default => $days . ' (the default: the location has none stored, its backups were made before NG Backup 1.1.0).',
 			});
 			$output->writeln('Next: <info>occ backup:list</info> and <info>occ backup:restore:full</info>. Before backups run again, download a new recovery kit and confirm it (<info>occ backup:key:kit</info>, <info>occ backup:key:confirm</info>).');

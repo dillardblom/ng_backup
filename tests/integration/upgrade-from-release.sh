@@ -56,6 +56,7 @@ occ backup:key:kit --output=/tmp/kit.json >/dev/null
 CODE=$(occ backup:key:kit | php -r 'echo json_decode(stream_get_contents(STDIN), true)["confirmation_code"];')
 occ backup:key:confirm -u admin --code="$CODE" --confirm="Yes, I confirm" >/dev/null || fail "confirm"
 occ config:app:set ng_backup schedule_time --value=03:15 >/dev/null
+occ config:app:set ng_backup schedule_timezone --value=America/Toronto >/dev/null
 occ backup:target:add offsite local -a null::null -o datadir=/mnt/shared/loc --path=repo >/dev/null || fail "target add"
 docker exec -u www-data $N sh -c 'mkdir -p data/admin/files/Docs && head -c 3000000 /dev/urandom > data/admin/files/Docs/before.bin'
 occ files:scan admin >/dev/null
@@ -76,9 +77,12 @@ OUT=$(occ upgrade 2>&1) || { printf '%s\n' "$OUT"; fail "occ upgrade"; }
 VER=$(occ app:list --output=json | php -r '$a = json_decode(stream_get_contents(STDIN), true); echo $a["enabled"]["ng_backup"] ?? "";')
 [ -z "$NEWVER" ] || [ "$VER" = "$NEWVER" ] || fail "after the upgrade the app has version '$VER'"
 ok "occ upgrade to $VER"
+# Before anything else touches the key: only the migration can have marked it as used
+[ "$(occ config:app:get ng_backup master_key_used 2>/dev/null)" = 1 ] || [ "$(occ config:app:get ng_backup master_key_used 2>/dev/null)" = true ] || fail "the migration did not mark the key from before the upgrade as used"
+ok "the key from before the upgrade counts as used"
 
 SCHED=$(occ backup:target:schedule offsite)
-printf '%s\n' "$SCHED" | grep -q "^offsite: 03:15 " || { printf '%s\n' "$SCHED"; fail "the location did not keep 03:15 as its schedule"; }
+printf '%s\n' "$SCHED" | grep -qx "offsite: 03:15 (America/Toronto)" || { printf '%s\n' "$SCHED"; fail "the location did not keep 03:15 as its schedule"; }
 occ backup:list offsite | grep -q "$OLDSNAP" || fail "the old restore point is not listed"
 occ backup:verify offsite "$OLDSNAP" >/dev/null || fail "the old restore point does not verify"
 occ backup:status >/dev/null || fail "backup:status"

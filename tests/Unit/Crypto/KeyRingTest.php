@@ -34,6 +34,20 @@ class KeyRingTest extends TestCase {
 		new KeyRing('short');
 	}
 
+	public function testADamagedSlotDoesNotStopTheNextOne(): void {
+		$keys = KeyRing::generate();
+		$broken = $keys->wrap('passphrase in the safe');
+		$broken['salt'] = '*** not base64 ***';
+		$field = ['slots' => [
+			['slot' => 1, 'label' => 'Safe', 'key' => $broken],
+			['slot' => 2, 'label' => 'Missing parts', 'key' => ['v' => 1]],
+			['slot' => 3, 'label' => 'CTO', 'key' => $keys->wrap('passphrase of the cto')],
+		]];
+		$this->assertSame($keys->blobId('x'), KeyRing::unwrapAny($field, 'passphrase of the cto')->blobId('x'));
+		$this->expectException(CryptoException::class);
+		KeyRing::unwrapAny($field, 'passphrase in the safe');
+	}
+
 	public function testAnySlotOpensTheSameKey(): void {
 		$keys = KeyRing::generate();
 		$field = ['slots' => [

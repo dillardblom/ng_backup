@@ -10,6 +10,7 @@
 #                       changes nothing; backups wait for a new kit
 #   no-kit-old          as no-kit, on a location backed up only before 1.1.0 (no settings file):
 #                       the deletion delay is the default, and the admin is told so
+#   no-kit-damaged      as no-kit, with a damaged settings file: the longest deletion delay, and why
 #   no-config-no-kit    the location's config is gone and there is no kit: told that only the kit helps
 #   no-config-kit       config gone, kit there: --repair-config writes it again, the backups open
 #   other-kit           the kit of another server: refused, told to use the old server's kit
@@ -149,6 +150,15 @@ expect "$OUT" "fingerprint $FP" "no-kit-old"
 expect "$OUT" "7 days (the default" "no-kit-old: the default delay and why"
 docker exec ngb-rs-new test -f /mnt/shared/no-kit-old/repo/settings || fail "no-kit-old: the settings were not written when the location was added"
 ok "no-kit-old: key from the location, default delay with the reason, settings written now"
+
+# no-kit-damaged: the settings file is there but damaged: the longest delay, and the admin is told
+scenario no-kit-damaged
+docker exec ngb-rs-new sh -c 'rm /tmp/kit.json && printf garbage >> /mnt/shared/no-kit-damaged/repo/settings'
+# shellcheck disable=SC2046
+OUT=$(run_on ngb-rs-new backup:target:add offsite $(location no-kit-damaged) --passphrase-file=/tmp/pass 2>&1) || { printf '%s\n' "$OUT"; fail "no-kit-damaged: target add"; }
+expect "$OUT" "fingerprint $FP" "no-kit-damaged"
+expect "$OUT" "365 days (the longest" "no-kit-damaged: the longest delay and why"
+ok "no-kit-damaged: key from the location, the longest delay with the reason"
 
 # no-config-no-kit
 scenario no-config-no-kit

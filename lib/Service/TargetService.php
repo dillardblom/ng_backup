@@ -27,6 +27,9 @@ use OCP\Server;
  * classes but its enabled/disabled state is left as the admin set it.
  */
 final class TargetService {
+	/** Deletion delay taken when a location's own cannot be read: nothing leaves the Bin sooner than on the old server. */
+	public const LONGEST_DELETE_DELAY = 365;
+
 	public function __construct(
 		private TargetMapper $mapper,
 		private KeyService $keys,
@@ -195,13 +198,16 @@ final class TargetService {
 			throw new \RuntimeException('The key in the config at this location does not open its backups: the config is damaged or was replaced. Only the recovery kit can help now: occ backup:key:import <kit file>, then this command again.');
 		}
 		$settings = Repository::settingsAt($storageBackend, $keys);
-		$delay = $settings['delete_delay_days'] ?? null;
-		$delay = is_int($delay) ? $delay : null;
-		$this->keys->adoptKey($keys, $wrapped, $delay, $replaceUnusedKey);
+		$stored = $settings['delete_delay_days'] ?? null;
+		$delay = is_int($stored) && $stored >= 1 && $stored <= 365 ? $stored : null;
+		// Settings that are there but cannot be read, or hold no valid delay (also none at all): the old server's delay
+		// is unknown, so take the longest one; a shorter guess could empty the Bin too soon.
+		$unknown = ($settings['unreadable'] ?? false) === true || ($settings !== [] && $delay === null);
+		$this->keys->adoptKey($keys, $wrapped, $delay ?? ($unknown ? self::LONGEST_DELETE_DELAY : null), $replaceUnusedKey);
 		if ($old !== null) {
 			$this->alerts->securityEvent('key_replaced', ['old' => $old, 'new' => $this->keys->fingerprint()]);
 		}
-		return $this->add($name, $backend, $auth, $options, $basePath, $progress) + ['deleteDelayDays' => $delay, 'settingsUnreadable' => ($settings['unreadable'] ?? false) === true];
+		return $this->add($name, $backend, $auth, $options, $basePath, $progress) + ['deleteDelayDays' => $delay, 'settingsUnreadable' => $unknown];
 	}
 
 	/** A passphrase change that missed this location (offline at the time) reaches it now. A failure is tried again at the next backup. */
@@ -212,7 +218,9 @@ final class TargetService {
 		try {
 			$repo->updateWrappedKey($this->keys->wrappedKey());
 			$this->keys->setWrappedKeyPending($target->getId(), false);
-		} catch (\Throwable) {
+		} catch (\Throwable $e) {
+			Server::get(\Psr\Log\LoggerInterface::class)->warning('NG Backup: the last passphrase change still does not reach ' . $target->getName()
+				. ' (it keeps the previous passphrases); tried again at its next backup: ' . $e->getMessage(), ['exception' => $e]);
 		}
 	}
 
@@ -442,6 +450,7 @@ final class TargetService {
 	/** Remove the target from NG Backup. The backups on the target itself are not touched. */
 	public function remove(Target $target): void {
 		$this->mapper->delete($target);
+		$this->keys->setWrappedKeyPending($target->getId(), false);
 		// The cached index of its repository is only of use while a location points at it
 		$repositoryId = $target->getRepositoryId();
 		if ($repositoryId !== null && !array_filter($this->list(), fn (Target $t) => $t->getRepositoryId() === $repositoryId)) {
