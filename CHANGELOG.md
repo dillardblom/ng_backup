@@ -44,6 +44,8 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
   protected a location is never replaced. All administrators are notified of a replacement.
 
 ### Changed
+- The list of backups stays within the page: a long label, note or error wraps onto more lines
+  instead of making the table scroll sideways.
 - Reading files for a backup is much faster on disks where every request waits, such as network and
   cloud volumes: files are read in pieces of 4 MiB instead of 8 KiB. On a test server the disk
   delivered 27 MiB/s instead of 5 MiB/s.

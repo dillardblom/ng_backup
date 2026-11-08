@@ -38,11 +38,11 @@
 						<td>{{ formatDateTime(run.startedAt) }}</td>
 						<td>{{ targetName(run.targetId) }}</td>
 						<td>{{ run.kind }}</td>
-						<td>{{ run.snapshot ? (run.snapshot.pinned ? '📌 ' : '') + formatDateTime(run.snapshot.createdAt) + (run.snapshot.label ? ' – ' + run.snapshot.label : '') + (run.snapshot.note ? ' – ' + run.snapshot.note : '') : '' }}</td>
+						<td class="ngb-point">{{ run.snapshot ? (run.snapshot.pinned ? '📌 ' : '') + formatDateTime(run.snapshot.createdAt) + (run.snapshot.label ? ' – ' + run.snapshot.label : '') + (run.snapshot.note ? ' – ' + run.snapshot.note : '') : '' }}</td>
 						<td :class="'ngb-' + run.status">{{ runStatus(run) }}{{ run.error ? ': ' + run.error : '' }}</td>
-						<td>{{ run.stats?.files?.files ?? run.stats?.restored ?? '' }}</td>
-						<td>{{ run.stats?.files ? formatSize(run.stats.files.bytes) : '' }}</td>
-						<td>{{ run.stats?.files ? formatSize(run.stats.files.uploaded) : '' }}</td>
+						<td class="ngb-num">{{ run.stats?.files?.files ?? run.stats?.restored ?? '' }}</td>
+						<td class="ngb-num">{{ run.stats?.files ? formatSize(run.stats.files.bytes) : '' }}</td>
+						<td class="ngb-num">{{ run.stats?.files ? formatSize(run.stats.files.uploaded) : '' }}</td>
 					</tr>
 				</tbody>
 			</table>
@@ -131,9 +131,12 @@ async function start(target) {
 <style scoped>
 .ngb-row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
 .ngb-label { max-width: 360px; }
-.ngb-table-wrap { overflow-x: auto; }
+.ngb-table-wrap { max-width: 90%; overflow-x: auto; } /* scrolls only on a really narrow screen */
 .ngb-table { width: 100%; border-collapse: collapse; }
-.ngb-table th, .ngb-table td { text-align: start; padding: 4px 8px; border-bottom: 1px solid var(--color-border); }
+.ngb-table th, .ngb-table td { text-align: start; padding: 4px 8px; border-bottom: 1px solid var(--color-border); white-space: normal; overflow-wrap: break-word; }
+/* Text wraps; numbers stay on one line, the restore point keeps room for its label and note */
+.ngb-table td.ngb-num { white-space: nowrap; }
+.ngb-table td.ngb-point { min-width: 9em; }
 .ngb-failed { color: var(--color-error-text); }
 .ngb-muted { color: var(--color-text-maxcontrast); }
 .ngb-done { color: var(--color-success-text); }
