@@ -450,11 +450,18 @@ final class TargetService {
 	/** Remove the target from NG Backup. The backups on the target itself are not touched. */
 	public function remove(Target $target): void {
 		$this->mapper->delete($target);
-		$this->keys->setWrappedKeyPending($target->getId(), false);
-		// The cached index of its repository is only of use while a location points at it
-		$repositoryId = $target->getRepositoryId();
-		if ($repositoryId !== null && !array_filter($this->list(), fn (Target $t) => $t->getRepositoryId() === $repositoryId)) {
-			$this->indexCache->forget($repositoryId);
+		// The location is gone now: tidying up must not fail the removal, or the caller would skip
+		// the removal event and a retry would no longer find the location
+		try {
+			$this->keys->setWrappedKeyPending($target->getId(), false);
+			// The cached index of its repository is only of use while a location points at it
+			$repositoryId = $target->getRepositoryId();
+			if ($repositoryId !== null && !array_filter($this->list(), fn (Target $t) => $t->getRepositoryId() === $repositoryId)) {
+				$this->indexCache->forget($repositoryId);
+			}
+		} catch (\Throwable $e) {
+			Server::get(\Psr\Log\LoggerInterface::class)->warning('NG Backup: location ' . $target->getName()
+				. ' removed, tidying up after it failed: ' . $e->getMessage(), ['exception' => $e]);
 		}
 	}
 

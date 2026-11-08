@@ -22,6 +22,14 @@ class KeyRingTest extends TestCase {
 		KeyRing::unwrap($wrapped, 'wrong');
 	}
 
+	public function testInvalidBase64IsADamagedKey(): void {
+		$wrapped = KeyRing::generate()->wrap('right');
+		$wrapped['salt'] = '***not base64***';
+		$this->expectException(CryptoException::class);
+		$this->expectExceptionMessage('Damaged key file');
+		KeyRing::unwrapAny($wrapped, 'right');
+	}
+
 	public function testBlobIdsAreKeyed(): void {
 		$this->assertNotSame(KeyRing::generate()->blobId('same'), KeyRing::generate()->blobId('same'));
 		$k = KeyRing::generate();

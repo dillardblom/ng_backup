@@ -91,7 +91,9 @@ As long as that key was never used (no location added with it, no backup), it ca
 key of your backups. NG Backup says so when it refuses the location. Add `--replace-unused-key` to
 `occ backup:key:import` (with the kit) or to `occ backup:target:add` (without the kit; it asks for
 a passphrase of the old server). The passphrases and kit of the unused key then stop working. A key
-that was used for a location is never replaced: its own backups depend on it.
+that was used for a location is never replaced: its own backups depend on it. A key made with a
+version before 1.1.0 always counts as used (those versions did not keep track), also when it never
+protected a location; recover onto a fresh Nextcloud installation instead.
 
 **6. List the restore points** and pick one, normally the newest:
 
