@@ -34,6 +34,10 @@ final class TargetSchedule extends Command {
 	protected function execute(InputInterface $input, OutputInterface $output): int {
 		$t = $this->targets->get($input->getArgument('target'));
 		$schedule = $input->getArgument('schedule');
+		if ($schedule === null && $input->getOption('timezone') !== null) {
+			$output->writeln('<error>--timezone goes with a schedule, e.g. backup:target:schedule ' . $t->getName() . ' 02:30 --timezone=Europe/Amsterdam</error>');
+			return 1;
+		}
 		$zone = $input->getOption('timezone') ?? $this->schedule->zoneOr($t->getScheduleZone());
 		if ($schedule !== null) {
 			try {

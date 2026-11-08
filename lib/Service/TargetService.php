@@ -172,7 +172,7 @@ final class TargetService {
 	 *
 	 * @param array<string, mixed> $options
 	 * @param ?callable(int, int): void $progress
-	 * @return array{target: Target, created: bool, deleteDelayDays: ?int} the deletion delay the location had stored, if any
+	 * @return array{target: Target, created: bool, deleteDelayDays: ?int, settingsUnreadable: bool} the deletion delay the location had stored, if any, and whether its settings could not be read
 	 * @throws \OCA\NgBackup\Crypto\CryptoException wrong passphrase
 	 */
 	public function addWithPassphrase(string $name, string $backend, string $auth, array $options, string $basePath,
@@ -194,13 +194,26 @@ final class TargetService {
 		if (!Repository::madeWithKey($storageBackend, $keys)) {
 			throw new \RuntimeException('The key in the config at this location does not open its backups: the config is damaged or was replaced. Only the recovery kit can help now: occ backup:key:import <kit file>, then this command again.');
 		}
-		$delay = Repository::settingsAt($storageBackend, $keys)['delete_delay_days'] ?? null;
+		$settings = Repository::settingsAt($storageBackend, $keys);
+		$delay = $settings['delete_delay_days'] ?? null;
 		$delay = is_int($delay) ? $delay : null;
 		$this->keys->adoptKey($keys, $wrapped, $delay, $replaceUnusedKey);
 		if ($old !== null) {
 			$this->alerts->securityEvent('key_replaced', ['old' => $old, 'new' => $this->keys->fingerprint()]);
 		}
-		return $this->add($name, $backend, $auth, $options, $basePath, $progress) + ['deleteDelayDays' => $delay];
+		return $this->add($name, $backend, $auth, $options, $basePath, $progress) + ['deleteDelayDays' => $delay, 'settingsUnreadable' => ($settings['unreadable'] ?? false) === true];
+	}
+
+	/** A passphrase change that missed this location (offline at the time) reaches it now. A failure is tried again at the next backup. */
+	public function catchUpWrappedKey(Target $target, Repository $repo): void {
+		if (!$this->keys->wrappedKeyPending($target->getId())) {
+			return;
+		}
+		try {
+			$repo->updateWrappedKey($this->keys->wrappedKey());
+			$this->keys->setWrappedKeyPending($target->getId(), false);
+		} catch (\Throwable) {
+		}
 	}
 
 	/** Seal the settings fixed at installation on the location, once. A failure is tried again at the next backup. */
@@ -402,6 +415,10 @@ final class TargetService {
 		}
 		$new = LocationSchedule::normalize($schedule);
 		$turnedOff = $new === '' && (string)$target->getSchedule() !== '';
+		if ($new === (string)$target->getSchedule() && $zone === $target->getScheduleZone()) {
+			// Saved again unchanged: a moment that already passed still gets its backup
+			return $target;
+		}
 		$target->setSchedule($new);
 		$target->setScheduleZone($zone);
 		$target->setScheduleSince(time());

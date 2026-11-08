@@ -48,7 +48,10 @@ class LocationScheduleTest extends TestCase {
 
 	public function testAClockChangeInTheNightStillGivesOneMoment(): void {
 		$this->assertSame(self::at('2026-03-29 01:30 UTC'), S::lastMoment('02:30', self::BERLIN, self::at('2026-03-29 12:00 UTC')), '02:30 does not exist that night');
-		$this->assertNotNull(S::lastMoment('02:30', self::BERLIN, self::at('2026-10-25 12:00 UTC')));
+		$autumn = S::lastMoment('02:30', self::BERLIN, self::at('2026-10-25 12:00 UTC'));
+		$this->assertNotNull($autumn);
+		$local = (new \DateTimeImmutable('@' . $autumn))->setTimezone(new \DateTimeZone(self::BERLIN));
+		$this->assertSame('2026-10-25 02:30', $local->format('Y-m-d H:i'), '02:30 happens twice that night: one of them, on that day');
 	}
 
 	public function testChoosingATimeDoesNotStartABackup(): void {

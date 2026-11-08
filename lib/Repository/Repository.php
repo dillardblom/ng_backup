@@ -239,8 +239,8 @@ final class Repository {
 	/**
 	 * Settings of the installation that never change (the deletion delay), sealed with the
 	 * master key so that, unlike the config and the recovery kit, nobody can alter them unseen.
-	 * Empty when the location has none yet (made before 1.1.0, until its next backup) or they
-	 * cannot be read.
+	 * Empty when the location has none yet (made before 1.1.0, until its next backup); only
+	 * ['unreadable' => true] when they are there but cannot be read.
 	 *
 	 * @return array<string, mixed>
 	 */
@@ -253,9 +253,9 @@ final class Repository {
 			$raw = (string)stream_get_contents($fh);
 			fclose($fh);
 			$settings = json_decode((new StreamCipher($keys))->decryptString($raw, 'settings'), true, 16, JSON_THROW_ON_ERROR);
-			return is_array($settings) ? $settings : [];
+			return is_array($settings) ? $settings : ['unreadable' => true];
 		} catch (BackendException|\OCA\NgBackup\Crypto\CryptoException|\JsonException) {
-			return [];
+			return ['unreadable' => true];
 		}
 	}
 

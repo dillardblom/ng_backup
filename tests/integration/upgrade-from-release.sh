@@ -77,8 +77,8 @@ VER=$(occ app:list --output=json | php -r '$a = json_decode(stream_get_contents(
 [ -z "$NEWVER" ] || [ "$VER" = "$NEWVER" ] || fail "after the upgrade the app has version '$VER'"
 ok "occ upgrade to $VER"
 
-LIST=$(occ backup:target:list)
-printf '%s\n' "$LIST" | grep offsite | grep -q "03:15" || { printf '%s\n' "$LIST"; fail "the location did not keep 03:15 as its schedule"; }
+SCHED=$(occ backup:target:schedule offsite)
+printf '%s\n' "$SCHED" | grep -q "^offsite: 03:15 " || { printf '%s\n' "$SCHED"; fail "the location did not keep 03:15 as its schedule"; }
 occ backup:list offsite | grep -q "$OLDSNAP" || fail "the old restore point is not listed"
 occ backup:verify offsite "$OLDSNAP" >/dev/null || fail "the old restore point does not verify"
 occ backup:status >/dev/null || fail "backup:status"
@@ -91,9 +91,15 @@ ok "after the upgrade: schedule kept, old restore point listed, verified, a file
 docker exec -u www-data $N sh -c 'head -c 2000000 /dev/urandom > data/admin/files/Docs/after.bin'
 occ files:scan admin >/dev/null
 occ backup:run offsite >/dev/null || fail "backup after the upgrade"
-[ "$(occ backup:list offsite | grep -o '[0-9a-f]\{32\}' | sort -u | wc -l)" -ge 2 ] || fail "no new restore point after the upgrade"
+NEWSNAP=$(occ backup:list offsite | grep -o '[0-9a-f]\{32\}' | grep -v "$OLDSNAP" | head -1)
+[ -n "$NEWSNAP" ] || fail "no new restore point after the upgrade"
+SUM2=$(docker exec $N sha256sum /var/www/html/data/admin/files/Docs/after.bin | cut -d' ' -f1)
+docker exec $N sh -c 'rm -rf /tmp/rst && mkdir /tmp/rst && chown www-data /tmp/rst'
+occ backup:restore offsite "$NEWSNAP" data/admin/files/Docs/after.bin --to-directory=/tmp/rst >/dev/null || fail "restore from the new restore point"
+GOT=$(docker exec $N sh -c 'find /tmp/rst -name after.bin -exec sha256sum {} \;' | cut -d' ' -f1)
+[ "$GOT" = "$SUM2" ] || fail "the file restored from the new restore point differs"
 docker exec $N test -f /mnt/shared/loc/repo/settings || fail "the location got no settings file"
 OUT=$(occ backup:key:import /tmp/kit.json --passphrase-file=/tmp/pass --replace-unused-key 2>&1) && fail "a used key from before the upgrade was offered for replacement"
 printf '%s\n' "$OUT" | grep -q "never replaced" || { printf '%s\n' "$OUT"; fail "the refusal does not say the key is never replaced"; }
-ok "a new backup runs, the location got its settings, the key counts as used"
+ok "a new backup runs and restores, the location got its settings, the key counts as used"
 echo "UPGRADE $OLDVER -> ${VER:-working tree} PASS"

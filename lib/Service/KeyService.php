@@ -32,6 +32,7 @@ final class KeyService {
 	private const KEY_KIT_CODE = 'recovery_kit_code';
 	/** Set once a location was created or adopted with this key: from then on it is never replaced. */
 	private const KEY_USED = 'master_key_used';
+	private const KEY_WRAPPED_PENDING = 'master_key_wrapped_pending';
 	public const DEFAULT_DELETE_DELAY = 7;
 	/**
 	 * The location holds the passphrase-wrapped key too, so whoever can read it can try
@@ -124,6 +125,24 @@ final class KeyService {
 	public function markUsed(): void {
 		if (!$this->wasUsed()) {
 			$this->appConfig->setValueBool(Application::APP_ID, self::KEY_USED, true, true);
+		}
+	}
+
+	/**
+	 * Locations that missed the last passphrase change (offline at the time): they still hold
+	 * the previous slots until the change reaches them, which is tried again at each backup.
+	 */
+	public function wrappedKeyPending(int $targetId): bool {
+		return $this->appConfig->getValueBool(Application::APP_ID, self::KEY_WRAPPED_PENDING . '_' . $targetId);
+	}
+
+	/** One flag per location, so that two processes never overwrite each other's. */
+	public function setWrappedKeyPending(int $targetId, bool $pending): void {
+		$key = self::KEY_WRAPPED_PENDING . '_' . $targetId;
+		if ($pending) {
+			$this->appConfig->setValueBool(Application::APP_ID, $key, true);
+		} elseif ($this->wrappedKeyPending($targetId)) {
+			$this->appConfig->deleteKey(Application::APP_ID, $key);
 		}
 	}
 

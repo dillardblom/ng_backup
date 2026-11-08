@@ -19,6 +19,8 @@
 #   unused-key-no-kit   the same without a kit: target:add with --replace-unused-key and a passphrase
 #                       of the old server; a wrong one keeps the unused key
 #   used-key            a key that protected a location is never replaced, also after the location was removed
+#   slot-catch-up       a passphrase added while a location was unreachable reaches it at its next
+#                       backup; a new server then gets the key from it with that passphrase
 set -euo pipefail
 IMAGE="nextcloud:${1:-35-apache}"
 APP=$(cd "$(dirname "$0")/../.." && pwd)
@@ -268,5 +270,32 @@ OUT=$(must_fail ngb-rs-new "used-key key:import" backup:key:import /tmp/kit.json
 expect "$OUT" "never replaced" "used-key key:import"
 [ "$(key_of ngb-rs-new)" = "$OWN" ] || fail "used-key: the key changed"
 ok "used-key: never replaced, by kit or passphrase, also after its location was removed"
+
+# slot-catch-up: a passphrase change that missed a location reaches it at the next backup
+start ngb-rs-new
+docker exec ngb-rs-new sh -c "printf '%s\n' 'catch up passphrase of the cto' > /tmp/pass2 && chmod 644 /tmp/pass2 && rm -rf /mnt/shared/catchup && mkdir -p /mnt/shared/catchup && chown www-data /mnt/shared/catchup"
+run_on ngb-rs-new backup:key:init --passphrase-file=/tmp/pass --label=Safe >/dev/null || fail "slot-catch-up: key init"
+CODE=$(run_on ngb-rs-new backup:key:kit | php -r 'echo json_decode(stream_get_contents(STDIN), true)["confirmation_code"];')
+run_on ngb-rs-new backup:key:confirm -u admin --code="$CODE" --confirm="Yes, I confirm" >/dev/null || fail "slot-catch-up: confirm"
+# shellcheck disable=SC2046
+run_on ngb-rs-new backup:target:add offsite $(location catchup) >/dev/null || fail "slot-catch-up: target add"
+run_on ngb-rs-new backup:run offsite >/dev/null || fail "slot-catch-up: first backup"
+BEFORE=$(docker exec ngb-rs-new md5sum /mnt/shared/catchup/repo/config | cut -d' ' -f1)
+docker exec ngb-rs-new chmod 000 /mnt/shared/catchup/repo
+OUT=$(must_fail ngb-rs-new "slot-catch-up: slot add with the location unreachable" backup:key:slot:add --label=CTO --passphrase-file=/tmp/pass2)
+expect "$OUT" "tried again at their next backup" "slot-catch-up: says the change follows"
+docker exec ngb-rs-new chmod 755 /mnt/shared/catchup/repo
+[ "$(docker exec ngb-rs-new md5sum /mnt/shared/catchup/repo/config | cut -d' ' -f1)" = "$BEFORE" ] || fail "slot-catch-up: the location changed while unreachable"
+CODE=$(run_on ngb-rs-new backup:key:kit | php -r 'echo json_decode(stream_get_contents(STDIN), true)["confirmation_code"];')
+run_on ngb-rs-new backup:key:confirm -u admin --code="$CODE" --confirm="Yes, I confirm" >/dev/null || fail "slot-catch-up: confirm the new kit"
+run_on ngb-rs-new backup:run offsite >/dev/null || fail "slot-catch-up: backup after the location came back"
+[ "$(docker exec ngb-rs-new md5sum /mnt/shared/catchup/repo/config | cut -d' ' -f1)" != "$BEFORE" ] || fail "slot-catch-up: the backup did not bring the new passphrase to the location"
+CATCHFP=$(key_of ngb-rs-new)
+start ngb-rs-other
+docker exec ngb-rs-other sh -c "printf '%s\n' 'catch up passphrase of the cto' > /tmp/pass2 && chmod 644 /tmp/pass2"
+# shellcheck disable=SC2046
+OUT=$(run_on ngb-rs-other backup:target:add offsite $(location catchup) --passphrase-file=/tmp/pass2 2>&1) || { printf '%s\n' "$OUT"; fail "slot-catch-up: a new server with the new passphrase"; }
+expect "$OUT" "fingerprint $CATCHFP" "slot-catch-up: the new server"
+ok "slot-catch-up: a passphrase that missed a location reaches it at the next backup and opens it on a new server"
 
 echo "RECOVERY SCENARIOS PASS"

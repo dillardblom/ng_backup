@@ -21,7 +21,8 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
   An older version of NG Backup can still read the location, but drops them when it writes to it.
 - A schedule per location: off, once a day, or every N hours from a given time, on the page under
   Backups or with `occ backup:target:schedule`. After the update every location keeps the time that
-  held for all of them; a new location starts with the schedule of the first one.
+  held for all of them; a new location starts with the schedule of the first one. A schedule is
+  shown and changed in the time zone it was saved in, which the page names next to the time.
 - All folders get their original modification time back on a restore, not only the empty ones, from
   the first backup made with this version. An older version of NG Backup can still read new restore
   points. A restore through Nextcloud into a folder that is already there leaves its time alone.
@@ -33,7 +34,10 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
   `occ backup:target:add` finds the backups on the location and takes their key from there with one
   of the old server's passphrases. Backups then wait until a new recovery kit is confirmed. The
   deletion delay is now also stored on the location, sealed with the key, from its first backup
-  with this version; a location backed up only by an older version gives the default of 7 days.
+  with this version; a location backed up only by an older version gives the default of 7 days,
+  and so does a settings file that cannot be read (the command then says so).
+- A passphrase change that cannot reach a location (offline at the time) now reaches it at the
+  location's next backup, so a new server can open it with the new passphrase.
 - `occ backup:target:add --repair-config`: when the config file of a location is gone, the recovery
   kit writes it again (for locations backed up by this version or newer). Before, the message said
   this was possible, but it was not.
@@ -41,7 +45,8 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
   by mistake can still make way for the key of the backups, as long as it was never used (no
   location, no backup): `occ backup:key:import --replace-unused-key` with the kit, or
   `occ backup:target:add --replace-unused-key` with a passphrase of the old server. A key that
-  protected a location is never replaced. All administrators are notified of a replacement.
+  protected a location is never replaced, and neither is a key from before this version. All
+  administrators are notified of a replacement.
 
 ### Changed
 - The list of backups stays within the page: a long label, note or error wraps onto more lines

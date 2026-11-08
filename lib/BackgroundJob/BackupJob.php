@@ -116,7 +116,7 @@ final class BackupJob extends TimedJob {
 			}
 			$attempts = $this->runs->startedSince($t->getId(), BackupService::KIND_FULL, $moment);
 			if (!\OCA\NgBackup\Service\LocationSchedule::isDue($moment, (int)$t->getScheduleSince(),
-				$this->runs->lastFinished($t->getId(), BackupService::KIND_FULL)?->getStartedAt(),
+				$this->dataStarted($this->runs->lastFinished($t->getId(), BackupService::KIND_FULL)),
 				count($attempts), ($attempts[0] ?? null)?->getFinishedAt(), $now)) {
 				continue;
 			}
@@ -126,5 +126,16 @@ final class BackupJob extends TimedJob {
 				$this->logger->warning('NG Backup: scheduled backup to ' . $t->getName() . ' not started: ' . $e->getMessage());
 			}
 		}
+	}
+
+	/** When a backup began reading its data: a queued one can start well after it was asked for. */
+	private function dataStarted(?\OCA\NgBackup\Db\Run $run): ?int {
+		if ($run === null) {
+			return null;
+		}
+		$state = json_decode($run->getState(), true);
+		$started = is_array($state) ? ($state['files']['started'] ?? null) : null;
+		$at = is_string($started) ? strtotime($started) : false;
+		return $at !== false ? $at : $run->getStartedAt();
 	}
 }

@@ -51,7 +51,9 @@ class KeyFromLocationTest extends TestCase {
 		$this->assertSame(30, Repository::settingsAt($this->backend, $this->keys)['delete_delay_days']);
 		Repository::openWithKey($this->backend, $this->keys)->recordSettings(['delete_delay_days' => 1]);
 		$this->assertSame(30, Repository::settingsAt($this->backend, $this->keys)['delete_delay_days']);
-		$this->assertSame([], Repository::settingsAt($this->backend, KeyRing::generate()));
+		$this->assertSame(['unreadable' => true], Repository::settingsAt($this->backend, KeyRing::generate()), 'another key: there, but not readable');
+		unlink($this->dir . '/settings');
+		$this->assertSame([], Repository::settingsAt($this->backend, $this->keys), 'none at all: a location from before 1.1.0');
 	}
 
 	public function testAlteredSettingsAreNotBelieved(): void {
@@ -59,7 +61,7 @@ class KeyFromLocationTest extends TestCase {
 		$raw = file_get_contents($file);
 		$raw[strlen($raw) - 1] = $raw[strlen($raw) - 1] ^ "\x01";
 		file_put_contents($file, $raw);
-		$this->assertSame([], Repository::settingsAt($this->backend, $this->keys));
+		$this->assertSame(['unreadable' => true], Repository::settingsAt($this->backend, $this->keys));
 	}
 
 	public function testTheKitWritesALostConfigAgainAndTheBackupsOpen(): void {

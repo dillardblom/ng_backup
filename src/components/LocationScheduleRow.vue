@@ -6,7 +6,7 @@
 	<div class="ngb-row">
 		<strong class="ngb-name">{{ target.name }}</strong>
 		<NcSelect v-model="kind" :options="kinds" label="label" :input-label="t('ng_backup', 'Schedule')" :clearable="false" />
-		<NcTextField v-if="kind.id !== 'off'" v-model="time" class="ngb-time" :label="kind.id === 'daily' ? t('ng_backup', 'At (HH:MM, {zone})', { zone: browserZone }) : t('ng_backup', 'From (HH:MM, {zone})', { zone: browserZone })" />
+		<NcTextField v-if="kind.id !== 'off'" v-model="time" class="ngb-time" :label="kind.id === 'daily' ? t('ng_backup', 'At (HH:MM, {zone})', { zone }) : t('ng_backup', 'From (HH:MM, {zone})', { zone })" />
 		<NcTextField v-if="kind.id === 'hours'" v-model="hours" class="ngb-hours" type="number" min="1" max="23" :label="t('ng_backup', 'Every … hours')" />
 		<NcButton :disabled="busy || wanted === current" @click="save">{{ t('ng_backup', 'Save') }}</NcButton>
 	</div>
@@ -19,7 +19,6 @@ import NcButton from '@nextcloud/vue/components/NcButton'
 import NcSelect from '@nextcloud/vue/components/NcSelect'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
 import api from '../api.js'
-import { toZone } from '../format.js'
 
 const props = defineProps({ target: { type: Object, required: true } })
 const emit = defineEmits(['changed', 'error'])
@@ -29,9 +28,11 @@ const kinds = [
 	{ id: 'daily', label: t('ng_backup', 'Once a day') },
 	{ id: 'hours', label: t('ng_backup', 'Every few hours') },
 ]
-// The time is saved in the administrator's own zone (the browser's); a schedule saved in another
-// zone is shown in this one, so it reads as the moment it runs here.
+// A schedule is shown and edited in the zone it was saved in, named next to the time: "every 6
+// hours from 02:00" runs until midnight of that zone, so moving it to another zone would change
+// how often it runs. A location without a schedule gets the administrator's own zone (the browser's).
 const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+const zone = computed(() => props.target.schedule !== '' && props.target.scheduleZone ? props.target.scheduleZone : browserZone)
 const kind = ref(kinds[0])
 const time = ref('02:00')
 const hours = ref('6')
@@ -39,7 +40,7 @@ const busy = ref(false)
 
 const current = computed(() => {
 	const [at, every] = props.target.schedule.split('/')
-	return at === '' ? '' : (props.target.scheduleZone !== browserZone ? toZone(at, props.target.scheduleZone, browserZone) : at) + (every ? '/' + every : '')
+	return at === '' ? '' : at + (every ? '/' + every : '')
 })
 const wanted = computed(() => {
 	if (kind.value.id === 'off') {
@@ -59,7 +60,7 @@ async function save() {
 	busy.value = true
 	emit('error', '')
 	try {
-		await api.setTargetSchedule(props.target.id, wanted.value, browserZone)
+		await api.setTargetSchedule(props.target.id, wanted.value, zone.value)
 		emit('changed')
 	} catch (e) {
 		emit('error', e.message)

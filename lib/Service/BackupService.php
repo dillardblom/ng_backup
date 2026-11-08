@@ -227,6 +227,7 @@ final class BackupService {
 					$state['files']['started'] = gmdate('c');
 					// Locations from before 1.1.0 get their sealed settings at their next backup.
 					$this->targets->recordSettings($repo);
+					$this->targets->catchUpWrappedKey($target, $repo);
 				}
 				$dumper = new DbDumper($this->db->getInner(), $this->config->getSystemValueString('dbtableprefix', 'oc_'));
 				$dbStats = $state['dbStats'] ?? [];
