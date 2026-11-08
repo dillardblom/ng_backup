@@ -7,7 +7,7 @@ installations and hosted Nextcloud. (Choosing SMB as a storage backend is the on
 see "Storage backend experiences" below — that requirement comes from files_external, not from
 ng_backup, and applies to any Nextcloud app that writes to an SMB share.)
 
-**Status: 1.0.3, stable.** Disaster recovery has been tested on real installations (see "Tested
+**Status: 1.1.0, stable.** Disaster recovery has been tested on real installations (see "Tested
 disaster recoveries" below). See "Known limitations" below, `PLAN.md` for the design and
 `docs/HOWTO.md` for a step-by-step guide from setup to a tested restore. Server lost? See
 `docs/DISASTER-RECOVERY.md`.
@@ -171,6 +171,7 @@ Full restores onto a fresh server, following only [the guide](docs/DISASTER-RECO
 | Production, about 1 TB, 150,000 files (Nextcloud All-in-One) | Hetzner Storage Box (SFTP), Germany → Canada | PostgreSQL → PostgreSQL | 150,622 files restored in about 25 h (13-14 MiB/s), sample identical |
 | The same, 1.0.2 | Hetzner Storage Box (SMB), Germany → Canada | PostgreSQL → PostgreSQL | 150,755 files restored in about 29 h (7-13 MiB/s), going on after a lost connection; sample identical, empty folders not restored ([#27](https://github.com/dillardblom/ng_backup/issues/27)) |
 | 1.0.3, small simulations of 2 GB: as planned, with the restore killed halfway, and with a disk that runs full | Local SFTP server | PostgreSQL → PostgreSQL and MariaDB | all 3,101 user files and all empty folders identical; users, a share and a calendar back |
+| 1.1.0, the same three simulations | Local SFTP server | PostgreSQL → PostgreSQL and MariaDB | all 3,101 user files identical in content, size and time, all empty folders back; users, a share and a calendar back |
 | 138 GB simulation: 20 users, calendars, contacts, mail, shares, team folders with an ACL, versions, trash | OVH S3, Warsaw → Canada | MariaDB → PostgreSQL | all 15,772 files and every database count identical |
 | The same | OVH S3 | MariaDB → MariaDB | all 15,772 files and every database count identical |
 | The same | Hetzner Storage Box (SMB), Germany → Canada | MariaDB → SQLite | all 15,772 files and every database count identical (27.6 h, about 1.5 MB/s) |
@@ -266,21 +267,6 @@ Contributions welcome via PR — add what you ran into with your own provider.
 What is planned, without dates. Ideas and votes are welcome in the
 [issues](https://github.com/dillardblom/ng_backup/issues); if something you need is listed here,
 a 👍 on its issue helps decide what comes first.
-
-**1.1.0**
-- Restore without the recovery kit: the backup key from the location itself, opened with one of
-  your passphrases.
-- A schedule per location, also "every N hours".
-- Locations backed up one after the other instead of at the same time.
-- All folders get their original modification time back on a restore, not only the empty ones.
-- A note on a restore point that you can change afterwards.
-- Pinning a restore point, so the retention policy never removes it (for example the one from
-  before an upgrade).
-- An option to pause heavy background jobs (such as Memories, Recognize or the Preview
-  Generator) while a backup runs.
-- Faster backups: files are read in large pieces (on a test server 27 MiB/s instead of 5 MiB/s).
-- A backup key made by mistake on a server that is being restored can make way for the key of
-  the backups, as long as it was never used.
 
 **1.2.0**
 - Faster backups over a long line: several uploads at the same time, with a setting
