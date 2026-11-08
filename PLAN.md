@@ -606,6 +606,14 @@ in README "Known limitations":
   3. Snelheid: lezen en uploaden laten overlappen, meerdere bestanden tegelijk lezen, eventueel
      een eigen worker (`occ background-job:worker`). Gemeten op nc01: 55% wachten op de schijf,
      33% op de SMB-upload, ~7% CPU. Vergt extra PHP-processen; botst mogelijk met uitgangspunt 1.
+     **Gemeten 2026-11-07 op nc01 (alleen lezen):** de schijf (sdb, 2 TB, ROTA=1) haalt met `dd`
+     21 MiB/s met 1 stroom, 37 met 4, 55 met 8. PHP las 8 KiB per verzoek: 5,2 MiB/s. Met
+     `stream_set_read_buffer(0)` en blokken van 4 MiB: 26,8 MiB/s. Hulpprocessen die vooruitlezen
+     gaven daarbovenop niets (20 MiB/s, ze concurreren). Gebouwd: grote leesverzoeken (commit
+     "Read files ... 4 MiB"). Niet gebouwd: meerdere uploads tegelijk; SMB bundelt al per 1 MB
+     (icewind/smb), dus winst over een lange lijn vraagt meerdere packs tegelijk.
+     **Besluit 2026-11-08: meerdere uploads tegelijk in 1.2.0**, met een instelling (standaard 2)
+     zodat de beheerder het afstemt op zijn server en de omvang van zijn backup.
   4. **Schema per locatie** (besluit 2026-10-19): in de instellingen van een locatie "uit",
      "dagelijks om HH:MM" of "elke N uur (vanaf HH:MM)". Nu is er één `schedule_time` voor alle
      locaties, één keer per dag. Bij de update wordt de huidige tijd het schema van elke
