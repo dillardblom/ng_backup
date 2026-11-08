@@ -71,6 +71,7 @@ final class Notifier implements INotifier {
 				$who = (string)($p['actor'] ?? '');
 				$notification->setParsedSubject(match ($p['event'] ?? '') {
 					'kit_downloaded' => $l->t('%s downloaded the backup recovery kit', [$who]),
+					'key_replaced' => $l->t('%1$s replaced the unused backup key %2$s by the key of existing backups, %3$s; download and confirm the new recovery kit', [$who, $p['old'] ?? '', $p['new'] ?? '']),
 					'target_removed' => $l->t('%1$s removed backup location %2$s', [$who, $p['target'] ?? '']),
 					'target_changed' => $l->t('%1$s changed the connection settings of backup location %2$s', [$who, $p['target'] ?? '']),
 					'schedule_off' => $l->t('%1$s turned off the schedule of backup location %2$s', [$who, $p['target'] ?? '']),

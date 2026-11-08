@@ -30,6 +30,8 @@ final class KeyService {
 	private const KEY_DELETE_DELAY = 'delete_delay_days';
 	private const KEY_KIT_VERSION = 'recovery_kit_version';
 	private const KEY_KIT_CODE = 'recovery_kit_code';
+	/** Set once a location was created or adopted with this key: from then on it is never replaced. */
+	private const KEY_USED = 'master_key_used';
 	public const DEFAULT_DELETE_DELAY = 7;
 	/**
 	 * The location holds the passphrase-wrapped key too, so whoever can read it can try
@@ -83,14 +85,15 @@ final class KeyService {
 	 * @param array<string, mixed> $kit as produced by recoveryKit()
 	 * @throws \OCA\NgBackup\Crypto\CryptoException wrong passphrase, or a damaged/foreign kit
 	 */
-	public function importRecoveryKit(array $kit, #[\SensitiveParameter] string $passphrase): void {
-		if ($this->isInitialized()) {
+	public function importRecoveryKit(array $kit, #[\SensitiveParameter] string $passphrase, bool $replaceUnused = false): void {
+		if ($this->isInitialized() && !$replaceUnused) {
 			throw new \RuntimeException('A backup key already exists');
 		}
 		if (!isset($kit['wrapped_key'])) {
 			throw new \InvalidArgumentException('Not a NG Backup recovery kit file');
 		}
 		$keys = KeyRing::unwrapAny($kit['wrapped_key'], $passphrase);
+		$this->discardUnused($keys, $replaceUnused);
 		// Kits from before this field existed fall back to the default.
 		$this->store($keys, $kit['wrapped_key'], (int)($kit['delete_delay_days'] ?? self::DEFAULT_DELETE_DELAY), (int)($kit['kit_version'] ?? 1));
 		// Having and successfully using a real kit file is stronger proof than the normal
@@ -105,11 +108,46 @@ final class KeyService {
 	 *
 	 * @param ?int $deleteDelayDays from the location's sealed settings, null when it has none
 	 */
-	public function adoptKey(KeyRing $keys, array $wrappedKey, ?int $deleteDelayDays): void {
-		if ($this->isInitialized()) {
+	public function adoptKey(KeyRing $keys, array $wrappedKey, ?int $deleteDelayDays, bool $replaceUnused = false): void {
+		if ($this->isInitialized() && !$replaceUnused) {
 			throw new \RuntimeException('A backup key already exists');
 		}
+		$this->discardUnused($keys, $replaceUnused);
 		$this->store($keys, $wrappedKey, $deleteDelayDays ?? self::DEFAULT_DELETE_DELAY, 1);
+	}
+
+	/** Whether a location was ever created or adopted with this key (TargetService::keyIsUnused() also looks at the database). */
+	public function wasUsed(): bool {
+		return $this->appConfig->getValueBool(Application::APP_ID, self::KEY_USED, false, true);
+	}
+
+	public function markUsed(): void {
+		if (!$this->wasUsed()) {
+			$this->appConfig->setValueBool(Application::APP_ID, self::KEY_USED, true, true);
+		}
+	}
+
+	/**
+	 * A key made by mistake on a server that is being restored: remove it, so the key of the
+	 * backups can take its place. Only after the new key was opened with its passphrase, and
+	 * only when the caller checked that the old key never protected anything
+	 * (TargetService::keyIsUnused()). Its passphrases and recovery kit become worthless.
+	 */
+	private function discardUnused(KeyRing $replacement, bool $replaceUnused): void {
+		if (!$replaceUnused || !$this->isInitialized()) {
+			return;
+		}
+		if ($this->wasUsed()) {
+			throw new \RuntimeException('The backup key of this server has been used for a backup location: it is never replaced');
+		}
+		if ($this->fingerprintOf($replacement) === $this->fingerprint()) {
+			throw new \RuntimeException('This server already has this backup key: nothing to replace');
+		}
+		foreach ([self::KEY_MASTER, self::KEY_WRAPPED, self::KEY_CONFIRMED, self::KEY_FINGERPRINT, self::KEY_DELETE_DELAY,
+			self::KEY_KIT_VERSION, self::KEY_KIT_CODE, self::KEY_USED] as $key) {
+			$this->appConfig->deleteKey(Application::APP_ID, $key);
+		}
+		$this->cached = null;
 	}
 
 	private function store(KeyRing $keys, array $wrappedKey, int $deleteDelayDays, int $kitVersion): void {

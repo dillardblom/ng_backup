@@ -86,6 +86,13 @@ If it says "No backup key yet, and no backups at this location", the connection 
 brand new key, and your backups were encrypted with the old one. NG Backup then refuses the
 location ("created with a different key").
 
+**Made a new key by mistake** (with `backup:key:init` or on the page) before adding the location?
+As long as that key was never used (no location added with it, no backup), it can make way for the
+key of your backups. NG Backup says so when it refuses the location. Add `--replace-unused-key` to
+`occ backup:key:import` (with the kit) or to `occ backup:target:add` (without the kit; it asks for
+a passphrase of the old server). The passphrases and kit of the unused key then stop working. A key
+that was used for a location is never replaced: its own backups depend on it.
+
 **6. List the restore points** and pick one, normally the newest:
 
     occ backup:list offsite

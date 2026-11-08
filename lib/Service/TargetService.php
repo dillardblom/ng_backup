@@ -36,6 +36,7 @@ final class TargetService {
 		private \OCA\NgBackup\Db\AppConfigCatalogAnchor $anchor,
 		private SnapshotMapper $snapshots,
 		private AlertService $alerts,
+		private \OCA\NgBackup\Db\RunMapper $runs,
 	) {
 	}
 
@@ -57,16 +58,25 @@ final class TargetService {
 		$this->requireUsableBackend($backend);
 		$keys = $this->keys->keyRing();
 		$storageBackend = $this->buildBackend($backend, $auth, $options, $basePath, !$repairConfig);
-		if ($repairConfig) {
-			Repository::repairConfig($storageBackend, $keys, $this->keys->wrappedKey());
+		try {
+			if ($repairConfig) {
+				Repository::repairConfig($storageBackend, $keys, $this->keys->wrappedKey());
+			}
+			if ($storageBackend->exists('config')) {
+				$repo = Repository::openWithKey($storageBackend, $keys, $this->indexCache, $this->anchor, $progress);
+				$created = false;
+			} else {
+				$repo = Repository::initWithKey($storageBackend, $keys, $this->keys->wrappedKey(), $this->anchor);
+				$created = true;
+			}
+		} catch (\OCA\NgBackup\Repository\RepositoryException $e) {
+			$otherKey = str_contains($e->getMessage(), 'different key') || str_contains($e->getMessage(), 'do not open with this key');
+			if ($otherKey && $this->keyIsUnused()) {
+				throw new \OCA\NgBackup\Repository\RepositoryException(rtrim($e->getMessage(), '.') . '. ' . self::UNUSED_KEY_HINT, 0, $e);
+			}
+			throw $e;
 		}
-		if ($storageBackend->exists('config')) {
-			$repo = Repository::openWithKey($storageBackend, $keys, $this->indexCache, $this->anchor, $progress);
-			$created = false;
-		} else {
-			$repo = Repository::initWithKey($storageBackend, $keys, $this->keys->wrappedKey(), $this->anchor);
-			$created = true;
-		}
+		$this->keys->markUsed();
 		$this->recordSettings($repo);
 
 		foreach ($this->mapper->findAll() as $existing) {
@@ -97,6 +107,44 @@ final class TargetService {
 		return ['target' => $target, 'created' => $created];
 	}
 
+	public const UNUSED_KEY_HINT = 'The backup key of this server was never used (no location, no backup), so it can make way for the key of these backups: '
+		. 'with the old server\'s recovery kit, occ backup:key:import <kit file> --replace-unused-key; without the kit, '
+		. 'occ backup:target:add with the same details and --replace-unused-key (asks for a passphrase of the old server)';
+
+	/**
+	 * A key that never protected anything: no location was created or adopted with it, and the
+	 * database has no location and no run (installations from before the flag existed). Only such
+	 * a key may make way for the key of existing backups, e.g. after a new key was made by
+	 * mistake on a server that is being restored.
+	 */
+	public function keyIsUnused(): bool {
+		return $this->keys->isInitialized() && !$this->keys->wasUsed()
+			&& $this->mapper->findAll() === [] && $this->runs->countAll() === 0;
+	}
+
+	/**
+	 * occ backup:key:import on a server whose own key was never used: the kit's key takes its place.
+	 *
+	 * @param array<string, mixed> $kit
+	 * @throws \OCA\NgBackup\Crypto\CryptoException wrong passphrase: nothing changed
+	 */
+	public function importKitReplacingUnusedKey(array $kit, #[\SensitiveParameter] string $passphrase): void {
+		$old = $this->requireUnusedKey();
+		$this->keys->importRecoveryKit($kit, $passphrase, true);
+		$this->alerts->securityEvent('key_replaced', ['old' => $old, 'new' => $this->keys->fingerprint()]);
+	}
+
+	/** @return string the fingerprint of the unused key */
+	private function requireUnusedKey(): string {
+		if (!$this->keys->isInitialized()) {
+			throw new \RuntimeException('There is no backup key here to replace');
+		}
+		if (!$this->keyIsUnused()) {
+			throw new \RuntimeException('The backup key of this server (fingerprint ' . $this->keys->fingerprint() . ') has been used for a backup location: it is never replaced');
+		}
+		return $this->keys->fingerprint();
+	}
+
 	public const LOCATION_REPOSITORY = 'repository';
 	public const LOCATION_DATA_WITHOUT_CONFIG = 'data-without-config';
 	public const LOCATION_EMPTY = 'empty';
@@ -120,6 +168,7 @@ final class TargetService {
 	 * Disaster recovery without the recovery kit, on an installation without a backup key: take
 	 * the key from the location's config with one of its passphrases, then add the location as
 	 * usual. The key is only kept when it really is the one the repository was made with.
+	 * With $replaceUnusedKey, a key this server has but never used makes way (keyIsUnused()).
 	 *
 	 * @param array<string, mixed> $options
 	 * @param ?callable(int, int): void $progress
@@ -127,8 +176,11 @@ final class TargetService {
 	 * @throws \OCA\NgBackup\Crypto\CryptoException wrong passphrase
 	 */
 	public function addWithPassphrase(string $name, string $backend, string $auth, array $options, string $basePath,
-		#[\SensitiveParameter] string $passphrase, ?callable $progress = null): array {
-		if ($this->keys->isInitialized()) {
+		#[\SensitiveParameter] string $passphrase, ?callable $progress = null, bool $replaceUnusedKey = false): array {
+		$old = null;
+		if ($replaceUnusedKey) {
+			$old = $this->requireUnusedKey();
+		} elseif ($this->keys->isInitialized()) {
 			throw new \RuntimeException('A backup key already exists here');
 		}
 		$this->validateName($name);
@@ -144,7 +196,10 @@ final class TargetService {
 		}
 		$delay = Repository::settingsAt($storageBackend, $keys)['delete_delay_days'] ?? null;
 		$delay = is_int($delay) ? $delay : null;
-		$this->keys->adoptKey($keys, $wrapped, $delay);
+		$this->keys->adoptKey($keys, $wrapped, $delay, $replaceUnusedKey);
+		if ($old !== null) {
+			$this->alerts->securityEvent('key_replaced', ['old' => $old, 'new' => $this->keys->fingerprint()]);
+		}
 		return $this->add($name, $backend, $auth, $options, $basePath, $progress) + ['deleteDelayDays' => $delay];
 	}
 

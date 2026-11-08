@@ -37,7 +37,11 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
 - `occ backup:target:add --repair-config`: when the config file of a location is gone, the recovery
   kit writes it again (for locations backed up by this version or newer). Before, the message said
   this was possible, but it was not.
-- The key page warns against creating a new key when you are restoring a server.
+- The key page warns against creating a new key when you are restoring a server. A key made there
+  by mistake can still make way for the key of the backups, as long as it was never used (no
+  location, no backup): `occ backup:key:import --replace-unused-key` with the kit, or
+  `occ backup:target:add --replace-unused-key` with a passphrase of the old server. A key that
+  protected a location is never replaced. All administrators are notified of a replacement.
 
 ### Changed
 - Reading files for a backup is much faster on disks where every request waits, such as network and

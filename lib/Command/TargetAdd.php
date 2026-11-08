@@ -35,6 +35,7 @@ final class TargetAdd extends Command {
 			->addOption('path', 'p', InputOption::VALUE_REQUIRED, 'Folder on the location for this repository', 'ng_backup')
 			->addOption('passphrase-file', null, InputOption::VALUE_REQUIRED, 'Disaster recovery without the recovery kit: read the passphrase from this file instead of asking')
 			->addOption('repair-config', null, InputOption::VALUE_NONE, 'The location\'s config file is gone: write it again with the key of this server or of the imported recovery kit (locations backed up by 1.1.0 or newer)')
+			->addOption('replace-unused-key', null, InputOption::VALUE_NONE, 'Disaster recovery after a new key was made here by mistake: replace that key, if it was never used, by the key of the backups at this location (asks for a passphrase of the old server)')
 			->setHelp(<<<'HELP'
 The location is reached with files_external's own connection code, but it is never added as an
 external storage: it does not appear in Files for anyone. Credentials are stored encrypted.
@@ -42,6 +43,10 @@ external storage: it does not appear in Files for anyone. Credentials are stored
 Disaster recovery without the recovery kit: on a server without a backup key, a location that
 holds backups gives its key with one of the old server's passphrases. Run this command first
 (no occ backup:key:import), then occ backup:list and occ backup:restore:full.
+
+A new key was made here by mistake (occ backup:key:init or the web page) before the location
+was added? As long as that key was never used (no location, no backup), --replace-unused-key
+replaces it by the key of the backups. A key that was used is never replaced.
 
 With the recovery kit: occ backup:key:import first; this command then asks for nothing more.
 If the location's config file is gone, only the kit has the key: import it, then add the
@@ -74,7 +79,27 @@ HELP);
 		$path = (string)$input->getOption('path');
 		$passphrase = null;
 		$repair = (bool)$input->getOption('repair-config');
-		if (!$this->keys->isInitialized()) {
+		$replace = (bool)$input->getOption('replace-unused-key');
+		if ($replace) {
+			if ($repair) {
+				$output->writeln('<error>--replace-unused-key needs the config at the location; with the config gone only the kit helps: occ backup:key:import <kit file> --replace-unused-key, then --repair-config.</error>');
+				return 1;
+			}
+			if (!$this->keys->isInitialized()) {
+				$output->writeln('<error>There is no backup key here to replace: leave out --replace-unused-key.</error>');
+				return 1;
+			}
+			if (!$this->targets->keyIsUnused()) {
+				$output->writeln('<error>The backup key of this server (fingerprint ' . $this->keys->fingerprint() . ') has been used for a backup location: it is never replaced.</error>');
+				return 1;
+			}
+			$output->writeln('The backup key of this server (fingerprint ' . $this->keys->fingerprint() . ') was never used. It is replaced by the key of the backups at');
+			$output->writeln('this location, once a passphrase of the old server opens it. Its own passphrases and recovery kit then stop working.');
+			$passphrase = $this->passphrase($input, $output);
+			if ($passphrase === null) {
+				return 1;
+			}
+		} elseif (!$this->keys->isInitialized()) {
 			try {
 				$state = $this->targets->locationState($backend, $auth, $options, $path);
 			} catch (\Throwable $e) {
@@ -111,10 +136,10 @@ HELP);
 		try {
 			$r = $passphrase === null
 				? $this->targets->add($name, $backend, $auth, $options, $path, self::progress($output), $repair)
-				: $this->targets->addWithPassphrase($name, $backend, $auth, $options, $path, $passphrase, self::progress($output));
+				: $this->targets->addWithPassphrase($name, $backend, $auth, $options, $path, $passphrase, self::progress($output), $replace);
 		} catch (\OCA\NgBackup\Crypto\CryptoException $e) {
 			$output->writeln('<error>' . $e->getMessage() . '</error>');
-			if (!$this->keys->isInitialized()) {
+			if (!$this->keys->isInitialized() || $replace) {
 				$output->writeln('Nothing was changed. Run the command again to try another passphrase, or use the recovery kit (occ backup:key:import).');
 			}
 			return 1;
@@ -123,7 +148,7 @@ HELP);
 				$output->write("\r\033[K"); // clear an unfinished progress line
 			}
 			$output->writeln('<error>' . $e->getMessage() . '</error>');
-			if (str_contains($e->getMessage(), 'different key')) {
+			if (str_contains($e->getMessage(), 'different key') && !$replace) {
 				$output->writeln('The backup key here (fingerprint ' . $this->keys->fingerprint() . ') is not the one these backups were made with.');
 				$output->writeln('Restoring a server? The recovery kit must be the old server\'s: its fingerprint is in the kit file. Nothing was changed.');
 			}
@@ -135,7 +160,7 @@ HELP);
 		$output->writeln(sprintf('Location <info>%s</info> added (id %d), repository %s %s.', $r['target']->getName(), $r['target']->getId(),
 			$r['target']->getRepositoryId(), $r['created'] ? 'created' : 'found and adopted'));
 		if ($passphrase !== null) {
-			$output->writeln('Backup key taken from the location, fingerprint <info>' . $this->keys->fingerprint() . '</info>.');
+			$output->writeln(($replace ? 'The unused key was replaced. ' : '') . 'Backup key taken from the location, fingerprint <info>' . $this->keys->fingerprint() . '</info>.');
 			$output->writeln(array_key_exists('deleteDelayDays', $r) && $r['deleteDelayDays'] !== null
 				? 'Deletion delay for forgotten snapshots: <info>' . $this->keys->deleteDelayDays() . '</info> days (from the location).'
 				: 'Deletion delay for forgotten snapshots: <info>' . $this->keys->deleteDelayDays() . '</info> days (the default: the location has none stored, its backups were made before NG Backup 1.1.0).');

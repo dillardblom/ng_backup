@@ -14,6 +14,11 @@
 #   no-config-kit       config gone, kit there: --repair-config writes it again, the backups open
 #   other-kit           the kit of another server: refused, told to use the old server's kit
 #   empty               nothing at the location: told to check the details, not to make a new key
+#   unused-key-kit      a new key was made by mistake: key:import refuses and names
+#                       --replace-unused-key; with it the kit's key takes its place
+#   unused-key-no-kit   the same without a kit: target:add with --replace-unused-key and a passphrase
+#                       of the old server; a wrong one keeps the unused key
+#   used-key            a key that protected a location is never replaced, also after the location was removed
 set -euo pipefail
 IMAGE="nextcloud:${1:-35-apache}"
 APP=$(cd "$(dirname "$0")/../.." && pwd)
@@ -199,5 +204,69 @@ expect "$OUT" "no backups at this location" "empty"
 expect "$OUT" "Check the connection details and --path" "empty"
 no_key ngb-rs-new "empty"
 ok "empty: told to check the details, no key made"
+
+# unused-key-kit: a key made by mistake, then the kit
+scenario unused-key-kit
+run_on ngb-rs-new backup:key:init --passphrase-file=/tmp/pass >/dev/null || fail "unused-key-kit: key init"
+MISTAKE=$(key_of ngb-rs-new)
+OUT=$(must_fail ngb-rs-new "unused-key-kit without the option" backup:key:import /tmp/kit.json --passphrase-file=/tmp/pass)
+expect "$OUT" "never used" "unused-key-kit"
+expect "$OUT" "--replace-unused-key" "unused-key-kit: names the option"
+[ "$(key_of ngb-rs-new)" = "$MISTAKE" ] || fail "unused-key-kit: the key changed without the option"
+OUT=$(must_fail ngb-rs-new "unused-key-kit wrong passphrase" backup:key:import /tmp/kit.json --passphrase-file=/tmp/wrongpass --replace-unused-key)
+expect "$OUT" "Wrong passphrase" "unused-key-kit wrong passphrase"
+[ "$(key_of ngb-rs-new)" = "$MISTAKE" ] || fail "unused-key-kit: a wrong passphrase changed the key"
+OUT=$(run_on ngb-rs-new backup:key:import /tmp/kit.json --passphrase-file=/tmp/pass --replace-unused-key 2>&1) || { printf '%s\n' "$OUT"; fail "unused-key-kit: replace"; }
+expect "$OUT" "The unused key was replaced" "unused-key-kit"
+expect "$OUT" "fingerprint $FP" "unused-key-kit"
+expect "$OUT" "21 days (from the kit)" "unused-key-kit"
+# shellcheck disable=SC2046
+OUT=$(run_on ngb-rs-new backup:target:add offsite $(location unused-key-kit) --no-interaction 2>&1) || { printf '%s\n' "$OUT"; fail "unused-key-kit: target add"; }
+expect "$OUT" "found and adopted" "unused-key-kit"
+run_on ngb-rs-new backup:run offsite >/dev/null || fail "unused-key-kit: a backup after the replacement"
+ok "unused-key-kit: refused without the option, a wrong passphrase changes nothing, replaced with it, backups run"
+
+# unused-key-no-kit: a key made by mistake, no kit
+scenario unused-key-no-kit
+docker exec ngb-rs-new rm /tmp/kit.json
+run_on ngb-rs-new backup:key:init --passphrase-file=/tmp/pass >/dev/null || fail "unused-key-no-kit: key init"
+MISTAKE=$(key_of ngb-rs-new)
+# shellcheck disable=SC2046
+OUT=$(must_fail ngb-rs-new "unused-key-no-kit without the option" backup:target:add offsite $(location unused-key-no-kit) --no-interaction)
+expect "$OUT" "different key" "unused-key-no-kit"
+expect "$OUT" "never used" "unused-key-no-kit: says the key can make way"
+expect "$OUT" "--replace-unused-key" "unused-key-no-kit: names the option"
+# shellcheck disable=SC2046
+OUT=$(must_fail ngb-rs-new "unused-key-no-kit wrong passphrase" backup:target:add offsite $(location unused-key-no-kit) --replace-unused-key --passphrase-file=/tmp/wrongpass)
+expect "$OUT" "Nothing was changed" "unused-key-no-kit wrong passphrase"
+[ "$(key_of ngb-rs-new)" = "$MISTAKE" ] || fail "unused-key-no-kit: a wrong passphrase changed the key"
+[ -z "$(run_on ngb-rs-new backup:target:list 2>&1 | grep offsite || true)" ] || fail "unused-key-no-kit: a location was left behind"
+# shellcheck disable=SC2046
+OUT=$(run_on ngb-rs-new backup:target:add offsite $(location unused-key-no-kit) --replace-unused-key --passphrase-file=/tmp/pass 2>&1) || { printf '%s\n' "$OUT"; fail "unused-key-no-kit: replace"; }
+expect "$OUT" "The unused key was replaced" "unused-key-no-kit"
+expect "$OUT" "fingerprint $FP" "unused-key-no-kit"
+expect "$OUT" "download a new recovery kit" "unused-key-no-kit: asks for a new kit"
+run_on ngb-rs-new backup:list offsite | grep -q "$SNAP" || fail "unused-key-no-kit: the snapshot is not listed"
+OUT=$(must_fail ngb-rs-new "unused-key-no-kit backup before a new kit" backup:run offsite)
+expect "$OUT" "Confirm the recovery kit" "unused-key-no-kit: the old key's kit confirmation does not count"
+ok "unused-key-no-kit: hint on the refusal, a wrong passphrase changes nothing, replaced with a passphrase, a new kit is needed"
+
+# used-key: a key that protected a location stays, also after that location is removed
+scenario used-key
+docker exec ngb-rs-new sh -c 'mkdir -p /mnt/shared/own && chown www-data /mnt/shared/own'
+run_on ngb-rs-new backup:key:init --passphrase-file=/tmp/pass >/dev/null || fail "used-key: key init"
+OWN=$(key_of ngb-rs-new)
+run_on ngb-rs-new backup:target:add own local -a null::null -o datadir=/mnt/shared/own --path=repo >/dev/null || fail "used-key: own location"
+run_on ngb-rs-new backup:target:remove own >/dev/null || fail "used-key: remove the own location"
+# shellcheck disable=SC2046
+OUT=$(must_fail ngb-rs-new "used-key target:add" backup:target:add offsite $(location used-key) --replace-unused-key --passphrase-file=/tmp/pass)
+expect "$OUT" "never replaced" "used-key target:add"
+# shellcheck disable=SC2046
+OUT=$(must_fail ngb-rs-new "used-key target:add without the option" backup:target:add offsite $(location used-key) --no-interaction)
+not_expect "$OUT" "--replace-unused-key" "used-key: offers a replacement for a used key"
+OUT=$(must_fail ngb-rs-new "used-key key:import" backup:key:import /tmp/kit.json --passphrase-file=/tmp/pass --replace-unused-key)
+expect "$OUT" "never replaced" "used-key key:import"
+[ "$(key_of ngb-rs-new)" = "$OWN" ] || fail "used-key: the key changed"
+ok "used-key: never replaced, by kit or passphrase, also after its location was removed"
 
 echo "RECOVERY SCENARIOS PASS"
