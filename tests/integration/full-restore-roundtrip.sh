@@ -2,8 +2,10 @@
 # Disaster recovery: occ backup:key:import + backup:target:add + backup:restore:full on a
 # SECOND, fresh Nextcloud instance that never saw the first one, sharing only the backup
 # location (a local directory, bind-mounted into both containers) -- see PLAN.md 3.7.
-# Usage: full-restore-roundtrip.sh <nextcloud-image-tag> [sqlite|pgsql|mysql] [legacy|sftp|salvage|salvage-files|to-pgsql|to-mysql|to-sqlite]
+# Usage: full-restore-roundtrip.sh <nextcloud-image-tag> [sqlite|pgsql|mysql] [legacy|sftp|salvage|salvage-files|to-pgsql|to-mysql|to-sqlite|no-kit]
 #   e.g. full-restore-roundtrip.sh 35-apache pgsql
+# With "no-kit" the recovery kit is gone: backup:target:add takes the key from the location with
+# the passphrase, and backups wait until a new kit is confirmed.
 # With "salvage-files" one pack is damaged and another is gone from the location. The restore must
 # stop and point at --salvage; run again as the guide says, it restores the database and every file
 # that can be read, and lists the rest (exit 2). NGB_FRT_DATA_MB sets the amount of data (default 200).
@@ -93,7 +95,10 @@ run_on ngb-frt-origin app:enable ng_backup >/dev/null
 ok "origin instance up ($DB${LEGACY:+, NG Backup 0.9.7})"
 
 docker exec ngb-frt-origin sh -c "printf 'full restore roundtrip passphrase 2026\n' > /tmp/pass"
-run_on ngb-frt-origin backup:key:init --passphrase-file=/tmp/pass --label=CI >/dev/null || fail "key init"
+DELAY_OPT=()
+[ "$MODE" = no-kit ] && DELAY_OPT=(--delete-delay-days=21)
+run_on ngb-frt-origin backup:key:init --passphrase-file=/tmp/pass --label=CI "${DELAY_OPT[@]}" >/dev/null || fail "key init"
+ORIGIN_FP=$(run_on ngb-frt-origin backup:status | grep -o 'Key: [0-9a-f-]*' | cut -d' ' -f2)
 run_on ngb-frt-origin backup:key:kit --output=/tmp/kit.json >/dev/null
 CODE=$(run_on ngb-frt-origin backup:key:kit | php -r 'echo json_decode(stream_get_contents(STDIN), true)["confirmation_code"];')
 run_on ngb-frt-origin backup:key:confirm -u admin --code="$CODE" --confirm="Yes, I confirm" >/dev/null || fail "confirm"
@@ -187,8 +192,29 @@ docker exec ngb-frt-restore chmod 644 /tmp/kit.json
 docker cp /tmp/ngb-frt-pass ngb-frt-restore:/tmp/pass
 ok "fresh restore instance up"
 
-run_on ngb-frt-restore backup:key:import /tmp/kit.json --passphrase-file=/tmp/pass >/dev/null || fail "key import"
-ADD_OUT=$(run_on ngb-frt-restore backup:target:add offsite "${LOCATION[@]}" --path=repo 2>&1) || { printf '%s\n' "$ADD_OUT"; fail "target add on the restore instance"; }
+if [ "$MODE" = no-kit ]; then
+	# No recovery kit: backup:target:add takes the key from the location with a passphrase
+	docker exec ngb-frt-restore rm -f /tmp/kit.json
+	docker exec ngb-frt-restore sh -c "printf 'not the passphrase of the old server\n' > /tmp/wrongpass && chmod 644 /tmp/wrongpass"
+	OUT=$(run_on ngb-frt-restore backup:target:add offsite "${LOCATION[@]}" --path=repo --passphrase-file=/tmp/wrongpass 2>&1) \
+		&& { printf '%s\n' "$OUT"; fail "a wrong passphrase was accepted"; }
+	printf '%s\n' "$OUT" | grep -q "Nothing was changed" || { printf '%s\n' "$OUT"; fail "a wrong passphrase did not say that nothing was changed"; }
+	STATUS_OUT=$(run_on ngb-frt-restore backup:status 2>&1 || true)
+	printf '%s\n' "$STATUS_OUT" | grep -q "Key: not created" || { printf '%s\n' "$STATUS_OUT"; fail "a wrong passphrase left a key behind"; }
+	[ -z "$(run_on ngb-frt-restore backup:target:list 2>&1 | grep offsite)" ] || fail "a wrong passphrase left a location behind"
+	OUT=$(run_on ngb-frt-restore backup:target:add other "${LOCATION[@]}" --path=nothing-here --passphrase-file=/tmp/pass 2>&1) \
+		&& { printf '%s\n' "$OUT"; fail "a folder without backups was added without a key"; }
+	printf '%s\n' "$OUT" | grep -q "no backups at this location" || { printf '%s\n' "$OUT"; fail "a folder without backups did not say so"; }
+	ok "without a kit: a wrong passphrase and a folder without backups change nothing"
+	ADD_OUT=$(run_on ngb-frt-restore backup:target:add offsite "${LOCATION[@]}" --path=repo --passphrase-file=/tmp/pass 2>&1) \
+		|| { printf '%s\n' "$ADD_OUT"; fail "target add with the passphrase on the restore instance"; }
+	printf '%s\n' "$ADD_OUT" | grep -q "fingerprint $ORIGIN_FP" || { printf '%s\n' "$ADD_OUT"; fail "the key from the location is not the origin's ($ORIGIN_FP)"; }
+	printf '%s\n' "$ADD_OUT" | grep -q "21 days (from the location)" || { printf '%s\n' "$ADD_OUT"; fail "the deletion delay did not come from the location"; }
+	ok "without a kit: the key and the deletion delay came from the location"
+else
+	run_on ngb-frt-restore backup:key:import /tmp/kit.json --passphrase-file=/tmp/pass >/dev/null || fail "key import"
+	ADD_OUT=$(run_on ngb-frt-restore backup:target:add offsite "${LOCATION[@]}" --path=repo 2>&1) || { printf '%s\n' "$ADD_OUT"; fail "target add on the restore instance"; }
+fi
 LIST_OUT=$(run_on ngb-frt-restore backup:list offsite 2>&1)
 printf '%s\n' "$LIST_OUT" | grep -q "$SNAP" || {
 	printf 'target:add said:\n%s\nbackup:list said:\n%s\n' "$ADD_OUT" "$LIST_OUT"
@@ -196,7 +222,8 @@ printf '%s\n' "$LIST_OUT" | grep -q "$SNAP" || {
 	docker exec ngb-frt-restore sh -c 'ls -la /mnt/shared/repo /mnt/shared/repo/snapshots' || true
 	fail "the origin's snapshot is not listed after connecting the location"
 }
-ok "recovery kit imported, existing repository adopted, snapshot visible"
+if [ "$MODE" = no-kit ]; then KEY_FROM="key from the location"; else KEY_FROM="recovery kit imported"; fi
+ok "$KEY_FROM, existing repository adopted, snapshot visible"
 
 if [ "$MODE" = salvage ]; then
 	set +e
@@ -371,6 +398,13 @@ if [ "$MODE" = sftp ]; then
 	ok "over SFTP: read ahead on connections of its own ($LOGINS SFTP logins during the restore), large file identical, no spool left"
 fi
 
+if [ "$MODE" = no-kit ]; then
+	OUT=$(run_on ngb-frt-restore backup:run offsite -l post-restore-check 2>&1) && { printf '%s\n' "$OUT"; fail "a backup ran without a confirmed recovery kit"; }
+	printf '%s\n' "$OUT" | grep -q "Confirm the recovery kit" || { printf '%s\n' "$OUT"; fail "the refused backup does not point at the recovery kit"; }
+	CODE=$(run_on ngb-frt-restore backup:key:kit | php -r 'echo json_decode(stream_get_contents(STDIN), true)["confirmation_code"];')
+	run_on ngb-frt-restore backup:key:confirm -u admin --code="$CODE" --confirm="Yes, I confirm" >/dev/null || fail "confirm a new kit after the restore"
+	ok "without a kit: backups wait for a new recovery kit to be confirmed"
+fi
 run_on ngb-frt-restore backup:run offsite -l post-restore-check >/dev/null || fail "a new backup after the restore fails"
 ok "the restored instance can run a new backup of its own"
 

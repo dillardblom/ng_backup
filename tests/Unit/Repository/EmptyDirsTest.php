@@ -82,7 +82,11 @@ class EmptyDirsTest extends TestCase {
 			$state = json_decode(json_encode(BackupRun::step($this->repo(), $state, 0.0), JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
 		}
 		$this->assertSame('commit', $state['phase']);
-		$this->assertSame(4, $state['stats']['unreadable'], 'each reported once, over several steps');
+		$this->assertSame(4, $state['stats']['badNames'], 'each reported once, over several steps');
+		$this->assertArrayNotHasKey('unreadable', $state['stats'], 'not a problem with permissions');
+		$shown = BackupRun::warnings($state)['badNames'];
+		$this->assertContains('data/alice/files/line?break', $shown, 'no control character in a message');
+		$this->assertSame($shown, array_filter($shown, fn (string $name): bool => mb_check_encoding($name, 'UTF-8')));
 		$this->repo()->recordSnapshot($state['snapshot']);
 
 		$this->assertSame(['data/alice/files/Hollow/Nested', 'data/skipped/inner'], array_column($this->repo()->emptyDirs($state['snapshot']), 0));

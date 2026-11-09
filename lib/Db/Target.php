@@ -28,6 +28,12 @@ use OCP\AppFramework\Db\Entity;
  * @method void setMaxBytes(?int $v)
  * @method int getCreatedAt()
  * @method void setCreatedAt(int $v)
+ * @method string|null getSchedule()
+ * @method void setSchedule(?string $v)
+ * @method string|null getScheduleZone()
+ * @method void setScheduleZone(?string $v)
+ * @method int|null getScheduleSince()
+ * @method void setScheduleSince(?int $v)
  */
 final class Target extends Entity {
 	protected string $name = '';
@@ -39,8 +45,12 @@ final class Target extends Entity {
 	protected int $createdAt = 0;
 	protected ?bool $appendOnly = null;
 	protected ?int $maxBytes = null;
+	protected ?string $schedule = null;
+	protected ?string $scheduleZone = null;
+	protected ?int $scheduleSince = null;
 
 	public function __construct() {
+		$this->addType('scheduleSince', 'integer');
 		$this->addType('createdAt', 'integer');
 		$this->addType('appendOnly', 'boolean');
 		$this->addType('maxBytes', 'integer');

@@ -17,6 +17,8 @@ namespace OCA\NgBackup\Job;
  * and be merge-joined with the previous snapshot without holding any list in memory.
  */
 final class TreeWalker {
+	private bool $atFolder = false;
+
 	/**
 	 * @param array<string, string> $roots name => absolute directory, walked in this order
 	 * @param list<string> $exclude path prefixes ("<root>/<relative>") that are skipped entirely;
@@ -27,7 +29,14 @@ final class TreeWalker {
 		private array $exclude = [],
 		/** Called with the logical path of a directory that cannot be listed. */
 		private ?\Closure $onUnreadable = null,
+		/** Also yield directories with something in them, right before the first thing in them. */
+		private bool $withFolders = false,
 	) {
+	}
+
+	/** Whether what was just yielded is a directory with something in it (see $withFolders). */
+	public function atFolderWithContent(): bool {
+		return $this->atFolder;
 	}
 
 	/** @return \Generator<string, string> logical path => absolute path, strictly after $after */
@@ -75,7 +84,14 @@ final class TreeWalker {
 			if (is_link($childAbs)) {
 				continue; // never follow symlinks out of the data directory
 			}
-			if (is_dir($childAbs)) {
+			$childIsDir = is_dir($childAbs);
+			if (($childIsDir || is_file($childAbs)) && $empty && !$this->isExcluded($childLogical, $childIsDir)
+				&& $this->withFolders && $logical !== '' && ($after === null || self::compare($logical, $after) > 0)) {
+				$this->atFolder = true;
+				yield $logical => $abs;
+				$this->atFolder = false;
+			}
+			if ($childIsDir) {
 				$empty = $empty && $this->isExcluded($childLogical, true);
 				// Skip a directory entirely if everything in it sorts before the cursor.
 				if ($after !== null && self::compare($childLogical, $after) < 0 && !self::isPrefix($childLogical, $after)) {

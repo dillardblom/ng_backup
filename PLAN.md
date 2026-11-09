@@ -472,9 +472,12 @@ in README "Known limitations":
   tijd terug. Hoort zo, vooral bij oudere verzamelingen: de maptijd wordt gebruikt om in te schatten
   wanneer een map is aangemaakt. De backup moet dan de tijd van alle mappen vastleggen en de restore
   die aan het eind terugzetten; werkt pas vanaf de eerste backup met die versie. Op de roadmap onder 1.1.0.
+  **1.0.3 uitgebracht (2026-11-06)**, ook op nc01 geïnstalleerd.
 - **Branches (besluit 2026-11-06):** werk voor een versie op een branch met die naam (`1.0.3`);
   `polish` alleen voor kleine cosmetische zaken, per geval bekijken of en wanneer die gemerged
   worden. SMB staat uit op sub5 en sub6; sub6 is het testaccount, eerst aanzetten voor een SMB-test.
+  Na 1.0.3 gaat het werk naar `1.1.0`. Een spoedfix die niet kan wachten gaat op `1.0.4` vanaf `main`,
+  krijgt een eigen merge en release; daarna `main` in `1.1.0` mergen, zodat daar met de fix getest wordt.
 - **1.0.1** (uitgebracht 2026-11-01): alleen de kleine punten (besluit 2026-10-30): 4, 6–13. Punten 1, 2 en 5 gaan naar
   1.0.2 (README-roadmap aangepast); punt 3 is een test, ingepland voor de week van 2 november,
   niet aangekondigd en los van de release. Voor 1.0.2 ook: nieuwe screenshots (het labelveld bij
@@ -569,11 +572,33 @@ in README "Known limitations":
 - **Polish:** `target:add` toonde bij het eerste indexbestand al "about 642 min left" (S3,
   4.568 bestanden, daarna binnen een minuut klaar): een schatting pas na ~5% of na meer dan
   een paar bestanden.
-- **1.1.0:**
+- **1.1.0** (geen harde datum: een week was een voorzet, langer mag; de releasefrequentie mag omlaag,
+  besluit 2026-11-06):
+  **Betere melding voor namen die een snapshot niet kan bevatten** (backslash, stuurteken, geen UTF-8):
+  een eigen melding in plaats van "unreadable" met het advies over rechten. Zegt dat deze bestanden of
+  mappen in de backup ontbreken, geeft voorbeelden van de paden en vraagt ze te hernoemen; de volgende
+  backup neemt ze mee. Alleen als Nextcloud-melding: de app mailt niet zelf, of meldingen gemaild worden
+  is de keuze van de beheerder (besluit 2026-11-06).
+  **Stand op branch `1.1.0` (2026-11-07):** klaar: betere melding, punten 2, 4, 5, 6 en 8, en de maptijden
+  (`files:scan` na een volledige restore: 0 "Updated" in de simulatie; opslag gepakt in het metarecord).
+  Punt 2 reserveert de jobs in `oc_jobs` met één tijdstempel, alleen wat Nextcloud op dat moment zou kunnen
+  starten; 6 uur aan, dan 1 uur vrij; bij een crash geeft Nextcloud de reservering na 12 uur zelf vrij;
+  de logregels staan op niveau info, dus standaard niet zichtbaar. Pin en notitie staan
+  in de catalogus, met een kopie in de database voor de lijsten. Een moment van vóór het instellen van
+  een schema start niets. Geen schema: geen melding "geen recente backup", wel een melding aan alle
+  beheerders bij het uitzetten en een herinnering, wekelijks zolang een andere locatie een schema heeft,
+  anders dagelijks (besluit 2026-11-07). Nog niet getest: de update vanaf 1.0.3, de pagina in een browser.
   1. `backup:key:import` zonder kit: de sleutel-slots van de locatie (`config`) lezen, met de kit
      als reserve als `config` ontbreekt of niet opent. Vergt een andere volgorde van
      `target:add` en sleutelimport (het gevoeligste pad), daarom niet in rc1. Daarna de
      DR-test op PVE02 herhalen zonder kit.
+     **Gebouwd (2026-11-07):** `backup:target:add` op een server zonder sleutel kijkt eerst of de
+     locatie een repository heeft, vraagt dan een wachtwoordzin (of `--passphrase-file`), opent de
+     slots uit `config`, controleert de sleutel tegen de `check` en slaat hem pas dan op; geen
+     kitbevestiging, dus backups wachten op een nieuwe kit. Nieuw bestand `settings` op de locatie,
+     versleuteld met de hoofdsleutel en eenmalig geschreven (bij `target:add` en bij het begin van
+     een backup): de verwijdertermijn, anders de standaard 7 dagen. Getest: unit-tests en
+     `full-restore-roundtrip.sh 35-apache pgsql no-kit`. Nog open: de DR-test op PVE02 zonder kit.
   2. Instelling "zware achtergrondjobs pauzeren tijdens een backup" (standaard aan, uit te zetten):
      Memories, files_antivirus BackgroundScanner, Recognize, Preview Generator, fulltextsearch.
      Via de reservering/last_run van die jobs (geen apps uitzetten), crashbestendig, maximaal
@@ -581,6 +606,14 @@ in README "Known limitations":
   3. Snelheid: lezen en uploaden laten overlappen, meerdere bestanden tegelijk lezen, eventueel
      een eigen worker (`occ background-job:worker`). Gemeten op nc01: 55% wachten op de schijf,
      33% op de SMB-upload, ~7% CPU. Vergt extra PHP-processen; botst mogelijk met uitgangspunt 1.
+     **Gemeten 2026-11-07 op nc01 (alleen lezen):** de schijf (sdb, 2 TB, ROTA=1) haalt met `dd`
+     21 MiB/s met 1 stroom, 37 met 4, 55 met 8. PHP las 8 KiB per verzoek: 5,2 MiB/s. Met
+     `stream_set_read_buffer(0)` en blokken van 4 MiB: 26,8 MiB/s. Hulpprocessen die vooruitlezen
+     gaven daarbovenop niets (20 MiB/s, ze concurreren). Gebouwd: grote leesverzoeken (commit
+     "Read files ... 4 MiB"). Niet gebouwd: meerdere uploads tegelijk; SMB bundelt al per 1 MB
+     (icewind/smb), dus winst over een lange lijn vraagt meerdere packs tegelijk.
+     **Besluit 2026-11-08: meerdere uploads tegelijk in 1.2.0**, met een instelling (standaard 2)
+     zodat de beheerder het afstemt op zijn server en de omvang van zijn backup.
   4. **Schema per locatie** (besluit 2026-10-19): in de instellingen van een locatie "uit",
      "dagelijks om HH:MM" of "elke N uur (vanaf HH:MM)". Nu is er één `schedule_time` voor alle
      locaties, één keer per dag. Bij de update wordt de huidige tijd het schema van elke
@@ -601,11 +634,10 @@ in README "Known limitations":
      nooit opruimt (bijv. "vóór de upgrade naar NC 35"), in de lijst en met
      `occ backup:pin <snapshot>` / `--unpin`. Op de locatie bewaren (catalogus), zodat de
      opschoning het ziet, ook na een DR; vastgepinde punten tellen niet mee in last/daily/weekly.
-  9. **Feedbackvraag weghalen** in 1.1.0 of 1.2.0 (besluit 2026-10-27): de regel "We would like
+  9. **Feedbackvraag weghalen in 1.2.0** (besluit 2026-11-07, niet in 1.1.0): de regel "We would like
      to hear how NG Backup works for you ... Share your experience" in de beheerpagina blijft tot
-     dan staan (de vermelding "in beta" is er in 1.0.1 al af). Zijn er tegen die
-     tijd geen noemenswaardige meldingen, dan werkt het: mensen melden eerder wat niet werkt dan
-     wat gewoon werkt. Het formulier (`experience.yml`) mag blijven voor wie het zelf opzoekt.
+     dan staan. Er komt weinig feedback bij zo'n 150 downloads per versie; geen bericht is goed
+     bericht. Het formulier (`experience.yml`) in de issues blijft.
 - **Bevindingen DR-test op PVE02 (2026-10-17, snapshot van nc01, 1 TB, AIO → gewone NC 34 met
   PostgreSQL 18)** — voor **1.0.0-rc.2**:
   1. Tabellen van apps die bij de backup **niet aanstonden** (restanten: Deck, ONLYOFFICE,

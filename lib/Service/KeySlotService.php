@@ -43,8 +43,10 @@ final class KeySlotService {
 		foreach ($this->targets->list() as $t) {
 			try {
 				$this->targets->repository($t)->updateWrappedKey($wrapped);
+				$this->keys->setWrappedKeyPending($t->getId(), false);
 			} catch (\Throwable $e) {
 				$failed[] = $t->getName();
+				$this->keys->setWrappedKeyPending($t->getId(), true);
 			}
 		}
 		$label = '';
@@ -55,7 +57,7 @@ final class KeySlotService {
 		}
 		$this->alerts->securityEvent($event, ['slot' => (string)$slot, 'label' => $label]);
 		if ($failed !== []) {
-			throw new \RuntimeException('Saved, but these locations could not be updated (they still accept the previous passphrases): ' . implode(', ', $failed));
+			throw new \RuntimeException('Saved, but these locations could not be updated (they still accept the previous passphrases; the change is tried again at their next backup): ' . implode(', ', $failed));
 		}
 	}
 }

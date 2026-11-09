@@ -48,6 +48,7 @@ final class AdminApiController extends Controller {
 		private \OCA\NgBackup\Service\KeySlotService $slots,
 		private \OCA\NgBackup\Service\PruneService $prune,
 		private \OCA\NgBackup\Service\Schedule $schedule,
+		private \OCA\NgBackup\Service\HeavyJobPause $heavyJobs,
 		private \OCA\NgBackup\Service\CronHealth $cron,
 	) {
 		parent::__construct(Application::APP_ID, $request);
@@ -59,10 +60,12 @@ final class AdminApiController extends Controller {
 		foreach ($this->targets->list() as $t) {
 			$targets[] = ['id' => $t->getId(), 'name' => $t->getName(), 'backend' => $t->getBackend(), 'path' => $t->getBasePath(),
 				'repositoryId' => $t->getRepositoryId(), 'createdAt' => $t->getCreatedAt(), 'appendOnly' => (bool)$t->getAppendOnly(),
-				'maxBytes' => $t->getMaxBytes(), 'storedBytes' => $this->alerts->lastStoredBytes($t)];
+				'maxBytes' => $t->getMaxBytes(), 'storedBytes' => $this->alerts->lastStoredBytes($t),
+				'schedule' => (string)$t->getSchedule(), 'scheduleZone' => $this->schedule->zoneOr($t->getScheduleZone())];
 		}
 		$shown = $this->runs->findShown($allRuns ? null : time() - \OCA\NgBackup\Command\Status::RECENT_DAYS * 86400);
-		$runs = array_map(fn (Run $r) => $this->runJson($r), $shown);
+		$queued = array_flip(array_map(static fn (Run $r): int => $r->getId(), array_slice($this->backups->runsInTurn(), 1)));
+		$runs = array_map(fn (Run $r) => $this->runJson($r) + ['queued' => isset($queued[$r->getId()])], $shown);
 		return new JSONResponse([
 			'key' => ['initialized' => $this->keys->isInitialized(), 'fingerprint' => $this->keys->fingerprint(),
 				'confirmation' => $this->keys->recoveryKitConfirmation(), 'everConfirmed' => $this->keys->isInitialized() && $this->keys->everConfirmed(),
@@ -74,10 +77,14 @@ final class AdminApiController extends Controller {
 			'runs' => $runs,
 			'olderRuns' => $allRuns ? 0 : $this->runs->countAll() - count($shown),
 			'recentDays' => \OCA\NgBackup\Command\Status::RECENT_DAYS,
-			'schedule' => $this->schedule->get()['time'],
-			'scheduleTimezone' => $this->schedule->get()['timezone'],
 			'cron' => $this->cron->check(),
+			'heavyJobs' => $this->heavyJobs->status(),
 		]);
+	}
+
+	public function setPauseHeavyJobs(bool $enabled): JSONResponse {
+		$this->heavyJobs->setEnabled($enabled);
+		return new JSONResponse(['enabled' => $enabled]);
 	}
 
 	/** Seconds of backup work one tick() does: well within a normal web request. */
@@ -97,16 +104,17 @@ final class AdminApiController extends Controller {
 		}
 		$deadline = microtime(true) + self::TICK_SECONDS;
 		$stepped = 0;
-		$running = $this->runs->findRunning(null, BackupService::KIND_FULL);
-		// Longest wait first: a run that takes all of a tick does not keep another from its turn.
-		usort($running, static fn ($a, $b) => $a->getUpdatedAt() <=> $b->getUpdatedAt());
-		foreach ($running as $run) {
+		$this->heavyJobs->sync($this->backups->runsInTurn() !== []);
+		foreach ($this->backups->runsInTurn() as $run) {
 			if (microtime(true) >= $deadline) {
 				break;
 			}
 			// step() returns at once when the background job (or another tab) holds the run.
-			$this->backups->step($run, $deadline);
+			$next = $this->backups->step($run, $deadline);
 			$stepped++;
+			if ($next->getStatus() === Run::RUNNING) {
+				break; // not finished: the next one waits for its turn
+			}
 		}
 		return new JSONResponse(['stepped' => $stepped]);
 	}
@@ -278,23 +286,41 @@ final class AdminApiController extends Controller {
 		return new JSONResponse($this->runJson($run));
 	}
 
-	/** @param string $timezone the administrator's zone (the browser's); empty: keep the current one */
-	public function setSchedule(string $time, string $timezone = ''): JSONResponse {
+	/** @param string $timezone the administrator's zone (the browser's); empty: the default one */
+	public function setTargetSchedule(int $id, string $schedule, string $timezone = ''): JSONResponse {
 		try {
-			$this->schedule->set($time, $timezone !== '' ? $timezone : $this->schedule->get()['timezone']);
-		} catch (\InvalidArgumentException $e) {
+			$t = $this->targets->setSchedule($this->targets->get((string)$id), $schedule, $timezone !== '' ? $timezone : $this->schedule->get()['timezone']);
+		} catch (\Throwable $e) {
 			return new JSONResponse(['error' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
 		}
-		return new JSONResponse(['schedule' => $time, 'scheduleTimezone' => $this->schedule->get()['timezone']]);
+		return new JSONResponse(['schedule' => $t->getSchedule(), 'scheduleZone' => $t->getScheduleZone()]);
 	}
 
 	public function snapshots(int $targetId): JSONResponse {
 		$out = [];
 		foreach ($this->snapshots->findForTarget($targetId) as $s) {
 			$out[] = ['id' => $s->getSnapshotId(), 'kind' => $s->getKind(), 'label' => $s->getLabel(), 'createdAt' => $s->getCreatedAt(),
-				'files' => $s->getFiles(), 'bytes' => $s->getBytes()];
+				'files' => $s->getFiles(), 'bytes' => $s->getBytes(), 'note' => $s->getNote(), 'pinned' => (bool)$s->getPinned()];
 		}
 		return new JSONResponse($out);
+	}
+
+	public function setSnapshotNote(int $targetId, string $snapshotId, string $note = ''): JSONResponse {
+		try {
+			$this->prune->setNote($this->targets->get((string)$targetId), $snapshotId, $note);
+		} catch (\Throwable $e) {
+			return new JSONResponse(['error' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
+		}
+		return new JSONResponse(['ok' => true]);
+	}
+
+	public function setSnapshotPinned(int $targetId, string $snapshotId, bool $pinned = true): JSONResponse {
+		try {
+			$this->prune->setPinned($this->targets->get((string)$targetId), $snapshotId, $pinned);
+		} catch (\Throwable $e) {
+			return new JSONResponse(['error' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
+		}
+		return new JSONResponse(['ok' => true]);
 	}
 
 	public function browse(int $targetId, string $snapshotId, string $path = ''): JSONResponse {
@@ -341,7 +367,7 @@ final class AdminApiController extends Controller {
 		if ($r->getSnapshotId() !== null) {
 			try {
 				$s = $this->snapshots->findOne($r->getTargetId(), $r->getSnapshotId());
-				$snapshot = ['createdAt' => $s->getCreatedAt(), 'label' => $s->getLabel()];
+				$snapshot = ['createdAt' => $s->getCreatedAt(), 'label' => $s->getLabel(), 'note' => $s->getNote(), 'pinned' => (bool)$s->getPinned()];
 			} catch (\Throwable) {
 				// Snapshot already pruned or trashed: the run keeps its id, just not the date.
 			}

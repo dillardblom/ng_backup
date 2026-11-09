@@ -31,7 +31,8 @@ final class TargetList extends Base {
 		$rows = [];
 		foreach ($this->targets->list() as $t) {
 			$row = ['id' => $t->getId(), 'name' => $t->getName(), 'backend' => $t->getBackend(), 'path' => $t->getBasePath(),
-				'repository' => $t->getRepositoryId(), 'added' => date('Y-m-d H:i', $t->getCreatedAt())];
+				'repository' => $t->getRepositoryId(), 'added' => date('Y-m-d H:i', $t->getCreatedAt()),
+				'schedule' => (string)$t->getSchedule() !== '' ? $t->getSchedule() : 'off'];
 			if ($input->getOption('test')) {
 				try {
 					$repo = $this->targets->repository($t);

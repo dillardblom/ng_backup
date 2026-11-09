@@ -67,6 +67,9 @@ final class LocalBackend implements IBackend {
 		if ($fh === false) {
 			throw new BackendException('Not found: ' . $path);
 		}
+		// Packs are read in large pieces: one request each, not 8 KiB at a time (see Repository::openForReading()).
+		stream_set_read_buffer($fh, 0);
+		stream_set_chunk_size($fh, 4 * 1048576);
 		return $fh;
 	}
 

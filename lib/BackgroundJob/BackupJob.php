@@ -33,6 +33,7 @@ final class BackupJob extends TimedJob {
 		private IAppConfig $appConfig,
 		private LoggerInterface $logger,
 		private \OCA\NgBackup\Service\Schedule $schedule,
+		private \OCA\NgBackup\Service\HeavyJobPause $heavyJobs,
 	) {
 		parent::__construct($time);
 		// Well below the usual 5-minute cron interval: the last run is stamped a moment after cron
@@ -43,25 +44,28 @@ final class BackupJob extends TimedJob {
 		$this->setTimeSensitivity(IJob::TIME_SENSITIVE);
 	}
 
-	private const MAX_DAILY_ATTEMPTS = 3;
-
 	protected function run($argument): void {
 		$budget = PHP_SAPI === 'cli' ? 240.0 : 20.0;
 		$deadline = microtime(true) + $budget;
 		$this->startScheduled();
-		foreach ($this->runs->findRunning(null, BackupService::KIND_FULL) as $run) {
+		$this->heavyJobs->sync($this->backups->runsInTurn() !== []);
+		// One after the other: runs that read the same disks at the same time are not faster together.
+		foreach ($this->backups->runsInTurn() as $run) {
 			while (microtime(true) < $deadline && $run->getStatus() === 'running') {
 				$next = $this->backups->step($run, min($deadline, microtime(true) + $budget));
 				if ($next === $run) {
-					break; // step() hands back the same object when another process holds the run's lease
+					break 2; // step() hands back the same object when another process holds the run's lease
 				}
 				$run = $next;
 			}
 		}
 		$this->failStaleRestores();
 		$this->weeklyPrune();
-		foreach ($this->targets->list() as $t) {
+		$targets = $this->targets->list();
+		foreach ($targets as $t) {
 			$this->alerts->checkStale($t);
+			$othersActive = array_filter($targets, static fn ($o) => $o->getId() !== $t->getId() && (string)$o->getSchedule() !== '') !== [];
+			$this->alerts->checkOff($t, $othersActive);
 		}
 	}
 
@@ -102,21 +106,18 @@ final class BackupJob extends TimedJob {
 		$this->appConfig->setValueString(Application::APP_ID, 'last_prune_week', $due);
 	}
 
-	/** Daily schedule: "HH:MM" in the schedule's time zone (see Schedule); empty = no schedule. */
+	/** Start the backups the schedules of the locations ask for; they run in turn (see LocationSchedule). */
 	private function startScheduled(): void {
-		$todayAt = $this->schedule->todayAt();
-		if ($todayAt === null || time() < $todayAt) {
-			return;
-		}
+		$now = time();
 		foreach ($this->targets->list() as $t) {
-			$last = $this->runs->lastFinished($t->getId(), BackupService::KIND_FULL);
-			if ($this->runs->findRunning($t->getId(), BackupService::KIND_FULL) !== [] || ($last !== null && $last->getStartedAt() >= $todayAt)) {
+			$moment = \OCA\NgBackup\Service\LocationSchedule::lastMoment((string)$t->getSchedule(), $this->schedule->zoneOr($t->getScheduleZone()), $now);
+			if ($moment === null || $this->runs->findRunning($t->getId(), BackupService::KIND_FULL) !== []) {
 				continue;
 			}
-			// After a failure: retry at most MAX_DAILY_ATTEMPTS times a day, an hour apart, instead
-			// of starting (and notifying about) a new full run every five minutes all day.
-			$today = $this->runs->startedSince($t->getId(), BackupService::KIND_FULL, $todayAt);
-			if (count($today) >= self::MAX_DAILY_ATTEMPTS || ($today !== [] && time() - (int)$today[0]->getFinishedAt() < 3600)) {
+			$attempts = $this->runs->startedSince($t->getId(), BackupService::KIND_FULL, $moment);
+			if (!\OCA\NgBackup\Service\LocationSchedule::isDue($moment, (int)$t->getScheduleSince(),
+				$this->dataStarted($this->runs->lastFinished($t->getId(), BackupService::KIND_FULL)),
+				count($attempts), ($attempts[0] ?? null)?->getFinishedAt(), $now)) {
 				continue;
 			}
 			try {
@@ -125,5 +126,16 @@ final class BackupJob extends TimedJob {
 				$this->logger->warning('NG Backup: scheduled backup to ' . $t->getName() . ' not started: ' . $e->getMessage());
 			}
 		}
+	}
+
+	/** When a backup began reading its data: a queued one can start well after it was asked for. */
+	private function dataStarted(?\OCA\NgBackup\Db\Run $run): ?int {
+		if ($run === null) {
+			return null;
+		}
+		$state = json_decode($run->getState(), true);
+		$started = is_array($state) ? ($state['files']['started'] ?? null) : null;
+		$at = is_string($started) ? strtotime($started) : false;
+		return $at !== false ? $at : $run->getStartedAt();
 	}
 }

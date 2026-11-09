@@ -30,6 +30,10 @@ final class Catalog {
 	public array $trash = [];
 	/** @var array<string, true> manifest path => true, for a per-user export (users/<uid>/<exportId>) */
 	public array $userExports = [];
+	/** @var array<string, true> snapshots the retention policy leaves alone */
+	public array $pinned = [];
+	/** @var array<string, string> snapshot id => note, also while the snapshot is in the trash */
+	public array $notes = [];
 	public string $hash = '';
 
 	public function __construct(
@@ -82,6 +86,8 @@ final class Catalog {
 		// Catalogs written before user exports existed have no such key: default to empty rather
 		// than adopting the location's current users/ listing (that would skip verification).
 		$this->userExports = array_fill_keys($data['userExports'] ?? [], true);
+		$this->pinned = array_fill_keys($data['pinned'] ?? [], true);
+		$this->notes = $data['notes'] ?? [];
 		$this->anchor?->set($this->repositoryId, $this->gen, $this->hash);
 	}
 
@@ -93,9 +99,12 @@ final class Catalog {
 		if ($this->backend->exists($this->path($next))) {
 			throw new RepositoryException("Catalog generation $next was written by another process at the same time; try again");
 		}
+		// A pin ends when its snapshot leaves the list, a note when the snapshot is gone for good.
+		$this->pinned = array_intersect_key($this->pinned, $this->snapshots);
+		$this->notes = array_intersect_key($this->notes, $this->snapshots + $this->trash);
 		$plain = json_encode(['repository' => $this->repositoryId, 'gen' => $next, 'time' => gmdate('c'), 'prev' => $this->hash,
 			'snapshots' => array_keys($this->snapshots), 'trash' => array_keys($this->trash),
-			'userExports' => array_keys($this->userExports)], JSON_THROW_ON_ERROR);
+			'userExports' => array_keys($this->userExports), 'pinned' => array_keys($this->pinned), 'notes' => $this->notes], JSON_THROW_ON_ERROR);
 		$encrypted = $this->cipher->encryptString($plain, $this->ad($next));
 		$stream = fopen('php://memory', 'w+b');
 		fwrite($stream, $encrypted);

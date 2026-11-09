@@ -155,6 +155,17 @@ final class RestoreService {
 		$dest = $this->ensureFolder($userFolder, $parentRel);
 		$names = $single ? [basename($rel) => $entries['']] : $entries;
 
+		// The folders with something in them that this restore creates get their time back; one that
+		// was already there keeps its own, as its content changes now. Noted before anything is written.
+		/** @var array<array-key, int> $newFolders a folder called "2026" is an integer key */
+		$newFolders = [];
+		foreach ($single ? [] : $repo->folderTimes($snapshotId) as [$dir, $mtime]) {
+			$relative = $dir === $source ? '' : (str_starts_with($dir, $source . '/') ? substr($dir, strlen($source) + 1) : null);
+			if ($relative !== null && ($relative === '' ? !$destExisted : !$dest->nodeExists($relative))) {
+				$newFolders[$relative] = $mtime;
+			}
+		}
+
 		$this->cleaned = [];
 		$restored = 0;
 		foreach ($names as $relPath => $entry) {
@@ -189,6 +200,13 @@ final class RestoreService {
 		$trashed = 0;
 		if ($mode === self::MODE_REPLACE && !$single) {
 			$trashed = $this->trashExtras($dest, '', array_flip(array_keys($names)) + $emptyDirs);
+		}
+		// Last and deepest first: a change in a folder also touches the folders above it.
+		foreach (array_reverse($newFolders, true) as $dir => $mtime) {
+			$this->ensureFolder($dest, (string)$dir)->touch($mtime);
+			if ($progress !== null) {
+				$progress($restored, count($names), (string)$dir); // keeps the lease alive too
+			}
 		}
 		return ['restored' => $restored, 'trashed' => $trashed, 'target' => $uid . ':' . $userFolder->getRelativePath($dest->getPath())];
 	}

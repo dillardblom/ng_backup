@@ -31,6 +31,7 @@ final class Status extends Command {
 		private VerifyService $verify,
 		private Schedule $schedule,
 		private CronHealth $cron,
+		private \OCA\NgBackup\Service\BackupService $backups,
 	) {
 		parent::__construct();
 	}
@@ -61,9 +62,11 @@ final class Status extends Command {
 		$rows = [];
 		$all = (bool)$input->getOption('all');
 		$shown = $this->runs->findShown($all ? null : time() - self::RECENT_DAYS * 86400);
+		$queued = array_map(static fn (\OCA\NgBackup\Db\Run $r): int => $r->getId(), array_slice($this->backups->runsInTurn(), 1));
 		foreach ($shown as $r) {
 			$s = json_decode($r->getStats() ?? '{}', true)['files'] ?? [];
-			$rows[] = [$r->getId(), $names[$r->getTargetId()] ?? '#' . $r->getTargetId(), $r->getKind(), $r->getStatus() === 'running' ? self::runningStatus($r) : $r->getStatus(),
+			$rows[] = [$r->getId(), $names[$r->getTargetId()] ?? '#' . $r->getTargetId(), $r->getKind(),
+				in_array($r->getId(), $queued, true) ? 'queued' : ($r->getStatus() === 'running' ? self::runningStatus($r) : $r->getStatus()),
 				Format::time($r->getStartedAt(), $zone), $r->getFinishedAt() ? Format::duration($r->getFinishedAt() - $r->getStartedAt()) : '',
 				$s['files'] ?? '', isset($s['bytes']) ? self::size((int)$s['bytes']) : '',
 				isset($s['uploaded']) ? self::size((int)$s['uploaded']) : '', mb_strimwidth((string)$r->getError(), 0, 50, '…')];

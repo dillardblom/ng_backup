@@ -25,6 +25,17 @@ class RetentionPolicyTest extends TestCase {
 		$this->assertCount(3, $months);
 	}
 
+	public function testAPinnedSnapshotStaysAndDoesNotCount(): void {
+		$policy = new RetentionPolicy(1, 0, 0, 0);
+		$snaps = ['old' => 100, 'pinned' => 300, 'new' => 200];
+		$this->assertSame(['pinned'], array_keys($policy->keep($snaps)), 'without the pin it would take the place of "last"');
+		$keep = $policy->keepWithPinned($snaps, ['pinned', 'gone-already']);
+		$this->assertSame(['pinned'], $keep['pinned']);
+		$this->assertSame(['last'], $keep['new'], 'the newest one that is not pinned');
+		$this->assertArrayNotHasKey('old', $keep);
+		$this->assertArrayNotHasKey('gone-already', $keep);
+	}
+
 	public function testKeepsEverythingWhenFewSnapshots(): void {
 		$keep = (new RetentionPolicy())->keep(['a' => 100, 'b' => 200]);
 		$this->assertSame(['a', 'b'], array_values(array_intersect(['a', 'b'], array_keys($keep))));

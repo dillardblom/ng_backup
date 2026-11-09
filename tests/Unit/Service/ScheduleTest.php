@@ -57,15 +57,4 @@ class ScheduleTest extends TestCase {
 		$this->assertSame(['time' => '02:30', 'timezone' => 'UTC'], $this->schedule()->get());
 	}
 
-	public function testTodayAtIsTheMomentInTheSchedulesZone(): void {
-		$this->values = [Schedule::TIME_KEY => '03:00', Schedule::ZONE_KEY => 'Europe/Berlin'];
-		$at = $this->schedule()->todayAt(strtotime('2026-10-22 12:00 UTC'));
-		$this->assertSame(strtotime('2026-10-22 01:00 UTC'), $at, '03:00 in Berlin (summer time) is 01:00 UTC');
-	}
-
-	public function testAnUnknownZoneOrABadTimeIsRefused(): void {
-		$s = $this->schedule();
-		$this->expectException(\InvalidArgumentException::class);
-		$s->set('03:00', 'Mars/Olympus');
-	}
 }

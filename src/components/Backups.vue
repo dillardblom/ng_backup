@@ -5,10 +5,11 @@
 <template>
 	<NcSettingsSection :name="t('ng_backup', 'Backups')"
 		:description="t('ng_backup', 'Backups run in the background through Nextcloud\'s cron. Unchanged files are not read again; only new data is uploaded.')">
-		<div class="ngb-row">
-			<NcTextField v-model="schedule" class="ngb-time" :label="t('ng_backup', 'Daily at (HH:MM, {zone}, empty = off)', { zone: browserZone })" />
-			<NcButton :disabled="schedule === status.schedule && browserZone === status.scheduleTimezone" @click="saveSchedule">{{ t('ng_backup', 'Save') }}</NcButton>
-		</div>
+		<LocationScheduleRow v-for="target in status.targets" :key="target.id" :target="target" @changed="emit('changed')" @error="error = $event" />
+		<NcCheckboxRadioSwitch :model-value="status.heavyJobs.enabled" @update:model-value="savePause">
+			{{ t('ng_backup', 'Pause heavy background jobs (Memories, Recognize, Preview Generator, full text search, antivirus scan) while a backup runs, at most 6 hours in a row') }}
+		</NcCheckboxRadioSwitch>
+		<p v-if="status.heavyJobs.jobs.length" class="ngb-muted">{{ t('ng_backup', 'Paused now: {jobs}', { jobs: status.heavyJobs.jobs.join(', ') }) }}</p>
 		<div class="ngb-row">
 			<NcTextField v-model="label" class="ngb-label" :maxlength="100" :label="t('ng_backup', 'Label (optional)')"
 				:placeholder="t('ng_backup', 'e.g. before the upgrade to Nextcloud 35')" />
@@ -37,11 +38,11 @@
 						<td>{{ formatDateTime(run.startedAt) }}</td>
 						<td>{{ targetName(run.targetId) }}</td>
 						<td>{{ run.kind }}</td>
-						<td>{{ run.snapshot ? formatDateTime(run.snapshot.createdAt) + (run.snapshot.label ? ' – ' + run.snapshot.label : '') : '' }}</td>
+						<td class="ngb-point">{{ run.snapshot ? (run.snapshot.pinned ? '📌 ' : '') + formatDateTime(run.snapshot.createdAt) + (run.snapshot.label ? ' – ' + run.snapshot.label : '') + (run.snapshot.note ? ' – ' + run.snapshot.note : '') : '' }}</td>
 						<td :class="'ngb-' + run.status">{{ runStatus(run) }}{{ run.error ? ': ' + run.error : '' }}</td>
-						<td>{{ run.stats?.files?.files ?? run.stats?.restored ?? '' }}</td>
-						<td>{{ run.stats?.files ? formatSize(run.stats.files.bytes) : '' }}</td>
-						<td>{{ run.stats?.files ? formatSize(run.stats.files.uploaded) : '' }}</td>
+						<td class="ngb-num">{{ run.stats?.files?.files ?? run.stats?.restored ?? '' }}</td>
+						<td class="ngb-num">{{ run.stats?.files ? formatSize(run.stats.files.bytes) : '' }}</td>
+						<td class="ngb-num">{{ run.stats?.files ? formatSize(run.stats.files.uploaded) : '' }}</td>
 					</tr>
 				</tbody>
 			</table>
@@ -60,24 +61,20 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import { n, t } from '@nextcloud/l10n'
 import NcButton from '@nextcloud/vue/components/NcButton'
+import NcCheckboxRadioSwitch from '@nextcloud/vue/components/NcCheckboxRadioSwitch'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import NcSettingsSection from '@nextcloud/vue/components/NcSettingsSection'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
+import LocationScheduleRow from './LocationScheduleRow.vue'
 import api from '../api.js'
-import { formatDateTime, formatSize, toZone } from '../format.js'
+import { formatDateTime, formatSize } from '../format.js'
 
 const props = defineProps({ status: { type: Object, required: true }, allRuns: { type: Boolean, default: false } })
 const emit = defineEmits(['changed', 'show-all-runs'])
-// The time is saved in the administrator's own zone (the browser's); a schedule saved in another
-// zone is shown in this one, so it reads as the moment it runs here.
-const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-const shown = (s) => (s && props.status.scheduleTimezone && props.status.scheduleTimezone !== browserZone) ? toZone(s, props.status.scheduleTimezone, browserZone) : s
-const schedule = ref(shown(props.status.schedule))
 const error = ref('')
-watch(() => [props.status.schedule, props.status.scheduleTimezone], ([s]) => { schedule.value = shown(s) })
 
 const label = ref('')
 
@@ -97,6 +94,9 @@ const runStatus = (run) => {
 	if (run.status !== 'running') {
 		return run.status
 	}
+	if (run.queued) {
+		return t('ng_backup', 'queued, after the backup that is running now')
+	}
 	const detail = run.phase + percent(run)
 	if (run.waitingFor) {
 		return t('ng_backup', 'waiting for background jobs ({detail}, last step {minutes} min ago)', { detail, minutes: Math.floor(run.waitingFor / 60) })
@@ -105,6 +105,16 @@ const runStatus = (run) => {
 }
 const isRunning = (targetId) => props.status.runs.some(r => r.targetId === targetId && r.kind === 'full' && r.status === 'running')
 const targetName = (id) => props.status.targets.find(tg => tg.id === id)?.name ?? '#' + id
+
+async function savePause(enabled) {
+	error.value = ''
+	try {
+		await api.setPauseHeavyJobs(enabled)
+		emit('changed')
+	} catch (e) {
+		error.value = e.message
+	}
+}
 
 async function start(target) {
 	error.value = ''
@@ -116,25 +126,17 @@ async function start(target) {
 		error.value = e.message
 	}
 }
-
-async function saveSchedule() {
-	error.value = ''
-	try {
-		await api.setSchedule(schedule.value.trim(), browserZone)
-		emit('changed')
-	} catch (e) {
-		error.value = e.message
-	}
-}
 </script>
 
 <style scoped>
 .ngb-row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
-.ngb-time { max-width: 260px; }
 .ngb-label { max-width: 360px; }
-.ngb-table-wrap { overflow-x: auto; }
+.ngb-table-wrap { max-width: 90%; overflow-x: auto; } /* scrolls only on a really narrow screen */
 .ngb-table { width: 100%; border-collapse: collapse; }
-.ngb-table th, .ngb-table td { text-align: start; padding: 4px 8px; border-bottom: 1px solid var(--color-border); }
+.ngb-table th, .ngb-table td { text-align: start; padding: 4px 8px; border-bottom: 1px solid var(--color-border); white-space: normal; overflow-wrap: break-word; }
+/* Text wraps; numbers stay on one line, the restore point keeps room for its label and note */
+.ngb-table td.ngb-num { white-space: nowrap; }
+.ngb-table td.ngb-point { min-width: 9em; }
 .ngb-failed { color: var(--color-error-text); }
 .ngb-muted { color: var(--color-text-maxcontrast); }
 .ngb-done { color: var(--color-success-text); }

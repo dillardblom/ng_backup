@@ -22,6 +22,27 @@ class KeyRingTest extends TestCase {
 		KeyRing::unwrap($wrapped, 'wrong');
 	}
 
+	public function testInvalidBase64IsADamagedKey(): void {
+		$wrapped = KeyRing::generate()->wrap('right');
+		$wrapped['salt'] = '***not base64***';
+		$this->expectException(CryptoException::class);
+		$this->expectExceptionMessage('Damaged key file');
+		KeyRing::unwrapAny($wrapped, 'right');
+	}
+
+	public function testAShortSaltOrNonceIsADamagedKey(): void {
+		foreach (['salt', 'nonce'] as $part) {
+			$wrapped = KeyRing::generate()->wrap('right');
+			$wrapped[$part] = base64_encode('short');
+			try {
+				KeyRing::unwrapAny($wrapped, 'right');
+				$this->fail("a short $part was accepted");
+			} catch (CryptoException $e) {
+				$this->assertStringContainsString('Damaged key file', $e->getMessage(), $part);
+			}
+		}
+	}
+
 	public function testBlobIdsAreKeyed(): void {
 		$this->assertNotSame(KeyRing::generate()->blobId('same'), KeyRing::generate()->blobId('same'));
 		$k = KeyRing::generate();
@@ -32,6 +53,20 @@ class KeyRingTest extends TestCase {
 	public function testRejectsShortMasterKey(): void {
 		$this->expectException(\InvalidArgumentException::class);
 		new KeyRing('short');
+	}
+
+	public function testADamagedSlotDoesNotStopTheNextOne(): void {
+		$keys = KeyRing::generate();
+		$broken = $keys->wrap('passphrase in the safe');
+		$broken['salt'] = '*** not base64 ***';
+		$field = ['slots' => [
+			['slot' => 1, 'label' => 'Safe', 'key' => $broken],
+			['slot' => 2, 'label' => 'Missing parts', 'key' => ['v' => 1]],
+			['slot' => 3, 'label' => 'CTO', 'key' => $keys->wrap('passphrase of the cto')],
+		]];
+		$this->assertSame($keys->blobId('x'), KeyRing::unwrapAny($field, 'passphrase of the cto')->blobId('x'));
+		$this->expectException(CryptoException::class);
+		KeyRing::unwrapAny($field, 'passphrase in the safe');
 	}
 
 	public function testAnySlotOpensTheSameKey(): void {

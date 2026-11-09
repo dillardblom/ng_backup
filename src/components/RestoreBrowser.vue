@@ -11,6 +11,13 @@
 		</div>
 
 		<template v-if="snapshot">
+			<div class="ngb-row ngb-marks">
+				<NcTextField v-model="note" class="ngb-note" :maxlength="500" :label="t('ng_backup', 'Note (can be changed later)')" />
+				<NcButton :disabled="marking || note.trim() === (snapshot.note ?? '')" @click="saveNote">{{ t('ng_backup', 'Save note') }}</NcButton>
+				<NcCheckboxRadioSwitch :model-value="snapshot.pinned" :disabled="marking" @update:model-value="savePinned">
+					{{ t('ng_backup', 'Pin: the retention policy does not remove this restore point') }}
+				</NcCheckboxRadioSwitch>
+			</div>
 			<div class="ngb-crumbs">
 				<NcButton variant="tertiary" @click="open('data')">data</NcButton>
 				<template v-for="(crumb, i) in crumbs" :key="crumb.path">
@@ -49,6 +56,7 @@ import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import NcSelect from '@nextcloud/vue/components/NcSelect'
 import NcSettingsSection from '@nextcloud/vue/components/NcSettingsSection'
+import NcTextField from '@nextcloud/vue/components/NcTextField'
 import { confirmPassword } from '@nextcloud/password-confirmation'
 import '@nextcloud/password-confirmation/style.css'
 import api from '../api.js'
@@ -74,7 +82,10 @@ const modes = [
 	{ id: 'replace', label: t('ng_backup', 'Into the original place, overwrite and move files that are not in the backup to the trash') },
 ]
 
-const snapshotLabel = (s) => formatDateTime(s.createdAt) + (s.label ? ' – ' + s.label : '')
+const note = ref('')
+const marking = ref(false)
+
+const snapshotLabel = (s) => (s.pinned ? '📌 ' : '') + formatDateTime(s.createdAt) + (s.label ? ' – ' + s.label : '') + (s.note ? ' – ' + s.note : '')
 const join = (name) => path.value + '/' + name
 const restorable = (p) => /^data\/[^/]+\/files(\/.*)?$/.test(p)
 const crumbs = computed(() => {
@@ -88,7 +99,29 @@ watch(target, async (tg) => {
 	snapshots.value = list.map(s => ({ ...s, displayLabel: snapshotLabel(s) }))
 	snapshot.value = snapshots.value[0] ?? null
 }, { immediate: true })
-watch(snapshot, () => { selected.value = ''; open('data') })
+watch(snapshot, (s) => { selected.value = ''; note.value = s?.note ?? ''; open('data') })
+
+// Changes the snapshot in place: choosing another one, which opens its folders again, is not needed
+async function mark(call, change) {
+	const s = snapshot.value
+	marking.value = true
+	error.value = message.value = ''
+	try {
+		await call(target.value.id, s.id)
+		change(s)
+		s.displayLabel = snapshotLabel(s)
+		emit('changed')
+	} catch (e) {
+		error.value = e.message
+	} finally {
+		marking.value = false
+	}
+}
+const saveNote = () => {
+	const text = note.value.trim()
+	return mark((targetId, id) => api.setSnapshotNote(targetId, id, text), (s) => { s.note = text })
+}
+const savePinned = (pinned) => mark((targetId, id) => api.setSnapshotPinned(targetId, id, pinned), (s) => { s.pinned = pinned })
 
 async function open(p) {
 	if (!snapshot.value) {
@@ -125,6 +158,8 @@ async function restore() {
 <style scoped>
 .ngb-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .ngb-row :deep(.ngb-snapshot) { min-width: min(360px, 100%); }
+.ngb-marks { align-items: flex-end; }
+.ngb-note { max-width: 360px; }
 .ngb-crumbs { display: flex; align-items: center; flex-wrap: wrap; }
 .ngb-entries li { display: flex; align-items: center; gap: 12px; min-height: 36px; }
 .ngb-entries li.selected { background: var(--color-primary-element-light); border-radius: var(--border-radius); }

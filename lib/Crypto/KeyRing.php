@@ -87,14 +87,20 @@ final class KeyRing {
 		foreach ($field['slots'] as $slot) {
 			try {
 				return self::unwrap($slot['key'], $passphrase);
-			} catch (CryptoException) {
+			} catch (CryptoException|\SodiumException|\TypeError|\ValueError) {
+				// a wrong passphrase for this slot, or a damaged slot: the next one may still open
 			}
 		}
 		throw new CryptoException('Wrong passphrase or damaged key');
 	}
 
-	/** @param array{v:int, salt:string, ops:int, mem:int, nonce:string, key:string} $wrapped */
+	/** @param array<string, mixed> $wrapped from a kit file or a location's config: checked here, not trusted */
 	public static function unwrap(array $wrapped, #[\SensitiveParameter] string $passphrase): self {
+		if (!isset($wrapped['salt'], $wrapped['nonce'], $wrapped['key'], $wrapped['ops'], $wrapped['mem'])
+			|| !is_string($wrapped['salt']) || !is_string($wrapped['nonce']) || !is_string($wrapped['key'])
+			|| !is_int($wrapped['ops']) || !is_int($wrapped['mem'])) {
+			throw new CryptoException('Damaged key file: a part of the key is missing');
+		}
 		$b64 = static fn (string $s): string => sodium_base642bin($s, SODIUM_BASE64_VARIANT_ORIGINAL);
 		// ops/mem come from unauthenticated JSON (kit file, repository config): bound them, so a
 		// damaged or crafted file cannot make the KDF use unbounded memory or time.
@@ -102,10 +108,22 @@ final class KeyRing {
 			|| $wrapped['mem'] < SODIUM_CRYPTO_PWHASH_MEMLIMIT_INTERACTIVE || $wrapped['mem'] > SODIUM_CRYPTO_PWHASH_MEMLIMIT_SENSITIVE) {
 			throw new CryptoException('Unsupported key derivation parameters (damaged or foreign key file)');
 		}
-		$kek = sodium_crypto_pwhash(SODIUM_CRYPTO_SECRETBOX_KEYBYTES, $passphrase, $b64($wrapped['salt']),
-			$wrapped['ops'], $wrapped['mem'], SODIUM_CRYPTO_PWHASH_ALG_ARGON2ID13);
-		$master = sodium_crypto_secretbox_open($b64($wrapped['key']), $b64($wrapped['nonce']), $kek);
-		sodium_memzero($kek);
+		$kek = null;
+		try {
+			$salt = $b64($wrapped['salt']);
+			$sealed = $b64($wrapped['key']);
+			$nonce = $b64($wrapped['nonce']);
+			$kek = sodium_crypto_pwhash(SODIUM_CRYPTO_SECRETBOX_KEYBYTES, $passphrase, $salt,
+				$wrapped['ops'], $wrapped['mem'], SODIUM_CRYPTO_PWHASH_ALG_ARGON2ID13);
+			$master = sodium_crypto_secretbox_open($sealed, $nonce, $kek);
+		} catch (\SodiumException|\ValueError $e) {
+			// invalid base64 or a salt/nonce of the wrong length: damaged, so the caller shows its recovery options
+			throw new CryptoException('Damaged key file: ' . $e->getMessage(), 0, $e);
+		} finally {
+			if ($kek !== null) {
+				sodium_memzero($kek);
+			}
+		}
 		if ($master === false) {
 			throw new CryptoException('Wrong passphrase or damaged key');
 		}

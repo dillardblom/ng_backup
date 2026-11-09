@@ -58,6 +58,18 @@ final class BackupService {
 		$this->openedWith = $opened;
 	}
 
+	/**
+	 * The running backups in the order they get their turn: first come, first served. The first one
+	 * runs, the others are queued; only one at a time reads the disks.
+	 *
+	 * @return list<Run>
+	 */
+	public function runsInTurn(): array {
+		$running = $this->runs->findRunning(null, self::KIND_FULL);
+		usort($running, static fn (Run $a, Run $b): int => [$a->getStartedAt(), $a->getId()] <=> [$b->getStartedAt(), $b->getId()]);
+		return $running;
+	}
+
 	public function start(Target $target, string $label = ''): Run {
 		$label = trim($label);
 		if (mb_strlen($label) > self::LABEL_MAX) {
@@ -210,6 +222,13 @@ final class BackupService {
 			$state = json_decode($run->getState(), true, 512, JSON_THROW_ON_ERROR);
 
 			if ($run->getPhase() === 'db') {
+				if (!isset($state['dump'])) {
+					// It may have been queued for hours: the restore point has the time of its data.
+					$state['files']['started'] = gmdate('c');
+					// Locations from before 1.1.0 get their sealed settings at their next backup.
+					$this->targets->recordSettings($repo);
+					$this->targets->catchUpWrappedKey($target, $repo);
+				}
 				$dumper = new DbDumper($this->db->getInner(), $this->config->getSystemValueString('dbtableprefix', 'oc_'));
 				$dbStats = $state['dbStats'] ?? [];
 				// With system cron the whole dump usually fits in one step (one transaction, fully
@@ -253,8 +272,13 @@ final class BackupService {
 					try {
 						$this->alerts->storedBytes($target, $repo->storedBytes());
 						$stats = $state['files']['stats'];
+						$warnings = BackupRun::warnings($state['files']);
+						if (($stats['badNames'] ?? 0) > 0) {
+							$this->logger->warning(sprintf('NG Backup run %d to %s: %d left out because their name is not supported (rename them): %s',
+								$run->getId(), $target->getName(), $stats['badNames'], implode(', ', $warnings['badNames'])));
+							$this->alerts->runBadNames($run, $target->getName(), (int)$stats['badNames'], $warnings['badNames']);
+						}
 						if (($stats['unreadable'] ?? 0) > 0 || ($stats['changing'] ?? 0) > 0) {
-							$warnings = BackupRun::warnings($state['files']);
 							$this->logger->warning(sprintf('NG Backup run %d to %s: %d unreadable (missing from the snapshot): %s; %d changed while being read: %s',
 								$run->getId(), $target->getName(), $stats['unreadable'] ?? 0, implode(', ', $warnings['unreadable']),
 								$stats['changing'] ?? 0, implode(', ', $warnings['changing'])));

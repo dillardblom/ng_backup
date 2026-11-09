@@ -30,6 +30,9 @@ final class KeyService {
 	private const KEY_DELETE_DELAY = 'delete_delay_days';
 	private const KEY_KIT_VERSION = 'recovery_kit_version';
 	private const KEY_KIT_CODE = 'recovery_kit_code';
+	/** Set once a location was created or adopted with this key: from then on it is never replaced. */
+	private const KEY_USED = 'master_key_used';
+	private const KEY_WRAPPED_PENDING = 'master_key_wrapped_pending';
 	public const DEFAULT_DELETE_DELAY = 7;
 	/**
 	 * The location holds the passphrase-wrapped key too, so whoever can read it can try
@@ -83,26 +86,98 @@ final class KeyService {
 	 * @param array<string, mixed> $kit as produced by recoveryKit()
 	 * @throws \OCA\NgBackup\Crypto\CryptoException wrong passphrase, or a damaged/foreign kit
 	 */
-	public function importRecoveryKit(array $kit, #[\SensitiveParameter] string $passphrase): void {
-		if ($this->isInitialized()) {
+	public function importRecoveryKit(array $kit, #[\SensitiveParameter] string $passphrase, bool $replaceUnused = false): void {
+		if ($this->isInitialized() && !$replaceUnused) {
 			throw new \RuntimeException('A backup key already exists');
 		}
 		if (!isset($kit['wrapped_key'])) {
 			throw new \InvalidArgumentException('Not a NG Backup recovery kit file');
 		}
 		$keys = KeyRing::unwrapAny($kit['wrapped_key'], $passphrase);
-		$this->appConfig->setValueString(Application::APP_ID, self::KEY_MASTER,
-			$this->crypto->encrypt(base64_encode($keys->exportMasterKey())), true, true);
-		$this->cached = $keys;
-		$this->appConfig->setValueString(Application::APP_ID, self::KEY_WRAPPED, json_encode($kit['wrapped_key'], JSON_THROW_ON_ERROR), true, true);
-		$this->appConfig->setValueString(Application::APP_ID, self::KEY_FINGERPRINT, $this->fingerprintOf($keys), true);
+		$this->discardUnused($keys, $replaceUnused);
 		// Kits from before this field existed fall back to the default.
-		$delay = (int)($kit['delete_delay_days'] ?? self::DEFAULT_DELETE_DELAY);
-		$this->appConfig->setValueInt(Application::APP_ID, self::KEY_DELETE_DELAY, ($delay >= 1 && $delay <= 365) ? $delay : self::DEFAULT_DELETE_DELAY, true);
-		$this->appConfig->setValueInt(Application::APP_ID, self::KEY_KIT_VERSION, (int)($kit['kit_version'] ?? 1), true);
+		$this->store($keys, $kit['wrapped_key'], (int)($kit['delete_delay_days'] ?? self::DEFAULT_DELETE_DELAY), (int)($kit['kit_version'] ?? 1));
 		// Having and successfully using a real kit file is stronger proof than the normal
 		// download-and-confirm flow it replaces.
 		$this->confirmRecoveryKit('cli-import');
+	}
+
+	/**
+	 * Disaster recovery without the recovery kit: adopt the master key that a passphrase opened
+	 * from the key slots in a location's config (TargetService::addWithPassphrase). There is no
+	 * kit, so none is confirmed: backups wait until a new kit is downloaded and confirmed.
+	 *
+	 * @param ?int $deleteDelayDays from the location's sealed settings, null when it has none
+	 */
+	public function adoptKey(KeyRing $keys, array $wrappedKey, ?int $deleteDelayDays, bool $replaceUnused = false): void {
+		if ($this->isInitialized() && !$replaceUnused) {
+			throw new \RuntimeException('A backup key already exists');
+		}
+		$this->discardUnused($keys, $replaceUnused);
+		$this->store($keys, $wrappedKey, $deleteDelayDays ?? self::DEFAULT_DELETE_DELAY, 1);
+	}
+
+	/** Whether a location was ever created or adopted with this key (TargetService::keyIsUnused() also looks at the database). */
+	public function wasUsed(): bool {
+		return $this->appConfig->getValueBool(Application::APP_ID, self::KEY_USED, false, true);
+	}
+
+	public function markUsed(): void {
+		if (!$this->wasUsed()) {
+			$this->appConfig->setValueBool(Application::APP_ID, self::KEY_USED, true, true);
+		}
+	}
+
+	/**
+	 * Locations that missed the last passphrase change (offline at the time): they still hold
+	 * the previous slots until the change reaches them, which is tried again at each backup.
+	 */
+	public function wrappedKeyPending(int $targetId): bool {
+		return $this->appConfig->getValueBool(Application::APP_ID, self::KEY_WRAPPED_PENDING . '_' . $targetId);
+	}
+
+	/** One flag per location, so that two processes never overwrite each other's. */
+	public function setWrappedKeyPending(int $targetId, bool $pending): void {
+		$key = self::KEY_WRAPPED_PENDING . '_' . $targetId;
+		if ($pending) {
+			$this->appConfig->setValueBool(Application::APP_ID, $key, true);
+		} elseif ($this->wrappedKeyPending($targetId)) {
+			$this->appConfig->deleteKey(Application::APP_ID, $key);
+		}
+	}
+
+	/**
+	 * A key made by mistake on a server that is being restored: remove it, so the key of the
+	 * backups can take its place. Only after the new key was opened with its passphrase, and
+	 * only when the caller checked that the old key never protected anything
+	 * (TargetService::keyIsUnused()). Its passphrases and recovery kit become worthless.
+	 */
+	private function discardUnused(KeyRing $replacement, bool $replaceUnused): void {
+		if (!$replaceUnused || !$this->isInitialized()) {
+			return;
+		}
+		if ($this->wasUsed()) {
+			throw new \RuntimeException('The backup key of this server has been used for a backup location: it is never replaced');
+		}
+		if ($this->fingerprintOf($replacement) === $this->fingerprint()) {
+			throw new \RuntimeException('This server already has this backup key: nothing to replace');
+		}
+		foreach ([self::KEY_MASTER, self::KEY_WRAPPED, self::KEY_CONFIRMED, self::KEY_FINGERPRINT, self::KEY_DELETE_DELAY,
+			self::KEY_KIT_VERSION, self::KEY_KIT_CODE, self::KEY_USED] as $key) {
+			$this->appConfig->deleteKey(Application::APP_ID, $key);
+		}
+		$this->cached = null;
+	}
+
+	private function store(KeyRing $keys, array $wrappedKey, int $deleteDelayDays, int $kitVersion): void {
+		$this->appConfig->setValueString(Application::APP_ID, self::KEY_MASTER,
+			$this->crypto->encrypt(base64_encode($keys->exportMasterKey())), true, true);
+		$this->cached = $keys;
+		$this->appConfig->setValueString(Application::APP_ID, self::KEY_WRAPPED, json_encode($wrappedKey, JSON_THROW_ON_ERROR), true, true);
+		$this->appConfig->setValueString(Application::APP_ID, self::KEY_FINGERPRINT, $this->fingerprintOf($keys), true);
+		$this->appConfig->setValueInt(Application::APP_ID, self::KEY_DELETE_DELAY,
+			($deleteDelayDays >= 1 && $deleteDelayDays <= 365) ? $deleteDelayDays : self::DEFAULT_DELETE_DELAY, true);
+		$this->appConfig->setValueInt(Application::APP_ID, self::KEY_KIT_VERSION, max(1, $kitVersion), true);
 	}
 
 	/**

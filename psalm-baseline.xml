@@ -300,6 +300,22 @@
       <code><![CDATA[$t]]></code>
     </UndefinedDocblockClass>
   </file>
+  <file src="lib/Migration/Version000008Date20261107010000.php">
+    <UndefinedDocblockClass>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+    </UndefinedDocblockClass>
+  </file>
+  <file src="lib/Migration/Version000007Date20261107000000.php">
+    <UndefinedDocblockClass>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+      <code><![CDATA[$t]]></code>
+    </UndefinedDocblockClass>
+  </file>
   <file src="lib/Migration/Version000005Date20261002040000.php">
     <UndefinedDocblockClass>
       <code><![CDATA[$t]]></code>
@@ -351,7 +367,6 @@
       <code><![CDATA[$encrypted]]></code>
       <code><![CDATA[$encrypted]]></code>
       <code><![CDATA[$encrypted]]></code>
-      <code><![CDATA[$fh]]></code>
       <code><![CDATA[$plain]]></code>
       <code><![CDATA[$plain]]></code>
       <code><![CDATA[$plain]]></code>

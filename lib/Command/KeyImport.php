@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace OCA\NgBackup\Command;
 
 use OCA\NgBackup\Service\KeyService;
+use OCA\NgBackup\Service\TargetService;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
@@ -18,6 +19,7 @@ use Symfony\Component\Console\Question\Question;
 final class KeyImport extends Command {
 	public function __construct(
 		private KeyService $keys,
+		private TargetService $targets,
 	) {
 		parent::__construct();
 	}
@@ -27,10 +29,18 @@ final class KeyImport extends Command {
 			->setDescription('Disaster recovery: adopt the backup key from a recovery kit on a fresh installation')
 			->addArgument('kit-file', InputArgument::REQUIRED, 'The recovery kit file (occ backup:key:kit on the original installation)')
 			->addOption('passphrase-file', null, InputOption::VALUE_REQUIRED, 'Read the passphrase from this file instead of asking')
+			->addOption('replace-unused-key', null, InputOption::VALUE_NONE, 'A new key was made here by mistake: replace it by the kit\'s key, if it was never used (no location, no backup)')
 			->setHelp(<<<'HELP'
 For a fresh installation only (occ backup:key:init must not have been run here yet). Reads one
 of the kit's passphrase slots to recover the original master key, so occ backup:target:add opens
 the existing repository on the location instead of creating a new, empty one.
+
+A new key was made here by mistake before the location was added? As long as it was never used
+(no location, no backup), --replace-unused-key replaces it by the kit's key. A key that was used
+is never replaced.
+
+No kit? Skip this command: occ backup:target:add then takes the key from the location with one
+of the old server's passphrases. The kit still helps when the location's config file is damaged.
 
 Example:
   occ backup:key:import /root/ng_backup-recovery-kit.json
@@ -40,9 +50,23 @@ HELP);
 	}
 
 	protected function execute(InputInterface $input, OutputInterface $output): int {
-		if ($this->keys->isInitialized()) {
-			$output->writeln('<error>A backup key already exists here (fingerprint ' . $this->keys->fingerprint() . '). occ backup:key:import is only for a fresh installation.</error>');
+		$replace = (bool)$input->getOption('replace-unused-key');
+		if ($replace && !$this->keys->isInitialized()) {
+			$output->writeln('<error>There is no backup key here to replace: leave out --replace-unused-key.</error>');
 			return 1;
+		}
+		if ($this->keys->isInitialized()) {
+			if (!$this->targets->keyIsUnused()) {
+				$output->writeln('<error>A backup key already exists here (fingerprint ' . $this->keys->fingerprint() . ') and it has been used for a backup location: it is never replaced.</error>');
+				$output->writeln('occ backup:key:import is for a server that is being restored.');
+				return 1;
+			}
+			if (!$replace) {
+				$output->writeln('<error>A backup key already exists here (fingerprint ' . $this->keys->fingerprint() . '), but it was never used: no location, no backup.</error>');
+				$output->writeln('Made by mistake on a server that is being restored? Run this command again with --replace-unused-key:');
+				$output->writeln('the kit\'s key then takes its place, and the passphrases and recovery kit of the unused key stop working.');
+				return 1;
+			}
 		}
 		$kitFile = (string)$input->getArgument('kit-file');
 		$raw = @file_get_contents($kitFile);
@@ -70,12 +94,16 @@ HELP);
 			$pass = (string)$helper->ask($input, $output, $q);
 		}
 		try {
-			$this->keys->importRecoveryKit($kit, $pass);
+			if ($replace) {
+				$this->targets->importKitReplacingUnusedKey($kit, $pass);
+			} else {
+				$this->keys->importRecoveryKit($kit, $pass);
+			}
 		} catch (\Throwable $e) {
 			$output->writeln('<error>' . $e->getMessage() . '</error>');
 			return 1;
 		}
-		$output->writeln('Backup key imported, fingerprint <info>' . $this->keys->fingerprint() . '</info>.');
+		$output->writeln(($replace ? 'The unused key was replaced. ' : '') . 'Backup key imported, fingerprint <info>' . $this->keys->fingerprint() . '</info>.');
 		// Read from the kit file, which is not authenticated beyond the wrapped key: show it so a
 		// wrong or altered value stands out.
 		$output->writeln('Deletion delay for forgotten snapshots: <info>' . $this->keys->deleteDelayDays() . '</info> days (from the kit).');

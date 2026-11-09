@@ -7,7 +7,7 @@ installations and hosted Nextcloud. (Choosing SMB as a storage backend is the on
 see "Storage backend experiences" below — that requirement comes from files_external, not from
 ng_backup, and applies to any Nextcloud app that writes to an SMB share.)
 
-**Status: 1.0.3, stable.** Disaster recovery has been tested on real installations (see "Tested
+**Status: 1.1.0, stable.** Disaster recovery has been tested on real installations (see "Tested
 disaster recoveries" below). See "Known limitations" below, `PLAN.md` for the design and
 `docs/HOWTO.md` for a step-by-step guide from setup to a tested restore. Server lost? See
 `docs/DISASTER-RECOVERY.md`.
@@ -87,8 +87,9 @@ All backups of an installation are encrypted with one master key.
 - The **recovery kit** is your own copy of that encrypted key. Still keep it off the server and
   off the location: an attacker who gets write access to the location can damage or delete its
   `config` file on purpose, and without the kit that makes every backup there unreadable.
-- For a **restore on a new server** (disaster recovery) you currently need the **recovery kit**
-  and **one passphrase**.
+- For a **restore on a new server** (disaster recovery) **one passphrase** is enough: the new
+  server takes the key from the location. With the **recovery kit** you can restore even when the
+  location's `config` file is damaged or gone.
 - Planned: an option to not store the key on the location at all. Then the kit is the only copy,
   and losing it means losing every backup; that option will come with an explicit warning.
 - Up to **three passphrases** ("slots") can open the key, so one person leaving or dying does not
@@ -170,6 +171,7 @@ Full restores onto a fresh server, following only [the guide](docs/DISASTER-RECO
 | Production, about 1 TB, 150,000 files (Nextcloud All-in-One) | Hetzner Storage Box (SFTP), Germany → Canada | PostgreSQL → PostgreSQL | 150,622 files restored in about 25 h (13-14 MiB/s), sample identical |
 | The same, 1.0.2 | Hetzner Storage Box (SMB), Germany → Canada | PostgreSQL → PostgreSQL | 150,755 files restored in about 29 h (7-13 MiB/s), going on after a lost connection; sample identical, empty folders not restored ([#27](https://github.com/dillardblom/ng_backup/issues/27)) |
 | 1.0.3, small simulations of 2 GB: as planned, with the restore killed halfway, and with a disk that runs full | Local SFTP server | PostgreSQL → PostgreSQL and MariaDB | all 3,101 user files and all empty folders identical; users, a share and a calendar back |
+| 1.1.0, the same three simulations | Local SFTP server | PostgreSQL → PostgreSQL and MariaDB | all 3,101 user files identical in content, size and time, all empty folders back; users, a share and a calendar back |
 | 138 GB simulation: 20 users, calendars, contacts, mail, shares, team folders with an ACL, versions, trash | OVH S3, Warsaw → Canada | MariaDB → PostgreSQL | all 15,772 files and every database count identical |
 | The same | OVH S3 | MariaDB → MariaDB | all 15,772 files and every database count identical |
 | The same | Hetzner Storage Box (SMB), Germany → Canada | MariaDB → SQLite | all 15,772 files and every database count identical (27.6 h, about 1.5 MB/s) |
@@ -266,18 +268,9 @@ What is planned, without dates. Ideas and votes are welcome in the
 [issues](https://github.com/dillardblom/ng_backup/issues); if something you need is listed here,
 a 👍 on its issue helps decide what comes first.
 
-**1.1.0**
-- Restore without the recovery kit: the backup key from the location itself, opened with one of
-  your passphrases.
-- A schedule per location, also "every N hours".
-- Locations backed up one after the other instead of at the same time.
-- All folders get their original modification time back on a restore, not only the empty ones.
-- A note on a restore point that you can change afterwards.
-- Pinning a restore point, so the retention policy never removes it (for example the one from
-  before an upgrade).
-- An option to pause heavy background jobs (such as Memories, Recognize or the Preview
-  Generator) while a backup runs.
-- Faster backups: reading and uploading at the same time.
+**1.2.0**
+- Faster backups over a long line: several uploads at the same time, with a setting
+  (2 by default) to suit the server and the size of the backup.
 
 **Later**
 - A full restore onto the existing installation, without first installing a fresh Nextcloud, in a
@@ -293,8 +286,9 @@ On the backlog; know them before you rely on NG Backup:
 
 - **Empty folders only come back from backups made with 1.0.3 or newer.** Older restore points do
   not contain them.
-- **Folders with files in them show the time of the restore**, not their original modification time.
-  The files keep theirs. On the roadmap.
+- **Folders with files in them only get their original modification time back from backups made with
+  1.1.0 or newer.** From older restore points they show the time of the restore; the files keep theirs.
+  A restore through Nextcloud into a folder that is already there leaves that folder's time alone.
 - **Only the data directory is backed up.** Object storage as primary storage (`objectstore` in
   `config.php`) is not supported: a backup refuses to start there. Folders mounted through the
   External storage app are not in the data directory and are **not included**, without a warning.
@@ -329,10 +323,13 @@ On the backlog; know them before you rely on NG Backup:
 | `backup:key:init`, `backup:key:kit`, `backup:key:confirm` | create the key, recovery kit, confirmation |
 | `backup:key:slots`, `backup:key:slot:add/replace/remove` | passphrase slots |
 | `backup:target:backends/add/edit/list/remove/append-only` | backup locations |
+| `backup:target:schedule` | when a location is backed up: off, daily, or every N hours |
 | `backup:run`, `backup:status`, `backup:list` | back up, status (runs of the last 7 days; `--all` for all), restore points |
 | `backup:cancel <run>` | stop a running backup |
 | `backup:browse`, `backup:restore` | browse and restore |
 | `backup:retention`, `backup:prune`, `backup:trash`, `backup:trash:restore` | retention, cleanup, trash |
+| `backup:pin`, `backup:note` | keep a restore point, a note you can change later |
+| `backup:pause-jobs` | whether heavy background jobs of other apps pause during a backup |
 | `backup:verify` | checksum audit of a restore point (`--deep` downloads and decrypts everything) |
 | `backup:restore:full` | whole-server restore onto a fresh installation (after `backup:key:import`) |
 | `backup:key:import` | import a recovery kit on a fresh installation |

@@ -79,7 +79,9 @@ occ backup:list
 Later runs upload only changed data. An unchanged run uploads (almost) nothing; the output shows
 the number of uploaded bytes, so check that value when you test incremental behaviour.
 
-Schedule `occ backup:run` from system cron (or use the Administration settings, if you prefer).
+Set when each location is backed up in the Administration settings, or with
+`occ backup:target:schedule offsite 02:00` (once a day), `02:00/6` (every 6 hours from 02:00) or `off`.
+Locations are backed up one after the other.
 
 ## 4. Check the backup regularly
 
@@ -155,6 +157,10 @@ occ backup:list offsite                              # the snapshots must be lis
 occ backup:restore:full offsite <snapshot>
 ```
 
+Without the kit, leave out `backup:key:import`: `backup:target:add` finds the backups and takes
+the key from the location with a passphrase (`--passphrase-file=/path/passphrase`, or it asks).
+Backups then wait until a new kit is downloaded and confirmed.
+
 The command refuses on an installation that already has more than one user, and asks before it
 starts; `--force` skips both (also needed to rerun it after it stopped halfway).
 
@@ -173,7 +179,12 @@ occ backup:prune offsite --dry-run   # show first
 occ backup:prune offsite             # apply the policy; forgotten snapshots go to the trash first
 occ backup:trash                  # list the trash
 occ backup:trash:restore offsite <id>
+occ backup:pin offsite <id>          # keep this restore point; --unpin to undo
+occ backup:note offsite <id> "text"  # a note you can change later; without text it is removed
 ```
+
+The retention policy leaves a pinned restore point alone, and a pinned one does not take the place of
+a daily, weekly or monthly one. Pin and note are stored on the location, so a new server sees them too.
 
 Snapshots are kept according to the policy, and their data is deleted only after the deletion delay
 (set with `backup:key:init --delete-delay-days`). `occ backup:prune offsite --dry-run` shows what would be

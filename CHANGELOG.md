@@ -11,6 +11,60 @@ Each heading starts with that `<version>`, once: the app store shows a release t
 whose heading starts with its `x.y.z` and ignores anything after it, so `## [1.0.0-rc.6]` would be
 shown under 1.0.0. The git tag of a release candidate goes after the date.
 
+## [1.1.0] - 2026-11-09
+
+### Added
+- Pin a restore point, on the restore page or with `occ backup:pin`: the retention policy leaves it
+  alone, for example the one from before an upgrade. Unpinning notifies all administrators.
+- A note on a restore point that you can change afterwards, on the restore page or with
+  `occ backup:note`. Pins and notes are stored encrypted on the location, so a new server sees them.
+  An older version of NG Backup can still read the location, but drops them when it writes to it.
+- A schedule per location: off, once a day, or every N hours from a given time, on the page under
+  Backups or with `occ backup:target:schedule`. After the update every location keeps the time that
+  held for all of them; a new location starts with the schedule of the first one. A schedule is
+  shown and changed in the time zone it was saved in, which the page names next to the time.
+- All folders get their original modification time back on a restore, not only the empty ones, from
+  the first backup made with this version. An older version of NG Backup can still read new restore
+  points. A restore through Nextcloud into a folder that is already there leaves its time alone.
+- Heavy background jobs (Memories, Recognize, Preview Generator, full text search, the antivirus
+  background scan) pause while a backup runs, at most 6 hours in a row, then they get an hour. No app
+  is turned off, and a job that is running goes on. On by default; turn it off under Backups or with
+  `occ backup:pause-jobs off`.
+- Disaster recovery without the recovery kit: on a new server without a backup key,
+  `occ backup:target:add` finds the backups on the location and takes their key from there with one
+  of the old server's passphrases. Backups then wait until a new recovery kit is confirmed. The
+  deletion delay is now also stored on the location, sealed with the key, from its first backup
+  with this version; a location backed up only by an older version gives the default of 7 days.
+  When the settings on the location cannot be read, the longest delay (365 days) is taken, so
+  nothing leaves the Bin sooner than on the old server; the command says so.
+- A passphrase change that cannot reach a location (offline at the time) now reaches it at the
+  location's next backup, so a new server can open it with the new passphrase.
+- `occ backup:target:add --repair-config`: when the config file of a location is gone, the recovery
+  kit writes it again (for locations backed up by this version or newer). Before, the message said
+  this was possible, but it was not.
+- The key page warns against creating a new key when you are restoring a server. A key made there
+  by mistake can still make way for the key of the backups, as long as it was never used (no
+  location, no backup): `occ backup:key:import --replace-unused-key` with the kit, or
+  `occ backup:target:add --replace-unused-key` with a passphrase of the old server. A key that
+  protected a location is never replaced, and neither is a key from before this version. All
+  administrators are notified of a replacement.
+
+### Changed
+- The list of backups stays within the page: a long label, note or error wraps onto more lines
+  instead of making the table scroll sideways.
+- Reading files for a backup is much faster on disks where every request waits, such as network and
+  cloud volumes: files are read in pieces of 4 MiB instead of 8 KiB. On a test server the disk
+  delivered 27 MiB/s instead of 5 MiB/s.
+- Locations are backed up one after the other: a backup that has to wait shows as queued. A restore
+  point has the time its backup really began, not the time it was queued.
+- Choosing a time no longer starts a backup right away when that time has already passed today.
+- A location without a schedule no longer gets the notification that it has had no recent backup.
+  Instead, all administrators are told when a schedule is turned off, and reminded once a week while
+  another location is still backed up, or every day when none is.
+- A file or folder that is left out because of its name now gets a notification of its own, in the
+  log and in `occ backup:run`. It says the item is missing from the backup, gives example paths and
+  asks to rename it; before, it was reported as unreadable, with advice about permissions.
+
 ## [1.0.3] - 2026-11-06
 
 ### Fixed

@@ -24,6 +24,10 @@ use OCP\AppFramework\Db\Entity;
  * @method void setFiles(?int $v)
  * @method int|null getBytes()
  * @method void setBytes(?int $v)
+ * @method string|null getNote()
+ * @method void setNote(?string $v)
+ * @method bool|null getPinned()
+ * @method void setPinned(?bool $v)
  */
 final class Snapshot extends Entity {
 	protected int $targetId = 0;
@@ -33,8 +37,11 @@ final class Snapshot extends Entity {
 	protected int $createdAt = 0;
 	protected ?int $files = null;
 	protected ?int $bytes = null;
+	protected ?string $note = null;
+	protected ?bool $pinned = null;
 
 	public function __construct() {
+		$this->addType('pinned', 'boolean');
 		$this->addType('targetId', 'integer');
 		$this->addType('createdAt', 'integer');
 		$this->addType('files', 'integer');

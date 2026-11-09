@@ -46,6 +46,10 @@ final class Notifier implements INotifier {
 				$notification->setParsedSubject($l->t('Backup to %1$s finished with warnings: %2$s unreadable, %3$s changed while being read', [$p['target'], $p['unreadable'], $p['changing']]));
 				$notification->setParsedMessage($l->t('Unreadable files and folders are missing from this backup (check their permissions). Files that kept changing were saved as they were while being read. Examples: %s', [$p['examples'] ?? '']));
 				break;
+			case 'run_bad_names':
+				$notification->setParsedSubject($l->n('Backup to %s finished, but %n item is missing because of its name', 'Backup to %s finished, but %n items are missing because of their names', (int)$p['count'], [$p['target']]));
+				$notification->setParsedMessage($l->t('Names with a backslash or a control character, or that are not valid UTF-8, are not supported, so these files and folders are not in this backup. Rename them; the next backup includes them. Examples: %s', [$p['examples'] ?? '']));
+				break;
 			case 'quota_warning':
 				$notification->setParsedSubject($l->t('Backup location %1$s is at %2$s%% of its limit (%3$s of %4$s)', [$p['target'], $p['percent'], $p['used'], $p['limit']]));
 				$notification->setParsedMessage($l->t('Backups stop when the limit is reached. Raise the limit, or let the retention policy remove older backups.'));
@@ -57,13 +61,21 @@ final class Notifier implements INotifier {
 					: $l->t('No successful backup to %1$s since %2$s', [$p['target'], $p['since']]));
 				$notification->setParsedMessage($l->t('Check the backup settings and the server log.'));
 				break;
+			case 'schedule_off':
+				$notification->setParsedSubject($l->t('Backup location %s has no schedule', [$p['target']]));
+				$notification->setParsedMessage(($p['others'] ?? '') === '1'
+					? $l->t('No backups run to this location until it gets a schedule or someone starts one. If that is what you want, you can ignore this reminder.')
+					: $l->t('No location has a schedule, so no backups run at all unless someone starts one. Set a schedule under Backups.'));
+				break;
 			case 'security_event':
 				$who = (string)($p['actor'] ?? '');
 				$notification->setParsedSubject(match ($p['event'] ?? '') {
 					'kit_downloaded' => $l->t('%s downloaded the backup recovery kit', [$who]),
+					'key_replaced' => $l->t('%1$s replaced the unused backup key %2$s by the key of existing backups, %3$s; download and confirm the new recovery kit', [$who, $p['old'] ?? '', $p['new'] ?? '']),
 					'target_removed' => $l->t('%1$s removed backup location %2$s', [$who, $p['target'] ?? '']),
 					'target_changed' => $l->t('%1$s changed the connection settings of backup location %2$s', [$who, $p['target'] ?? '']),
-					'append_only_off' => $l->t('%1$s turned off append-only for backup location %2$s', [$who, $p['target'] ?? '']),
+					'schedule_off' => $l->t('%1$s turned off the schedule of backup location %2$s', [$who, $p['target'] ?? '']),
+					'append_only_off' =>$l->t('%1$s turned off append-only for backup location %2$s', [$who, $p['target'] ?? '']),
 					'retention_changed' => $l->t('%1$s changed the backup retention to %2$s', [$who, $p['policy'] ?? '']),
 					'snapshots_forgotten' => $l->t('%1$s moved %2$s snapshots of %3$s to the trash; they are deleted permanently after %4$s unless restored', [$who, $p['count'] ?? '', $p['target'] ?? '', $p['until'] ?? '']),
 					'snapshot_untrashed' => $l->t('%1$s restored snapshot %2$s of %3$s from the trash', [$who, $p['snapshot'] ?? '', $p['target'] ?? '']),

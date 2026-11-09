@@ -27,6 +27,9 @@ use OCP\Server;
  * classes but its enabled/disabled state is left as the admin set it.
  */
 final class TargetService {
+	/** Deletion delay taken when a location's own cannot be read: nothing leaves the Bin sooner than on the old server. */
+	public const LONGEST_DELETE_DELAY = 365;
+
 	public function __construct(
 		private TargetMapper $mapper,
 		private KeyService $keys,
@@ -35,6 +38,8 @@ final class TargetService {
 		private \OCA\NgBackup\Db\DbIndexCache $indexCache,
 		private \OCA\NgBackup\Db\AppConfigCatalogAnchor $anchor,
 		private SnapshotMapper $snapshots,
+		private AlertService $alerts,
+		private \OCA\NgBackup\Db\RunMapper $runs,
 	) {
 	}
 
@@ -51,18 +56,31 @@ final class TargetService {
 	 * @param ?callable(int, int): void $progress reading an existing repository's index: files done, and in all
 	 * @return array{target: Target, created: bool}
 	 */
-	public function add(string $name, string $backend, string $auth, array $options, string $basePath, ?callable $progress = null): array {
+	public function add(string $name, string $backend, string $auth, array $options, string $basePath, ?callable $progress = null, bool $repairConfig = false): array {
 		$this->validateName($name);
 		$this->requireUsableBackend($backend);
 		$keys = $this->keys->keyRing();
-		$storageBackend = $this->buildBackend($backend, $auth, $options, $basePath);
-		if ($storageBackend->exists('config')) {
-			$repo = Repository::openWithKey($storageBackend, $keys, $this->indexCache, $this->anchor, $progress);
-			$created = false;
-		} else {
-			$repo = Repository::initWithKey($storageBackend, $keys, $this->keys->wrappedKey(), $this->anchor);
-			$created = true;
+		$storageBackend = $this->buildBackend($backend, $auth, $options, $basePath, !$repairConfig);
+		try {
+			if ($repairConfig) {
+				Repository::repairConfig($storageBackend, $keys, $this->keys->wrappedKey());
+			}
+			if ($storageBackend->exists('config')) {
+				$repo = Repository::openWithKey($storageBackend, $keys, $this->indexCache, $this->anchor, $progress);
+				$created = false;
+			} else {
+				$repo = Repository::initWithKey($storageBackend, $keys, $this->keys->wrappedKey(), $this->anchor);
+				$created = true;
+			}
+		} catch (\OCA\NgBackup\Repository\RepositoryException $e) {
+			$otherKey = str_contains($e->getMessage(), 'different key') || str_contains($e->getMessage(), 'do not open with this key');
+			if ($otherKey && $this->keyIsUnused()) {
+				throw new \OCA\NgBackup\Repository\RepositoryException(rtrim($e->getMessage(), '.') . '. ' . self::UNUSED_KEY_HINT, 0, $e);
+			}
+			throw $e;
 		}
+		$this->keys->markUsed();
+		$this->recordSettings($repo);
 
 		foreach ($this->mapper->findAll() as $existing) {
 			if ($existing->getRepositoryId() === $repo->id()) {
@@ -78,6 +96,11 @@ final class TargetService {
 		$target->setBasePath(trim($basePath, '/'));
 		$target->setRepositoryId($repo->id());
 		$target->setCreatedAt(time());
+		// Like the location before it: a backup scheme is usually one scheme.
+		$first = $this->mapper->findAll()[0] ?? null;
+		$target->setSchedule($first?->getSchedule() ?? '');
+		$target->setScheduleZone($first?->getScheduleZone());
+		$target->setScheduleSince(time());
 		$target = $this->mapper->insert($target);
 		if (!$created) {
 			// Disaster recovery: occ backup:list reads this local cache, not the repository
@@ -85,6 +108,128 @@ final class TargetService {
 			$this->adoptSnapshots($target, $repo);
 		}
 		return ['target' => $target, 'created' => $created];
+	}
+
+	public const UNUSED_KEY_HINT = 'The backup key of this server was never used (no location, no backup), so it can make way for the key of these backups: '
+		. 'with the old server\'s recovery kit, occ backup:key:import <kit file> --replace-unused-key; without the kit, '
+		. 'occ backup:target:add with the same details and --replace-unused-key (asks for a passphrase of the old server)';
+
+	/**
+	 * A key that never protected anything: no location was created or adopted with it, and the
+	 * database has no location and no run (installations from before the flag existed). Only such
+	 * a key may make way for the key of existing backups, e.g. after a new key was made by
+	 * mistake on a server that is being restored.
+	 */
+	public function keyIsUnused(): bool {
+		return $this->keys->isInitialized() && !$this->keys->wasUsed()
+			&& $this->mapper->findAll() === [] && $this->runs->countAll() === 0;
+	}
+
+	/**
+	 * occ backup:key:import on a server whose own key was never used: the kit's key takes its place.
+	 *
+	 * @param array<string, mixed> $kit
+	 * @throws \OCA\NgBackup\Crypto\CryptoException wrong passphrase: nothing changed
+	 */
+	public function importKitReplacingUnusedKey(array $kit, #[\SensitiveParameter] string $passphrase): void {
+		$old = $this->requireUnusedKey();
+		$this->keys->importRecoveryKit($kit, $passphrase, true);
+		$this->alerts->securityEvent('key_replaced', ['old' => $old, 'new' => $this->keys->fingerprint()]);
+	}
+
+	/** @return string the fingerprint of the unused key */
+	private function requireUnusedKey(): string {
+		if (!$this->keys->isInitialized()) {
+			throw new \RuntimeException('There is no backup key here to replace');
+		}
+		if (!$this->keyIsUnused()) {
+			throw new \RuntimeException('The backup key of this server (fingerprint ' . $this->keys->fingerprint() . ') has been used for a backup location: it is never replaced');
+		}
+		return $this->keys->fingerprint();
+	}
+
+	public const LOCATION_REPOSITORY = 'repository';
+	public const LOCATION_DATA_WITHOUT_CONFIG = 'data-without-config';
+	public const LOCATION_EMPTY = 'empty';
+
+	/**
+	 * What these settings lead to: a repository, backup data whose config is gone, or nothing
+	 * of NG Backup. Creates nothing.
+	 *
+	 * @return self::LOCATION_*
+	 */
+	public function locationState(string $backend, string $auth, array $options, string $basePath): string {
+		$this->requireUsableBackend($backend);
+		$storage = $this->buildBackend($backend, $auth, $options, $basePath, false);
+		if ($storage->exists('config')) {
+			return self::LOCATION_REPOSITORY;
+		}
+		return Repository::holdsData($storage) ? self::LOCATION_DATA_WITHOUT_CONFIG : self::LOCATION_EMPTY;
+	}
+
+	/**
+	 * Disaster recovery without the recovery kit, on an installation without a backup key: take
+	 * the key from the location's config with one of its passphrases, then add the location as
+	 * usual. The key is only kept when it really is the one the repository was made with.
+	 * With $replaceUnusedKey, a key this server has but never used makes way (keyIsUnused()).
+	 *
+	 * @param array<string, mixed> $options
+	 * @param ?callable(int, int): void $progress
+	 * @return array{target: Target, created: bool, deleteDelayDays: ?int, settingsUnreadable: bool} the deletion delay the location had stored, if any, and whether its settings could not be read
+	 * @throws \OCA\NgBackup\Crypto\CryptoException wrong passphrase
+	 */
+	public function addWithPassphrase(string $name, string $backend, string $auth, array $options, string $basePath,
+		#[\SensitiveParameter] string $passphrase, ?callable $progress = null, bool $replaceUnusedKey = false): array {
+		$old = null;
+		if ($replaceUnusedKey) {
+			$old = $this->requireUnusedKey();
+		} elseif ($this->keys->isInitialized()) {
+			throw new \RuntimeException('A backup key already exists here');
+		}
+		$this->validateName($name);
+		$this->requireUsableBackend($backend);
+		$storageBackend = $this->buildBackend($backend, $auth, $options, $basePath, false);
+		if (!$storageBackend->exists('config')) {
+			throw new \InvalidArgumentException("No NG Backup repository found in folder '" . trim($basePath, '/') . "'");
+		}
+		$wrapped = Repository::wrappedKeyAt($storageBackend);
+		$keys = \OCA\NgBackup\Crypto\KeyRing::unwrapAny($wrapped, $passphrase);
+		if (!Repository::madeWithKey($storageBackend, $keys)) {
+			throw new \RuntimeException('The key in the config at this location does not open its backups: the config is damaged or was replaced. Only the recovery kit can help now: occ backup:key:import <kit file>, then this command again.');
+		}
+		$settings = Repository::settingsAt($storageBackend, $keys);
+		$stored = $settings['delete_delay_days'] ?? null;
+		$delay = is_int($stored) && $stored >= 1 && $stored <= 365 ? $stored : null;
+		// Settings that are there but cannot be read, or hold no valid delay (also none at all): the old server's delay
+		// is unknown, so take the longest one; a shorter guess could empty the Bin too soon.
+		$unknown = ($settings['unreadable'] ?? false) === true || ($settings !== [] && $delay === null);
+		$this->keys->adoptKey($keys, $wrapped, $delay ?? ($unknown ? self::LONGEST_DELETE_DELAY : null), $replaceUnusedKey);
+		if ($old !== null) {
+			$this->alerts->securityEvent('key_replaced', ['old' => $old, 'new' => $this->keys->fingerprint()]);
+		}
+		return $this->add($name, $backend, $auth, $options, $basePath, $progress) + ['deleteDelayDays' => $delay, 'settingsUnreadable' => $unknown];
+	}
+
+	/** A passphrase change that missed this location (offline at the time) reaches it now. A failure is tried again at the next backup. */
+	public function catchUpWrappedKey(Target $target, Repository $repo): void {
+		if (!$this->keys->wrappedKeyPending($target->getId())) {
+			return;
+		}
+		try {
+			$repo->updateWrappedKey($this->keys->wrappedKey());
+			$this->keys->setWrappedKeyPending($target->getId(), false);
+		} catch (\Throwable $e) {
+			Server::get(\Psr\Log\LoggerInterface::class)->warning('NG Backup: the last passphrase change still does not reach ' . $target->getName()
+				. ' (it keeps the previous passphrases); tried again at its next backup: ' . $e->getMessage(), ['exception' => $e]);
+		}
+	}
+
+	/** Seal the settings fixed at installation on the location, once. A failure is tried again at the next backup. */
+	public function recordSettings(Repository $repo): void {
+		try {
+			$repo->recordSettings(['delete_delay_days' => $this->keys->deleteDelayDays()]);
+		} catch (\Throwable) {
+		}
 	}
 
 	/**
@@ -208,7 +353,25 @@ final class TargetService {
 		return $result;
 	}
 
+	/** Update the local copy of a snapshot's note or pin, if the snapshot is listed here at all. */
+	public function syncSnapshot(Target $target, string $snapshotId, ?string $note = null, ?bool $pinned = null): void {
+		try {
+			$s = $this->snapshots->findOne($target->getId(), $snapshotId);
+		} catch (DoesNotExistException) {
+			return;
+		}
+		if ($note !== null) {
+			$s->setNote($note !== '' ? $note : null);
+		}
+		if ($pinned !== null) {
+			$s->setPinned($pinned);
+		}
+		$this->snapshots->update($s);
+	}
+
 	private function adoptSnapshots(Target $target, Repository $repo): void {
+		$notes = $repo->snapshotNotes();
+		$pinned = array_flip($repo->pinnedSnapshots());
 		foreach ($repo->listSnapshots() as $snapshotId) {
 			try {
 				$this->snapshots->findOne($target->getId(), $snapshotId);
@@ -227,6 +390,8 @@ final class TargetService {
 				$s->setCreatedAt((int)strtotime((string)($meta['time'] ?? 'now')));
 				$s->setFiles((int)($meta['stats']['files'] ?? 0));
 				$s->setBytes((int)($meta['stats']['bytes'] ?? 0));
+				$s->setNote($notes[$snapshotId] ?? null);
+				$s->setPinned(isset($pinned[$snapshotId]));
 				$this->snapshots->insert($s);
 			} catch (\Throwable $e) {
 				Server::get(\Psr\Log\LoggerInterface::class)->warning('NG Backup: snapshot ' . $snapshotId . ' on ' . $target->getName() . ' not listed: ' . $e->getMessage(), ['exception' => $e]);
@@ -248,6 +413,30 @@ final class TargetService {
 	}
 
 	/** Size limit for the data stored on this location (null = none). */
+	/**
+	 * @param string $schedule see LocationSchedule
+	 * @throws \InvalidArgumentException
+	 */
+	public function setSchedule(Target $target, string $schedule, string $zone): Target {
+		if (!Schedule::validZone($zone)) {
+			throw new \InvalidArgumentException('Unknown time zone: ' . $zone);
+		}
+		$new = LocationSchedule::normalize($schedule);
+		$turnedOff = $new === '' && (string)$target->getSchedule() !== '';
+		if ($new === (string)$target->getSchedule() && $zone === $target->getScheduleZone()) {
+			// Saved again unchanged: a moment that already passed still gets its backup
+			return $target;
+		}
+		$target->setSchedule($new);
+		$target->setScheduleZone($zone);
+		$target->setScheduleSince(time());
+		$target = $this->mapper->update($target);
+		if ($turnedOff) {
+			$this->alerts->securityEvent('schedule_off', ['target' => $target->getName()]);
+		}
+		return $target;
+	}
+
 	public function setMaxBytes(Target $target, ?int $maxBytes): Target {
 		$target->setMaxBytes($maxBytes);
 		return $this->mapper->update($target);
@@ -261,10 +450,29 @@ final class TargetService {
 	/** Remove the target from NG Backup. The backups on the target itself are not touched. */
 	public function remove(Target $target): void {
 		$this->mapper->delete($target);
+		// The location is gone now: tidying up must not fail the removal, or the caller would skip
+		// the removal event and a retry would no longer find the location
+		$this->tidyUp($target, fn () => $this->keys->setWrappedKeyPending($target->getId(), false));
 		// The cached index of its repository is only of use while a location points at it
-		$repositoryId = $target->getRepositoryId();
-		if ($repositoryId !== null && !array_filter($this->list(), fn (Target $t) => $t->getRepositoryId() === $repositoryId)) {
-			$this->indexCache->forget($repositoryId);
+		$this->tidyUp($target, function () use ($target): void {
+			$repositoryId = $target->getRepositoryId();
+			if ($repositoryId !== null && !array_filter($this->list(), fn (Target $t) => $t->getRepositoryId() === $repositoryId)) {
+				$this->indexCache->forget($repositoryId);
+			}
+		});
+	}
+
+	/** One tidy-up step after a removal: a failure is logged (if even that works) and never thrown. */
+	private function tidyUp(Target $target, callable $step): void {
+		try {
+			$step();
+		} catch (\Throwable $e) {
+			try {
+				Server::get(\Psr\Log\LoggerInterface::class)->warning('NG Backup: location ' . $target->getName()
+					. ' removed, tidying up after it failed: ' . $e->getMessage(), ['exception' => $e]);
+			} catch (\Throwable) {
+				// nothing left to tell it to
+			}
 		}
 	}
 

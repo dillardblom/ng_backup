@@ -62,6 +62,16 @@ final class AlertService {
 	}
 
 	/**
+	 * A backup that finished but left out files or folders because of their name.
+	 *
+	 * @param list<string> $examples
+	 */
+	public function runBadNames(Run $run, string $targetName, int $count, array $examples): void {
+		$this->notifyAdmins('run_bad_names', 'run-' . $run->getId(), ['target' => $targetName, 'count' => (string)$count,
+			'examples' => mb_strimwidth(implode(', ', $examples), 0, 300, '…')]);
+	}
+
+	/**
 	 * Remember how much is stored on a location (for the settings page) and warn administrators
 	 * once a day when it is at 80% of its limit or more.
 	 */
@@ -91,9 +101,36 @@ final class AlertService {
 		return $v === '' ? null : (int)$v;
 	}
 
+	/**
+	 * Whether it is time to remind administrators of a location without a schedule: once a week
+	 * while another location is still backed up, every day when none is. An hour of margin, so
+	 * that the moment of the cron run does not push a reminder to the next day.
+	 */
+	public static function offReminderDue(int $last, int $now, bool $othersActive): bool {
+		return $now - $last >= ($othersActive ? 7 * 86400 : 86400) - 3600;
+	}
+
+	public function checkOff(Target $target, bool $othersActive): void {
+		if ((string)$target->getSchedule() !== '') {
+			return;
+		}
+		$key = 'off_notified_' . $target->getId();
+		$now = time();
+		$last = max((int)$target->getScheduleSince(), $this->appConfig->getValueInt(Application::APP_ID, $key, 0));
+		if (!self::offReminderDue($last, $now, $othersActive)) {
+			return;
+		}
+		$this->appConfig->setValueInt(Application::APP_ID, $key, $now);
+		$this->notifyAdmins('schedule_off', 'off-' . $target->getId() . '-' . date('Y-m-d', $now),
+			['target' => $target->getName(), 'others' => $othersActive ? '1' : '0']);
+	}
+
 	/** At most one notification per location per day. */
 	public function checkStale(Target $target): void {
-		$last = $this->runs->lastFinished($target->getId(), BackupService::KIND_FULL);
+		if ((string)$target->getSchedule() === '') {
+			return; // no schedule is a choice, as for a location that is only connected now and then
+		}
+		$last =$this->runs->lastFinished($target->getId(), BackupService::KIND_FULL);
 		$lastTime = $last?->getFinishedAt() ?? $target->getCreatedAt();
 		if (time() - $lastTime < self::STALE_AFTER || $this->runs->findRunning($target->getId(), BackupService::KIND_FULL) !== []) {
 			return;
