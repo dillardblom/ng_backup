@@ -452,16 +452,27 @@ final class TargetService {
 		$this->mapper->delete($target);
 		// The location is gone now: tidying up must not fail the removal, or the caller would skip
 		// the removal event and a retry would no longer find the location
-		try {
-			$this->keys->setWrappedKeyPending($target->getId(), false);
-			// The cached index of its repository is only of use while a location points at it
+		$this->tidyUp($target, fn () => $this->keys->setWrappedKeyPending($target->getId(), false));
+		// The cached index of its repository is only of use while a location points at it
+		$this->tidyUp($target, function () use ($target): void {
 			$repositoryId = $target->getRepositoryId();
 			if ($repositoryId !== null && !array_filter($this->list(), fn (Target $t) => $t->getRepositoryId() === $repositoryId)) {
 				$this->indexCache->forget($repositoryId);
 			}
+		});
+	}
+
+	/** One tidy-up step after a removal: a failure is logged (if even that works) and never thrown. */
+	private function tidyUp(Target $target, callable $step): void {
+		try {
+			$step();
 		} catch (\Throwable $e) {
-			Server::get(\Psr\Log\LoggerInterface::class)->warning('NG Backup: location ' . $target->getName()
-				. ' removed, tidying up after it failed: ' . $e->getMessage(), ['exception' => $e]);
+			try {
+				Server::get(\Psr\Log\LoggerInterface::class)->warning('NG Backup: location ' . $target->getName()
+					. ' removed, tidying up after it failed: ' . $e->getMessage(), ['exception' => $e]);
+			} catch (\Throwable) {
+				// nothing left to tell it to
+			}
 		}
 	}
 

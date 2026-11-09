@@ -30,6 +30,19 @@ class KeyRingTest extends TestCase {
 		KeyRing::unwrapAny($wrapped, 'right');
 	}
 
+	public function testAShortSaltOrNonceIsADamagedKey(): void {
+		foreach (['salt', 'nonce'] as $part) {
+			$wrapped = KeyRing::generate()->wrap('right');
+			$wrapped[$part] = base64_encode('short');
+			try {
+				KeyRing::unwrapAny($wrapped, 'right');
+				$this->fail("a short $part was accepted");
+			} catch (CryptoException $e) {
+				$this->assertStringContainsString('Damaged key file', $e->getMessage(), $part);
+			}
+		}
+	}
+
 	public function testBlobIdsAreKeyed(): void {
 		$this->assertNotSame(KeyRing::generate()->blobId('same'), KeyRing::generate()->blobId('same'));
 		$k = KeyRing::generate();

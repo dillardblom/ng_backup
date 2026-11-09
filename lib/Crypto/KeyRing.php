@@ -108,14 +108,21 @@ final class KeyRing {
 			|| $wrapped['mem'] < SODIUM_CRYPTO_PWHASH_MEMLIMIT_INTERACTIVE || $wrapped['mem'] > SODIUM_CRYPTO_PWHASH_MEMLIMIT_SENSITIVE) {
 			throw new CryptoException('Unsupported key derivation parameters (damaged or foreign key file)');
 		}
+		$kek = null;
 		try {
-			$kek = sodium_crypto_pwhash(SODIUM_CRYPTO_SECRETBOX_KEYBYTES, $passphrase, $b64($wrapped['salt']),
+			$salt = $b64($wrapped['salt']);
+			$sealed = $b64($wrapped['key']);
+			$nonce = $b64($wrapped['nonce']);
+			$kek = sodium_crypto_pwhash(SODIUM_CRYPTO_SECRETBOX_KEYBYTES, $passphrase, $salt,
 				$wrapped['ops'], $wrapped['mem'], SODIUM_CRYPTO_PWHASH_ALG_ARGON2ID13);
-			$master = sodium_crypto_secretbox_open($b64($wrapped['key']), $b64($wrapped['nonce']), $kek);
-			sodium_memzero($kek);
+			$master = sodium_crypto_secretbox_open($sealed, $nonce, $kek);
 		} catch (\SodiumException|\ValueError $e) {
 			// invalid base64 or a salt/nonce of the wrong length: damaged, so the caller shows its recovery options
 			throw new CryptoException('Damaged key file: ' . $e->getMessage(), 0, $e);
+		} finally {
+			if ($kek !== null) {
+				sodium_memzero($kek);
+			}
 		}
 		if ($master === false) {
 			throw new CryptoException('Wrong passphrase or damaged key');
