@@ -638,6 +638,17 @@ in README "Known limitations":
      to hear how NG Backup works for you ... Share your experience" in de beheerpagina blijft tot
      dan staan. Er komt weinig feedback bij zo'n 150 downloads per versie; geen bericht is goed
      bericht. Het formulier (`experience.yml`) in de issues blijft.
+  10. **Alleen de database terughalen, CLI-only** (besluit 2026-11-10). Aanleiding: op nc01 liep
+     de automatische AIO-update 34 → 35 vast op een migratie van de (uitgeschakelde) app
+     files_archive; AIO had alle apps uitgezet en hun status alleen in het geheugen bewaard, dus
+     wat aan stond (en voor welke groepen) was weg. Uit de database in het restorepunt van 02:45
+     is `oc_appconfig` (rijen `enabled`) met een eenmalig script gelezen. Te bouwen:
+     `occ backup:restore:db <locatie> <snapshot>` met `--tables=` (één of meer tabellen) en
+     `--to-directory=DIR` (per tabel een leesbaar bestand, zonder iets aan de database te doen),
+     of zonder `--to-directory` de gekozen tabellen terugzetten in de draaiende instantie, in
+     onderhoudsmodus, met dezelfde controles als `restore:full` (schema, eigen ngb-rijen blijven).
+     Eventueel `--where` voor alleen sommige rijen (zoals `configkey = 'enabled'`). Geen web-UI:
+     daar kan een beheerder weinig mee.
 - **Bevindingen DR-test op PVE02 (2026-10-17, snapshot van nc01, 1 TB, AIO → gewone NC 34 met
   PostgreSQL 18)** — voor **1.0.0-rc.2**:
   1. Tabellen van apps die bij de backup **niet aanstonden** (restanten: Deck, ONLYOFFICE,

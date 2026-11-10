@@ -271,6 +271,9 @@ a 👍 on its issue helps decide what comes first.
 **1.2.0**
 - Faster backups over a long line: several uploads at the same time, with a setting
   (2 by default) to suit the server and the size of the backup.
+- Only the database from a restore point, with `occ` (no web interface): export one or more
+  tables to a local directory to look something up, or put chosen tables back into the running
+  instance in maintenance mode. For example the app settings after an update that went wrong.
 
 **Later**
 - A full restore onto the existing installation, without first installing a fresh Nextcloud, in a
