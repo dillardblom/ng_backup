@@ -665,9 +665,19 @@ in README "Known limitations":
      key niet zonder ingelogde gebruiker (nextcloud/server#14108; getest op NC 32 en 35: occ en cron
      accepteren elke key). Per locatie alle SHA-256-fingerprints van de server vastleggen (NC 32 krijgt
      de RSA-key, NC 35 de Ed25519-key van dezelfde Storage Box), via `readHostKeys()` aanbieden zodat de
-     controle vóór `login()` gebeurt; bestaande locaties krijgen trust on first use plus een melding.
+     controle vóór `login()` gebeurt.
+     **Werking (besluit 2026-11-25):** fingerprint ingevuld → controleren, en niet verder gaan als hij
+     niet klopt (duidelijke fout met verwachte en ontvangen fingerprint). Geen fingerprint → gewoon
+     doorgaan, zoals nu (geen trust on first use). Verwijdert iemand een fingerprint die er al stond
+     (bijv. om een back-up toch door te laten gaan), dan krijgen alle beheerders een
+     Nextcloud-notificatie (geen mail, zie uitgangspunten).
      Ons voorstel voor files_external zelf staat in #14108: centrale opslag van host keys (alleen het
      systeem schrijft) en een optionele fingerprint in de verbindingsgegevens.
+  3. **Na 1.1.1 (week van 7 dec): PR bij nextcloud/server voor files_external**, voorstel (b): een
+     optioneel veld `host_key_fingerprint` (SHA-256, één of meer) in de SFTP-verbinding, gecontroleerd
+     vóór `login()`; zonder veld verandert er niets. Met de testopstelling (twee SFTP-servers onder één
+     naam) als bewijs. Eerst de review-ronde. NG Backup geeft de fingerprint aan files_external door
+     zodra een Nextcloud-versie dat veld heeft.
 - **Bevindingen DR-test op PVE02 (2026-10-17, snapshot van nc01, 1 TB, AIO → gewone NC 34 met
   PostgreSQL 18)** — voor **1.0.0-rc.2**:
   1. Tabellen van apps die bij de backup **niet aanstonden** (restanten: Deck, ONLYOFFICE,
