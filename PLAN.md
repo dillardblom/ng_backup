@@ -658,6 +658,16 @@ in README "Known limitations":
      Nextcloud met uitleg dat de code open source en vrij te gebruiken blijft, dat support optioneel
      is en te koop via Nextcloud (enterprise support) of rechtstreeks bij Ensembia, en een link naar
      de NG Backup-supportpagina op de website.
+- **1.1.1** (besluit 2026-11-25), vóór 1.2.0, vanaf `main`:
+  1. **#33** restore met server-side encryptie: bestanden blijven versleuteld. Eerst de omweg, dan
+     echte ontsleuteling.
+  2. **#34** SFTP: host key controleren tegen een verwachte waarde. files_external controleert de host
+     key niet zonder ingelogde gebruiker (nextcloud/server#14108; getest op NC 32 en 35: occ en cron
+     accepteren elke key). Per locatie alle SHA-256-fingerprints van de server vastleggen (NC 32 krijgt
+     de RSA-key, NC 35 de Ed25519-key van dezelfde Storage Box), via `readHostKeys()` aanbieden zodat de
+     controle vóór `login()` gebeurt; bestaande locaties krijgen trust on first use plus een melding.
+     Ons voorstel voor files_external zelf staat in #14108: centrale opslag van host keys (alleen het
+     systeem schrijft) en een optionele fingerprint in de verbindingsgegevens.
 - **Bevindingen DR-test op PVE02 (2026-10-17, snapshot van nc01, 1 TB, AIO → gewone NC 34 met
   PostgreSQL 18)** — voor **1.0.0-rc.2**:
   1. Tabellen van apps die bij de backup **niet aanstonden** (restanten: Deck, ONLYOFFICE,
