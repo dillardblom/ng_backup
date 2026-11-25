@@ -668,9 +668,13 @@ in README "Known limitations":
      controle vóór `login()` gebeurt.
      **Werking (besluit 2026-11-25):** fingerprint ingevuld → controleren, en niet verder gaan als hij
      niet klopt (duidelijke fout met verwachte en ontvangen fingerprint). Geen fingerprint → gewoon
-     doorgaan, zoals nu (geen trust on first use). Verwijdert iemand een fingerprint die er al stond
-     (bijv. om een back-up toch door te laten gaan), dan krijgen alle beheerders een
-     Nextcloud-notificatie (geen mail, zie uitgangspunten).
+     doorgaan, zoals nu (geen trust on first use). Bij het aanmaken of testen van een verbinding de
+     vraag "Host key vastleggen?" met de fingerprints van de server; vastleggen bij het aanmaken geeft
+     geen notificatie. Wijzigt een beheerder een vastgelegde fingerprint (nieuwe key geaccepteerd) of
+     verwijdert iemand er een (bijv. om een back-up toch door te laten gaan), dan krijgen alle
+     beheerders een Nextcloud-notificatie (geen mail, zie uitgangspunten), zodat ze kunnen nagaan of
+     dat verwacht was of een MITM-aanval. Locatie zonder fingerprint: rustige hint "host key not
+     pinned" op de beheerpagina en in `occ backup:status`, niets blokkeert.
      Ons voorstel voor files_external zelf staat in #14108: centrale opslag van host keys (alleen het
      systeem schrijft) en een optionele fingerprint in de verbindingsgegevens.
   3. **Na 1.1.1 (week van 7 dec): PR bij nextcloud/server voor files_external**, voorstel (b): een
