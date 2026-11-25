@@ -274,6 +274,13 @@ a 👍 on its issue helps decide what comes first.
 - Only the database from a restore point, with `occ` (no web interface): export one or more
   tables to a local directory to look something up, or put chosen tables back into the running
   instance in maintenance mode. For example the app settings after an update that went wrong.
+- Restore in the web interface: faster browsing through a restore point, a cleaner table, and
+  fixes for restoring the files of one user (including deleted files and versions) and of
+  Team folders.
+
+**1.3.0**
+- A support button in the app: NG Backup stays open source and free to use; support is optional,
+  through Nextcloud enterprise support or directly from Ensembia.
 
 **Later**
 - A full restore onto the existing installation, without first installing a fresh Nextcloud, in a

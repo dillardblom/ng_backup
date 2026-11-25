@@ -649,6 +649,15 @@ in README "Known limitations":
      onderhoudsmodus, met dezelfde controles als `restore:full` (schema, eigen ngb-rijen blijven).
      Eventueel `--where` voor alleen sommige rijen (zoals `configkey = 'enabled'`). Geen web-UI:
      daar kan een beheerder weinig mee.
+  11. **Restore in de webinterface** (besluit 2026-11-25), voor 1.2.0:
+     a. Caching, zodat bladeren door een restorepunt sneller gaat.
+     b. Een tabel zonder lijnen voor een rustiger weergave.
+     c. Bestanden van één gebruiker terugzetten repareren, ook verwijderde bestanden en versies.
+     d. Bestanden van Team-mappen terugzetten repareren (issue #32).
+  12. **Support-knop in de app** (besluit 2026-11-25), voor **1.3.0**: een knop op de pagina in
+     Nextcloud met uitleg dat de code open source en vrij te gebruiken blijft, dat support optioneel
+     is en te koop via Nextcloud (enterprise support) of rechtstreeks bij Ensembia, en een link naar
+     de NG Backup-supportpagina op de website.
 - **Bevindingen DR-test op PVE02 (2026-10-17, snapshot van nc01, 1 TB, AIO → gewone NC 34 met
   PostgreSQL 18)** — voor **1.0.0-rc.2**:
   1. Tabellen van apps die bij de backup **niet aanstonden** (restanten: Deck, ONLYOFFICE,
