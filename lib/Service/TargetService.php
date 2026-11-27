@@ -409,7 +409,7 @@ final class TargetService {
 		$given = $options[HostKeys::OPTION] ?? [];
 		unset($options[HostKeys::OPTION]);
 		if (is_string($given)) {
-			$given = [$given];
+			$given = trim($given) === '' ? [] : [$given]; // an empty field: no pins
 		}
 		if (!is_array($given) || array_filter($given, fn ($f) => !is_string($f)) !== []) {
 			throw new \InvalidArgumentException('Give the host key fingerprints as a list of strings');
