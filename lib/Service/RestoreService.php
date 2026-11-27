@@ -126,7 +126,15 @@ final class RestoreService {
 		// Server-side encryption (#33): the keys of the files, under files_encryption/keys/files/<same path>/.
 		$keysSource = 'data/' . $uid . '/files_encryption/keys/files' . ($rel === '' ? '' : '/' . $rel);
 		$keyEntries = [];
+		$userPrefix = 'data/' . $uid . '/';
+		$inUser = false;
 		foreach ($repo->entries($snapshotId) as $e) {
+			// Entries come depth first, so everything of this user is together: past it, stop.
+			if (str_starts_with($e['p'], $userPrefix)) {
+				$inUser = true;
+			} elseif ($inUser) {
+				break;
+			}
 			if ($e['p'] === $source) {
 				$single = true;
 				$entries[''] = $e;
