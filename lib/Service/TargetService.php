@@ -195,6 +195,9 @@ final class TargetService {
 		}
 		$this->validateName($name);
 		$this->requireUsableBackend($backend);
+		// Pins checked before the first connection: a bad one must fail before the key is adopted,
+		// and valid ones protect this connection too.
+		$options = $this->withValidPins($backend, $options);
 		$storageBackend = $this->buildBackend($backend, $auth, $options, $basePath, false);
 		if (!$storageBackend->exists('config')) {
 			throw new \InvalidArgumentException("No NG Backup repository found in folder '" . trim($basePath, '/') . "'");
