@@ -44,7 +44,7 @@ docker volume create "$VOL" >/dev/null
 sftp_server ngb-hk-sftp-a
 docker run -d --name "$NC" --network "$NET" \
 	-e NEXTCLOUD_ADMIN_USER=admin -e NEXTCLOUD_ADMIN_PASSWORD=admin-hostkey-pw -e NEXTCLOUD_TRUSTED_DOMAINS=localhost \
-	-e SQLITE_DATABASE=nextcloud \
+	-e SQLITE_DATABASE=nextcloud -v "$VOL:/srv/hk-upload" \
 	-v "$APP:/var/www/html/custom_apps/ng_backup:ro" "nextcloud:$V-apache" >/dev/null
 for i in $(seq 1 90); do occ status 2>/dev/null | grep -q "installed: true" && break; sleep 4; done
 docker exec "$NC" chown www-data:www-data /var/www/html/custom_apps
@@ -106,4 +106,13 @@ occ backup:target:host-key pinned "${SET[@]}" -n >/dev/null || fail "pin with --
 [ "$(notifications host_key_pinned)" = 0 ] || fail "pinning a location without pins notified the admins"
 occ backup:run pinned >/dev/null || fail "backup with the keys pinned by --set"
 ok "--set pins the given keys, quietly"
+
+# Editing the location keeps its pins; another connection type drops them, and says so.
+occ backup:target:edit pinned -o password=ngbackuppw >/dev/null || fail "edit the pinned location"
+[ "$(occ backup:target:host-key pinned | sed -n '/^Pinned:/,/^The server/p' | grep -c SHA256)" = "$(echo "$B_KEYS" | wc -l)" ] || fail "an edit lost the pins"
+ok "an edit keeps the pins"
+occ backup:target:edit pinned -b local -a null::null -o datadir=/srv/hk-upload >/dev/null || fail "change the pinned location to a local folder"
+[ "$(notifications host_key_removed)" = 2 ] || fail "dropping the pins with another connection type did not notify the admins"
+occ backup:target:host-key pinned >/dev/null 2>&1 && fail "the local location still has host keys"
+ok "another connection type: pins dropped, admins notified"
 echo "PASS: host keys on NC $V"

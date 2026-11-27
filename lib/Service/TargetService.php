@@ -283,12 +283,26 @@ final class TargetService {
 		if ($target->getRepositoryId() !== null && $repo->id() !== $target->getRepositoryId()) {
 			throw new \InvalidArgumentException('These settings lead to a different repository than the one of this location');
 		}
+		// The pins as stored now, not as read before the connection test: another admin may have
+		// changed them in the meantime, and this edit must not put the old ones back.
+		$pins = HostKeys::pinned($this->options($this->mapper->find($target->getId())));
+		unset($options[HostKeys::OPTION]);
+		$keepPins = $pins !== [] && $this->factory()->isSftp($backend);
+		if ($keepPins) {
+			$options[HostKeys::OPTION] = $pins;
+		}
 		$target->setName($name);
 		$target->setBackend($backend);
 		$target->setAuth($auth);
 		$target->setOptions($this->crypto->encrypt(json_encode($options, JSON_THROW_ON_ERROR)));
 		$target->setBasePath(trim($basePath, '/'));
-		return $this->mapper->update($target);
+		$target = $this->mapper->update($target);
+		if ($pins !== [] && !$keepPins) {
+			// Another connection type has no host keys: the pins are gone, and a change back to
+			// SFTP would start unchecked. Tell the admins, as when the pins are removed.
+			$this->alerts->securityEvent('host_key_removed', ['target' => $name, 'old' => implode(' ', $pins), 'new' => '']);
+		}
+		return $target;
 	}
 
 	/**
