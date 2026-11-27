@@ -320,12 +320,18 @@ final class AdminApiController extends Controller {
 	/**
 	 * Pin these host keys on a location, or none. Changing or removing pinned keys notifies all admins.
 	 *
-	 * @param array<array-key, mixed> $fingerprints from the request: anything
+	 * Removing them is a security downgrade, so it takes an explicit empty list; a missing or
+	 * malformed list is refused, never read as "none".
+	 *
+	 * @param array<array-key, mixed>|null $fingerprints from the request: anything
 	 */
 	#[PasswordConfirmationRequired]
-	public function setHostKeys(int $id, array $fingerprints = []): JSONResponse {
+	public function setHostKeys(int $id, ?array $fingerprints = null): JSONResponse {
+		if ($fingerprints === null || array_filter($fingerprints, fn ($f) => !is_string($f)) !== []) {
+			return new JSONResponse(['error' => 'Give the host key fingerprints as a list of strings (an empty list removes them)'], Http::STATUS_BAD_REQUEST);
+		}
 		try {
-			$t = $this->targets->setHostKeys($this->targets->get((string)$id), array_values(array_filter($fingerprints, 'is_string')));
+			$t = $this->targets->setHostKeys($this->targets->get((string)$id), array_values($fingerprints));
 		} catch (\Throwable $e) {
 			return new JSONResponse(['error' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
 		}

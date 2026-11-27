@@ -13,7 +13,7 @@ U=alice
 PW='Sse-restore-pw-2026'
 
 cleanup() { docker rm -fv "$NC" >/dev/null 2>&1 || true; }
-trap "${KEEP:+true }cleanup" EXIT
+trap '[ -n "${KEEP:-}" ] || cleanup' EXIT
 fail() { echo "FAIL: $*"; docker exec "$NC" sh -c "tail -c 3000 $DATA/nextcloud.log" 2>/dev/null | tr ',' '\n' | grep '"message"' | tail -4; exit 1; }
 ok() { echo "ok   $*"; }
 occ() { docker exec -u www-data "$NC" php occ "$@"; }
@@ -50,7 +50,7 @@ SUM_REPORT=$(sum Docs/report.txt); SUM_BIG=$(sum Docs/big.bin); SUM_NOTE=$(sum D
 
 docker exec -u www-data "$NC" sh -c "printf 'sse passphrase 2026 test\n' > /tmp/p && mkdir -p /tmp/ngb-sse-target"
 occ backup:key:init --passphrase-file=/tmp/p --label=CI --delete-delay-days=7 >/dev/null || fail "key init"
-CODE=$(occ backup:key:kit | php -r 'echo json_decode(stream_get_contents(STDIN), true)["confirmation_code"];')
+CODE=$(occ backup:key:kit | docker exec -i "$NC" php -r 'echo json_decode(stream_get_contents(STDIN), true)["confirmation_code"];')
 occ backup:key:confirm -u admin --code="$CODE" --confirm="Yes, I confirm" >/dev/null || fail "confirm"
 occ backup:target:add ci local -a null::null -o datadir=/tmp/ngb-sse-target --path=repo >/dev/null || fail "target add"
 occ backup:run ci -l sse >/dev/null || fail "backup"
@@ -60,7 +60,7 @@ ok "backup"
 
 occ backup:restore ci "$SNAP" "data/$U/files/Docs/report.txt" -m new-folder || fail "restore one file"
 R=$(docker exec "$NC" sh -c "cd $DATA/$U/files && ls -d Restored\ * | head -1")
-[ "$(sum "$(php -r 'echo rawurlencode($argv[1]);' "$R")/Docs/report.txt")" = "$SUM_REPORT" ] || fail "the restored file is not the original: $(dav "$(php -r 'echo rawurlencode($argv[1]);' "$R")/Docs/report.txt" | head -c 60)"
+[ "$(sum "$(docker exec "$NC" php -r 'echo rawurlencode($argv[1]);' "$R")/Docs/report.txt")" = "$SUM_REPORT" ] || fail "the restored file is not the original: $(dav "$(docker exec "$NC" php -r 'echo rawurlencode($argv[1]);' "$R")/Docs/report.txt" | head -c 60)"
 docker exec "$NC" sh -c "head -c 7 '$DATA/$U/files/$R/Docs/report.txt'" | grep -q HBEGIN || fail "the restored file is not encrypted on disk"
 ok "one file: original content, encrypted again on disk"
 docker exec "$NC" sh -c "cd $DATA/$U/files && ls -a '$R/Docs'" | grep -q ngb-restore && fail "a temporary was left behind"
@@ -69,7 +69,7 @@ docker exec -u www-data "$NC" sh -c "rm -rf '$DATA/$U/files/$R'" && occ files:sc
 
 occ backup:restore ci "$SNAP" "data/$U/files/Docs" -m new-folder >/dev/null || fail "restore a folder"
 R=$(docker exec "$NC" sh -c "cd $DATA/$U/files && ls -d Restored\ * | head -1")
-E=$(php -r 'echo rawurlencode($argv[1]);' "$R")
+E=$(docker exec "$NC" php -r 'echo rawurlencode($argv[1]);' "$R")
 [ "$(sum "$E/Docs/report.txt")" = "$SUM_REPORT" ] || fail "folder: report.txt"
 [ "$(sum "$E/Docs/big.bin")" = "$SUM_BIG" ] || fail "folder: big.bin"
 [ "$(sum "$E/Docs/Sub/note.txt")" = "$SUM_NOTE" ] || fail "folder: Sub/note.txt"

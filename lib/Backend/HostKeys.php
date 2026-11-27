@@ -181,10 +181,13 @@ final class HostKeys {
 		if ($socket === false) {
 			throw new BackendException("Cannot connect to $host:$port: " . ($error !== '' ? $error : 'no answer'));
 		}
-		stream_set_timeout($socket, (int)ceil($timeout));
+		// One deadline for the whole exchange: a server that answers slowly, line by line, must
+		// not keep an admin page waiting for each read's timeout in turn.
+		self::$deadline = microtime(true) + $timeout;
 		try {
 			fwrite($socket, "SSH-2.0-NGBackup_HostKeyCheck\r\n");
 			for ($lines = 0; ; $lines++) {
+				self::timeLeft($socket);
 				$line = fgets($socket, 1024);
 				if ($line === false || $lines > 50) {
 					throw new BackendException("No SSH server answers at $host:$port");
@@ -271,6 +274,9 @@ final class HostKeys {
 				throw new BackendException('The SSH server sent a packet that cannot be read');
 			}
 			$packet = self::read($socket, $length);
+			if (ord($packet[0]) > $length - 1) {
+				throw new BackendException('The SSH server sent a packet that cannot be read');
+			}
 			$payload = substr($packet, 1, $length - 1 - ord($packet[0]));
 			$got = $payload === '' ? -1 : ord($payload[0]);
 			if ($got === $type) {
@@ -286,10 +292,26 @@ final class HostKeys {
 		throw new BackendException('The SSH server sent too many packets');
 	}
 
+	private static float $deadline = 0.0;
+
+	/**
+	 * The next read may take what is left of the exchange's deadline, no more.
+	 *
+	 * @param resource $socket
+	 */
+	private static function timeLeft($socket): void {
+		$left = self::$deadline - microtime(true);
+		if ($left <= 0) {
+			throw new BackendException('The SSH server did not answer in time');
+		}
+		stream_set_timeout($socket, (int)$left, (int)(($left - (int)$left) * 1e6));
+	}
+
 	/** @param resource $socket */
 	private static function read($socket, int $bytes): string {
 		$data = '';
 		while (strlen($data) < $bytes) {
+			self::timeLeft($socket);
 			$chunk = fread($socket, $bytes - strlen($data));
 			if ($chunk === false || $chunk === '') {
 				$meta = stream_get_meta_data($socket);

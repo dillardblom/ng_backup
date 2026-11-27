@@ -207,11 +207,19 @@ async function save() {
 		} else {
 			if (backend.value.hostKeys && newKeys.value === null) {
 				// First ask whether to pin the server's host keys; the next click adds the location.
+				// The keys must be those of the server in the form when they come back: a host
+				// changed while the scan ran makes the result worthless.
+				const scanned = { backend: backend.value.id, host: form.options.host, port: form.options.port }
+				const current = () => scanned.backend === backend.value?.id && scanned.host === form.options.host && scanned.port === form.options.port
+				let result
 				try {
-					const r = await api.scanHostKeys(backend.value.id, { host: form.options.host, port: form.options.port })
-					newKeys.value = { server: r.server, pin: true, error: null }
+					const r = await api.scanHostKeys(scanned.backend, { host: scanned.host, port: scanned.port })
+					result = { server: r.server, pin: true, error: null }
 				} catch (e) {
-					newKeys.value = { server: [], pin: false, error: e?.message || '' }
+					result = { server: [], pin: false, error: e?.message || '' }
+				}
+				if (current()) {
+					newKeys.value = result
 				}
 				return
 			}

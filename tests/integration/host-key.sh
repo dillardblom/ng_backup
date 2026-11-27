@@ -54,7 +54,7 @@ occ app:enable files_external >/dev/null
 sleep 8 # APCu app config cache
 docker exec -u www-data "$NC" sh -c "printf 'host key passphrase 2026\n' > /tmp/ngb-hk-pass"
 occ backup:key:init --passphrase-file=/tmp/ngb-hk-pass --label=CI --delete-delay-days=7 >/dev/null || fail "key init"
-CODE=$(occ backup:key:kit | php -r 'echo json_decode(stream_get_contents(STDIN), true)["confirmation_code"];')
+CODE=$(occ backup:key:kit | docker exec -i "$NC" php -r 'echo json_decode(stream_get_contents(STDIN), true)["confirmation_code"];')
 occ backup:key:confirm -u admin --code="$CODE" --confirm="Yes, I confirm" >/dev/null || fail "confirm"
 LOCATION=(sftp -a password::password -o host=$HOST -o root=/upload -o user=ngbackup -o password=ngbackuppw)
 
@@ -65,8 +65,8 @@ for f in $A_KEYS; do echo "$ADD" | grep -qF "$f" || fail "the server's key $f wa
 [ "$(occ backup:target:host-key pinned | sed -n '/^Pinned:/,/^The server/p' | grep -c SHA256)" = "$(echo "$A_KEYS" | wc -l)" ] || fail "not all of the server's keys were pinned"
 ok "all host keys shown and pinned when the location is added ($(echo "$A_KEYS" | wc -l) keys)"
 occ backup:target:add open "${LOCATION[@]}" --path=open -n >/dev/null || fail "add open"
-occ backup:status | grep -q "Host key not pinned: open" || fail "status shows no hint for the location without pins"
-occ backup:status | grep "Host key not pinned" | grep -q pinned, && fail "status hints at the pinned location"
+STATUS=$(occ backup:status); echo "$STATUS" | grep -q "Host key not pinned: open" || fail "status shows no hint for the location without pins"
+STATUS=$(occ backup:status); echo "$STATUS" | grep -qE "Host key not pinned: (.*, )?pinned(,|$| )" && fail "status hints at the pinned location"
 ok "status: hint for the location without pins only"
 [ "$(notifications host_key_pinned)" = 0 ] || fail "pinning at creation notified the admins"
 
@@ -98,7 +98,7 @@ ok "new key accepted: admins notified, backups go on"
 
 occ backup:target:host-key pinned --remove -n >/dev/null || fail "remove the pins"
 [ "$(notifications host_key_removed)" = 1 ] || fail "removing the pins did not notify the admins"
-occ backup:status | grep "Host key not pinned" | grep -q "pinned" || fail "no hint after the pins were removed"
+STATUS=$(occ backup:status); echo "$STATUS" | grep -qE "Host key not pinned: (.*, )?pinned(,|$| )" || fail "no hint after the pins were removed"
 ok "pins removed: admins notified, hint shown"
 
 SET=(); for f in $B_KEYS; do SET+=(--set "$f"); done
