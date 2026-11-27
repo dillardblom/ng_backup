@@ -25,6 +25,17 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
   the Test button offers the same. Changing or removing pinned keys notifies all administrators.
   A location without pins works as before and shows "host key not pinned".
 
+### Fixed
+- Restoring single files or folders on a server with server-side encryption gave files that
+  downloaded as "HBEGIN:oc_encryption_module..." (#33): the encrypted bytes from the backup were
+  encrypted a second time. They now come back with their original content, encrypted again by
+  Nextcloud, from the web interface and `occ backup:restore` alike, also from restore points made
+  with earlier versions. NG Backup puts the encrypted file and its keys back under a temporary
+  name with the encryption version from the restore point's database dump, and Nextcloud decrypts
+  it with its own keys; NG Backup does no decryption itself. This needs master key encryption
+  (the default): with per-user keys, which only open in the user's own session, the restore stops
+  with a message that says so. A full restore and restoring a whole user were not affected.
+
 ### Changed
 - The app store description asks for a star right below its first paragraph.
 

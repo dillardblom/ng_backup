@@ -286,7 +286,8 @@ final class RestoreService {
 	 * A file that server-side encryption had encrypted (#33): its encrypted bytes and keys go back
 	 * as they were, under a temporary name in the same folder, with the encryption version and
 	 * size from the database dump. Reading it through the Files API then gives the content, which
-	 * is written like any other file; the temporary goes to the trash, as other temporaries do.
+	 * is written like any other file. The temporary is removed from disk and the file cache
+	 * directly, so it does not end up in the user's trash.
 	 *
 	 * @param array{version: int, size: int} $info
 	 * @param array<string, array> $keys "<module>/<key file>" => snapshot entry

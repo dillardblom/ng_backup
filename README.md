@@ -181,7 +181,9 @@ server's host keys.
 ## Restore
 
 - **Files and folders** of a user: in the web interface or `occ backup:restore`, into a new folder
-  ("Restored <date>"), merged into the original place, or replacing it.
+  ("Restored <date>"), merged into the original place, or replacing it. With server-side
+  encryption (master key, the default) the files come back readable from 1.1.1 on; see Known
+  limitations for per-user keys.
 - **Raw restore** of any path (for example `config/`) to a local directory: `occ backup:restore ... --to-directory=DIR`.
 - **Whole server** (disaster recovery onto a fresh installation): `occ backup:restore:full`, see
   [docs/DISASTER-RECOVERY.md](docs/DISASTER-RECOVERY.md). It runs in maintenance mode, so that
@@ -344,6 +346,12 @@ On the backlog; know them before you rely on NG Backup:
   passphrase (it loads the key with Nextcloud's own secret or none). For an unattended backup the
   passphrase would have to be on the same server anyway. This is about the key NG Backup signs in
   with, not about the server's host keys, which can be of any type.
+- **Server-side encryption with per-user keys** (no master key): single files and folders cannot
+  be restored into a running instance, because those keys only open in the user's own session.
+  The restore stops with a message; restore the whole server, or the files raw with
+  `occ backup:restore ... -d` and put them back by hand. Even with master key encryption (the
+  default), encrypted files only go back into the user's own files, not into a share or another
+  storage.
 - **SFTP host keys are only checked when pinned** (see "SFTP host keys"). Changing the host of a
   pinned location means removing the pins first, or the new server is refused.
 - Temporary files of a restore into a user's files end up in that user's trash.
