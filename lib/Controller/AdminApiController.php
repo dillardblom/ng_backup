@@ -61,7 +61,8 @@ final class AdminApiController extends Controller {
 			$targets[] = ['id' => $t->getId(), 'name' => $t->getName(), 'backend' => $t->getBackend(), 'path' => $t->getBasePath(),
 				'repositoryId' => $t->getRepositoryId(), 'createdAt' => $t->getCreatedAt(), 'appendOnly' => (bool)$t->getAppendOnly(),
 				'maxBytes' => $t->getMaxBytes(), 'storedBytes' => $this->alerts->lastStoredBytes($t),
-				'schedule' => (string)$t->getSchedule(), 'scheduleZone' => $this->schedule->zoneOr($t->getScheduleZone())];
+				'schedule' => (string)$t->getSchedule(), 'scheduleZone' => $this->schedule->zoneOr($t->getScheduleZone()),
+				'hostKeys' => $this->hostKeyCount($t)];
 		}
 		$shown = $this->runs->findShown($allRuns ? null : time() - \OCA\NgBackup\Command\Status::RECENT_DAYS * 86400);
 		$queued = array_flip(array_map(static fn (Run $r): int => $r->getId(), array_slice($this->backups->runsInTurn(), 1)));
@@ -275,6 +276,60 @@ final class AdminApiController extends Controller {
 		} catch (\Throwable $e) {
 			return new JSONResponse(['ok' => false, 'error' => $e->getMessage()]);
 		}
+	}
+
+	/** Pinned host keys of a location: null when it has none (not SFTP), else how many. */
+	private function hostKeyCount(\OCA\NgBackup\Db\Target $t): ?int {
+		try {
+			return $this->targets->hasHostKeys($t) ? count($this->targets->pinnedHostKeys($t)) : null;
+		} catch (\Throwable) {
+			return null;
+		}
+	}
+
+	/** SFTP: the location's pinned host keys and the ones its server offers now (#34). */
+	public function hostKeys(int $id): JSONResponse {
+		$t = $this->targets->get((string)$id);
+		if (!$this->targets->hasHostKeys($t)) {
+			return new JSONResponse(['error' => 'Only SFTP locations have host keys'], Http::STATUS_BAD_REQUEST);
+		}
+		$out = ['pinned' => $this->targets->pinnedHostKeys($t), 'server' => [], 'error' => null];
+		try {
+			$out['server'] = $this->targets->scanHostKeys($t);
+		} catch (\Throwable $e) {
+			$out['error'] = $e->getMessage();
+		}
+		return new JSONResponse($out);
+	}
+
+	/**
+	 * SFTP, before a location is added: the host keys of the server in these settings, to ask
+	 * whether to pin them. Only host and port are used; nothing is sent beyond the key exchange.
+	 */
+	public function scanHostKeys(string $backend, array $options = []): JSONResponse {
+		try {
+			if (!$this->targets->isSftpBackend($backend)) {
+				return new JSONResponse(['server' => []]);
+			}
+			return new JSONResponse(['server' => $this->targets->scanHostKeys($options)]);
+		} catch (\Throwable $e) {
+			return new JSONResponse(['error' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
+		}
+	}
+
+	/**
+	 * Pin these host keys on a location, or none. Changing or removing pinned keys notifies all admins.
+	 *
+	 * @param array<array-key, mixed> $fingerprints from the request: anything
+	 */
+	#[PasswordConfirmationRequired]
+	public function setHostKeys(int $id, array $fingerprints = []): JSONResponse {
+		try {
+			$t = $this->targets->setHostKeys($this->targets->get((string)$id), array_values(array_filter($fingerprints, 'is_string')));
+		} catch (\Throwable $e) {
+			return new JSONResponse(['error' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
+		}
+		return new JSONResponse(['pinned' => $this->targets->pinnedHostKeys($t)]);
 	}
 
 	public function startBackup(int $targetId, string $label = ''): JSONResponse {

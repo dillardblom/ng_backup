@@ -55,10 +55,21 @@ final class Status extends Command {
 				. ($c ? 'confirmed by ' . $c['uid'] . ' on ' . Format::time($c['time'], $zone) . " ($zone)" : '<error>not confirmed</error> (occ backup:key:confirm)'));
 		}
 		$names = [];
+		$unpinned = [];
 		foreach ($this->targets->list() as $t) {
 			$names[$t->getId()] = $t->getName();
+			try {
+				if ($this->targets->hasHostKeys($t) && $this->targets->pinnedHostKeys($t) === []) {
+					$unpinned[] = $t->getName();
+				}
+			} catch (\Throwable) {
+				// a hint only
+			}
 		}
 		$output->writeln('Locations: ' . ($names === [] ? 'none' : implode(', ', $names)));
+		if ($unpinned !== []) {
+			$output->writeln('Host key not pinned: ' . implode(', ', $unpinned) . ' (occ backup:target:host-key <location>)');
+		}
 		$rows = [];
 		$all = (bool)$input->getOption('all');
 		$shown = $this->runs->findShown($all ? null : time() - self::RECENT_DAYS * 86400);

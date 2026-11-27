@@ -7,5 +7,5 @@ declare(strict_types=1);
 
 namespace OCA\NgBackup\Backend;
 
-final class BackendException extends \RuntimeException {
+class BackendException extends \RuntimeException {
 }

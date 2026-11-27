@@ -10,12 +10,43 @@
 				<strong>{{ target.name }}</strong>
 				<span class="ngb-muted">{{ target.backend }} · {{ target.path }}{{ target.appendOnly ? ' · ' + t('ng_backup', 'append-only') : '' }}</span>
 				<span :class="usageClass(target)">{{ usageText(target) }}</span>
+				<span v-if="target.hostKeys === 0" class="ngb-muted" :title="t('ng_backup', 'Nextcloud does not check the SFTP server\'s host key for scheduled backups. Test the location to pin it.')">
+					{{ t('ng_backup', 'host key not pinned') }}
+				</span>
 				<span v-if="tests[target.id]" :class="tests[target.id].ok ? 'ngb-ok' : 'ngb-err'">
 					{{ tests[target.id].ok ? t('ng_backup', 'OK, {n} snapshots', { n: tests[target.id].snapshots }) : tests[target.id].error }}
 				</span>
 				<NcButton variant="tertiary" @click="test(target)">{{ t('ng_backup', 'Test') }}</NcButton>
 				<NcButton variant="tertiary" @click="startEdit(target)">{{ t('ng_backup', 'Edit') }}</NcButton>
 				<NcButton variant="tertiary" @click="remove(target)">{{ t('ng_backup', 'Remove') }}</NcButton>
+				<div v-if="keys[target.id]" class="ngb-keys">
+					<template v-if="keys[target.id].error">
+						<span class="ngb-err">{{ t('ng_backup', 'The server\'s host keys could not be read: {error}', { error: keys[target.id].error }) }}</span>
+					</template>
+					<template v-else-if="!keys[target.id].pinned.length">
+						<span>{{ t('ng_backup', 'Pin the host key? These are the keys the server offers now. Compare them with what your provider publishes; once pinned, NG Backup refuses a server with another key.') }}</span>
+						<code v-for="key in keys[target.id].server" :key="key.fingerprint">{{ key.type }} {{ key.fingerprint }}</code>
+						<div class="ngb-row">
+							<NcButton variant="primary" :disabled="busy" @click="pinKeys(target, keys[target.id].server)">{{ t('ng_backup', 'Pin host keys') }}</NcButton>
+							<NcButton :disabled="busy" @click="delete keys[target.id]">{{ t('ng_backup', 'Not now') }}</NcButton>
+						</div>
+					</template>
+					<template v-else-if="!matches(keys[target.id])">
+						<span class="ngb-err">{{ t('ng_backup', 'None of the server\'s host keys is pinned: backups to this location are refused. If your provider changed the keys, accept the new ones; otherwise the connection may be intercepted. All administrators are notified either way.') }}</span>
+						<span>{{ t('ng_backup', 'Pinned:') }}</span>
+						<code v-for="f in keys[target.id].pinned" :key="f">{{ f }}</code>
+						<span>{{ t('ng_backup', 'The server offers now:') }}</span>
+						<code v-for="key in keys[target.id].server" :key="key.fingerprint">{{ key.type }} {{ key.fingerprint }}</code>
+						<div class="ngb-row">
+							<NcButton variant="error" :disabled="busy" @click="pinKeys(target, keys[target.id].server)">{{ t('ng_backup', 'Accept the new host keys') }}</NcButton>
+							<NcButton :disabled="busy" @click="pinKeys(target, [])">{{ t('ng_backup', 'Stop checking the host key') }}</NcButton>
+						</div>
+					</template>
+					<template v-else>
+						<span class="ngb-ok">{{ t('ng_backup', 'Host key pinned and matching.') }}</span>
+						<NcButton variant="tertiary" :disabled="busy" @click="pinKeys(target, [])">{{ t('ng_backup', 'Stop checking the host key') }}</NcButton>
+					</template>
+				</div>
 			</li>
 		</ul>
 
@@ -35,9 +66,19 @@
 			<NcTextField v-model="form.path" :label="t('ng_backup', 'Folder on the location for the backups')" />
 			<NcTextField v-model="form.maxGb" type="number" min="0" :label="t('ng_backup', 'Maximum size in GiB')"
 				:helper-text="form.maxGb ? t('ng_backup', 'Backups stop at this size; administrators are warned at 80%.') : t('ng_backup', 'Empty = unlimited: everything stored is billed by your provider, and nothing stops a backup that keeps growing.')" />
+			<div v-if="newKeys" class="ngb-keys">
+				<template v-if="newKeys.error">
+					<span class="ngb-err">{{ t('ng_backup', 'The server\'s host keys could not be read: {error}', { error: newKeys.error }) }}</span>
+				</template>
+				<template v-else>
+					<span>{{ t('ng_backup', 'Host keys of the server. Compare them with what your provider publishes.') }}</span>
+					<code v-for="key in newKeys.server" :key="key.fingerprint">{{ key.type }} {{ key.fingerprint }}</code>
+					<NcCheckboxRadioSwitch v-model="newKeys.pin">{{ t('ng_backup', 'Pin these host keys: NG Backup then refuses a server with another key') }}</NcCheckboxRadioSwitch>
+				</template>
+			</div>
 			<div class="ngb-row">
 				<NcButton type="submit" variant="primary" :disabled="busy || !form.name || !backend || !auth">{{ editing ? t('ng_backup', 'Connect and save') : t('ng_backup', 'Connect and add') }}</NcButton>
-				<NcButton @click="adding = false; editing = null">{{ t('ng_backup', 'Cancel') }}</NcButton>
+				<NcButton @click="adding = false; editing = null; newKeys = null">{{ t('ng_backup', 'Cancel') }}</NcButton>
 			</div>
 		</form>
 		<NcNoteCard v-if="error" type="error">{{ error }}</NcNoteCard>
@@ -69,7 +110,13 @@ const backends = ref([])
 const backend = ref(null)
 const auth = ref(null)
 const tests = reactive({})
+const keys = reactive({}) // host keys per location, after a test (SFTP)
+const newKeys = ref(null) // host keys of the server of a location being added (SFTP): { server, pin, error }
 const form = reactive({ name: '', path: 'ng_backup', options: {}, maxGb: '' })
+
+const matches = (k) => k.server.some((key) => k.pinned.includes(key.fingerprint))
+// Read again when the server changes: the keys shown must be those of the server that is added.
+watch(() => [backend.value?.id, form.options.host, form.options.port], () => { newKeys.value = null })
 
 const gib = (b) => (b / 1073741824).toFixed(1) + ' GiB'
 function usageText(target) {
@@ -106,6 +153,7 @@ async function loadBackends() {
 async function startAdd() {
 	error.value = ''
 	editing.value = null
+	newKeys.value = null
 	Object.assign(form, { name: '', path: 'ng_backup', options: {}, maxGb: '' })
 	backend.value = null
 	adding.value = true
@@ -157,7 +205,22 @@ async function save() {
 			}
 			delete tests[editing.value.id]
 		} else {
-			await api.addTarget({ name: form.name, backend: backend.value.id, auth: auth.value.id, options: form.options, path: form.path, maxGb })
+			if (backend.value.hostKeys && newKeys.value === null) {
+				// First ask whether to pin the server's host keys; the next click adds the location.
+				try {
+					const r = await api.scanHostKeys(backend.value.id, { host: form.options.host, port: form.options.port })
+					newKeys.value = { server: r.server, pin: true, error: null }
+				} catch (e) {
+					newKeys.value = { server: [], pin: false, error: e?.message || '' }
+				}
+				return
+			}
+			const options = { ...form.options }
+			if (newKeys.value?.pin && newKeys.value.server.length) {
+				options.host_key_fingerprints = newKeys.value.server.map((key) => key.fingerprint)
+			}
+			await api.addTarget({ name: form.name, backend: backend.value.id, auth: auth.value.id, options, path: form.path, maxGb })
+			newKeys.value = null
 		}
 		adding.value = false
 		editing.value = null
@@ -171,7 +234,32 @@ async function save() {
 }
 
 async function test(target) {
+	delete keys[target.id]
 	tests[target.id] = await api.testTarget(target.id)
+	if (target.hostKeys !== null && target.hostKeys !== undefined) {
+		try {
+			keys[target.id] = await api.hostKeys(target.id)
+		} catch (e) {
+			keys[target.id] = { pinned: [], server: [], error: e?.message || '' }
+		}
+	}
+}
+
+/** Pin these keys (or none). Changing or removing pinned keys notifies all administrators. */
+async function pinKeys(target, server) {
+	busy.value = true
+	error.value = ''
+	try {
+		await confirmPassword()
+		await api.setHostKeys(target.id, server.map((key) => key.fingerprint))
+		delete keys[target.id]
+		emit('changed')
+		await test(target)
+	} catch (e) {
+		error.value = e?.message || ''
+	} finally {
+		busy.value = false
+	}
 }
 
 async function remove(target) {
@@ -190,7 +278,9 @@ async function remove(target) {
 </script>
 
 <style scoped>
-.ngb-list li { display: flex; align-items: center; gap: 12px; padding: 4px 0; }
+.ngb-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 4px 0; }
+.ngb-keys { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; flex-basis: 100%; max-width: 700px; }
+.ngb-keys code { font-size: 0.9em; overflow-wrap: anywhere; }
 .ngb-muted { color: var(--color-text-maxcontrast); }
 .ngb-ok { color: var(--color-success-text); }
 .ngb-err { color: var(--color-error-text); }

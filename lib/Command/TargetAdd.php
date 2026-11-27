@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace OCA\NgBackup\Command;
 
+use OCA\NgBackup\Backend\HostKeys;
 use OCA\NgBackup\Service\KeyService;
 use OCA\NgBackup\Service\TargetService;
 use Symfony\Component\Console\Command\Command;
@@ -15,6 +16,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Helper\QuestionHelper;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Question\ConfirmationQuestion;
 use Symfony\Component\Console\Question\Question;
 
 final class TargetAdd extends Command {
@@ -36,6 +38,7 @@ final class TargetAdd extends Command {
 			->addOption('passphrase-file', null, InputOption::VALUE_REQUIRED, 'Disaster recovery without the recovery kit: read the passphrase from this file instead of asking')
 			->addOption('repair-config', null, InputOption::VALUE_NONE, 'The location\'s config file is gone: write it again with the key of this server or of the imported recovery kit (locations backed up by 1.1.0 or newer)')
 			->addOption('replace-unused-key', null, InputOption::VALUE_NONE, 'Disaster recovery after a new key was made here by mistake: replace that key, if it was never used, by the key of the backups at this location (asks for a passphrase of the old server)')
+			->addOption('host-key-fingerprint', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'SFTP: pin the server\'s host key, SHA256:... or a public key / ssh-keyscan line (repeatable; give all of the server\'s keys)')
 			->setHelp(<<<'HELP'
 The location is reached with files_external's own connection code, but it is never added as an
 external storage: it does not appear in Files for anyone. Credentials are stored encrypted.
@@ -51,6 +54,11 @@ replaces it by the key of the backups. A key that was used is never replaced.
 With the recovery kit: occ backup:key:import first; this command then asks for nothing more.
 If the location's config file is gone, only the kit has the key: import it, then add the
 location with --repair-config.
+
+SFTP: Nextcloud does not check the server's host key for occ and cron. NG Backup does when the
+location has pinned keys: it then refuses a server with another key before it sends anything.
+Without --host-key-fingerprint this command shows the server's keys and asks whether to pin
+them; compare them with what the provider publishes. Later: occ backup:target:host-key.
 
 Examples:
   occ backup:target:add offsite amazons3 -a amazons3::accesskey       -o bucket=backups -o hostname=s3.example.com -o region=eu-central-1       -o use_ssl=true -o use_path_style=true -o key=AKIA... -o secret=... --path=nextcloud
@@ -77,6 +85,9 @@ HELP);
 		$backend = (string)$input->getArgument('backend');
 		$auth = (string)$input->getOption('auth');
 		$path = (string)$input->getOption('path');
+		if (!$this->hostKeys($input, $output, $backend, $options)) {
+			return 1;
+		}
 		$passphrase = null;
 		$repair = (bool)$input->getOption('repair-config');
 		$replace = (bool)$input->getOption('replace-unused-key');
@@ -170,6 +181,58 @@ HELP);
 			$output->writeln('Next: <info>occ backup:list</info> and <info>occ backup:restore:full</info>. Before backups run again, download a new recovery kit and confirm it (<info>occ backup:key:kit</info>, <info>occ backup:key:confirm</info>).');
 		}
 		return 0;
+	}
+
+	/**
+	 * SFTP: the host keys to pin, given or shown and confirmed (#34). Adds them to the options.
+	 *
+	 * @param array<string, mixed> $options
+	 * @return bool false: stop (a bad fingerprint)
+	 */
+	private function hostKeys(InputInterface $input, OutputInterface $output, string $backend, array &$options): bool {
+		$given = $input->getOption('host-key-fingerprint');
+		try {
+			$sftp = $this->targets->isSftpBackend($backend);
+		} catch (\Throwable) {
+			$sftp = false; // an unknown backend is reported by add()
+		}
+		if (!$sftp) {
+			if ($given !== []) {
+				$output->writeln('<error>--host-key-fingerprint is only for SFTP locations</error>');
+				return false;
+			}
+			return true;
+		}
+		if ($given !== []) {
+			try {
+				$options[HostKeys::OPTION] = HostKeys::parse($given);
+			} catch (\InvalidArgumentException $e) {
+				$output->writeln('<error>' . $e->getMessage() . '</error>');
+				return false;
+			}
+			return true;
+		}
+		if (!$input->isInteractive()) {
+			$output->writeln('<comment>The SFTP server\'s host key is not pinned: Nextcloud accepts any server under this name for occ and cron. Pin it with --host-key-fingerprint or later with occ backup:target:host-key.</comment>');
+			return true;
+		}
+		try {
+			$found = $this->targets->scanHostKeys($options);
+		} catch (\Throwable $e) {
+			$output->writeln('<comment>The server\'s host keys could not be read (' . $e->getMessage() . '); the location is added without them.</comment>');
+			return true;
+		}
+		$output->writeln('Host keys of the SFTP server:');
+		foreach ($found as $key) {
+			$output->writeln(sprintf('  %-22s %s', $key['type'], $key['fingerprint']));
+		}
+		$output->writeln('Compare them with what the provider publishes. Pinned, NG Backup refuses a server with another key.');
+		/** @var QuestionHelper $helper */
+		$helper = $this->getHelper('question');
+		if ($helper->ask($input, $output, new ConfirmationQuestion('Pin these host keys? [Y/n] ', true))) {
+			$options[HostKeys::OPTION] = array_column($found, 'fingerprint');
+		}
+		return true;
 	}
 
 	private function passphrase(InputInterface $input, OutputInterface $output): ?string {

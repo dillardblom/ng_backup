@@ -27,6 +27,12 @@
     </extraFiles>
 
     <issueHandlers>
+        <MissingDependency>
+            <errorLevel type="suppress">
+                <!-- PinnedSftp extends files_external's SFTP storage, provided at runtime (#34). -->
+                <referencedClass name="OCA\NgBackup\Backend\PinnedSftp" />
+            </errorLevel>
+        </MissingDependency>
         <UndefinedClass>
             <errorLevel type="suppress">
                 <!-- Provided by files_external at runtime; not a composer dependency (PLAN.md 3.5). -->

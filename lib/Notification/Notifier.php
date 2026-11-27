@@ -84,10 +84,14 @@ final class Notifier implements INotifier {
 					'slot_replaced' => $l->t('%1$s set a new passphrase for backup key slot %2$s (%3$s); download and confirm the new recovery kit', [$who, $p['slot'] ?? '', $p['label'] ?? '']),
 					'user_export_retention_changed' => $l->t('%1$s changed how many exports per user are kept to %2$s', [$who, $p['keep'] ?? '']),
 					'user_exports_forgotten' => $l->t('%1$s removed %2$s per-user exports from %3$s', [$who, $p['count'] ?? '', $p['target'] ?? '']),
-					'slot_removed' => $l->t('%1$s removed backup passphrase slot %2$s; download and confirm the new recovery kit', [$who, $p['slot'] ?? '']),
+					'host_key_changed' => $l->t('%1$s changed the pinned SSH host keys of backup location %2$s to %3$s (were %4$s)', [$who, $p['target'] ?? '', $p['new'] ?? '', $p['old'] ?? '']),
+					'host_key_removed' => $l->t('%1$s removed the pinned SSH host keys of backup location %2$s (were %3$s): its server is no longer checked', [$who, $p['target'] ?? '', $p['old'] ?? '']),
+					'slot_removed' =>$l->t('%1$s removed backup passphrase slot %2$s; download and confirm the new recovery kit', [$who, $p['slot'] ?? '']),
 					default => $l->t('NG Backup security event'),
 				});
-				$notification->setParsedMessage($l->t('If this was not you or another administrator, check who has admin access.'));
+				$notification->setParsedMessage(in_array($p['event'] ?? '', ['host_key_changed', 'host_key_removed'], true)
+					? $l->t('Check with the storage provider that the server\'s key really changed. If it did not, the connection may be intercepted. If this was not you or another administrator, check who has admin access.')
+					: $l->t('If this was not you or another administrator, check who has admin access.'));
 				break;
 			default:
 				throw new UnknownNotificationException();
