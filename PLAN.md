@@ -658,6 +658,20 @@ in README "Known limitations":
      Nextcloud met uitleg dat de code open source en vrij te gebruiken blijft, dat support optioneel
      is en te koop via Nextcloud (enterprise support) of rechtstreeks bij Ensembia, en een link naar
      de NG Backup-supportpagina op de website.
+  13. **Volledige restore: geen andere schrijvers tijdens de database-restore** (besluit 2026-11-28).
+     Aanleiding: in CI (`full-restore-roundtrip.sh 35-apache sqlite to-pgsql`) faalde de restore
+     af en toe met `duplicate key ... oc_activity_pkey`: een ander proces schreef een activiteit
+     tussen het legen van de tabel en het terugzetten van de rijen. De restore faalt dan veilig
+     (alles teruggedraaid, onderhoudsmodus blijft aan, opnieuw met `--force`), maar beter is het
+     te voorkomen. Te bouwen:
+     a. Na onderhoudsmodus aan en `--install-apps`: wachten tot er geen achtergrondtaak meer loopt
+        (`oc_jobs.reserved_at`), dan nog een paar seconden. Loopt er na ~2 minuten nog iets, dan
+        stoppen met de naam van de taak en het advies het later opnieuw te proberen.
+     b. PostgreSQL: per tabel `LOCK TABLE ... IN EXCLUSIVE MODE` vóór het legen (lezen kan nog,
+        schrijvers wachten tot de commit). MariaDB/MySQL niet: `LOCK TABLES` beëindigt de lopende
+        transactie; na stap a levert het weinig op.
+     c. Eerst uitzoeken welk proces in de test die activiteit schreef; schrijft de restore het zelf
+        (bijv. via `--install-apps`), dan helpen a en b niet en is een andere oplossing nodig.
 - **1.1.1** (besluit 2026-11-25), vóór 1.2.0, vanaf `main`:
   1. **#33** restore met server-side encryptie: bestanden blijven versleuteld. Eerst de omweg, dan
      echte ontsleuteling.
