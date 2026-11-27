@@ -482,10 +482,6 @@
       <code><![CDATA[$children]]></code>
       <code><![CDATA[$children]]></code>
     </PossiblyNullArrayOffset>
-    <RedundantCastGivenDocblockType>
-      <code><![CDATA[(string)$relPath]]></code>
-      <code><![CDATA[(string)$relPath]]></code>
-    </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/TargetService.php">
     <UndefinedDocblockClass>

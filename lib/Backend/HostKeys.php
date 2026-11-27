@@ -305,7 +305,7 @@ final class HostKeys {
 			throw new BackendException('The SSH server did not answer in time');
 		}
 		// at least 1 µs: a timeout of 0 s and 0 µs must not be read as "no timeout"
-		stream_set_timeout($socket, (int)$left, max(1, (int)(($left - (int)$left) * 1e6)));
+		stream_set_timeout($socket, (int)$left, max(1, (int)(($left - floor($left)) * 1e6)));
 	}
 
 	/** @param resource $socket */

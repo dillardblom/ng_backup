@@ -89,12 +89,12 @@ final class EncryptedFiles {
 	/**
 	 * The rows of a dumped table as column => value.
 	 *
-	 * @param list<string> $blobs
+	 * @param array<array-key, mixed> $blobs blob ids, from the manifest
 	 * @return \Generator<array<string, mixed>>
 	 */
 	private static function rows(Repository $repo, array $blobs): \Generator {
 		$columns = null;
-		foreach ($repo->readLines($blobs) as $line) {
+		foreach ($repo->readLines(array_values(array_map('strval', $blobs))) as $line) {
 			if ($line === '') {
 				continue;
 			}
@@ -116,7 +116,7 @@ final class EncryptedFiles {
 	 * The key files of each file below a path, from the snapshot entries under
 	 * data/<uid>/files_encryption/keys/files/<path>: per file, "<module>/<key file>" => entry.
 	 *
-	 * @param array<string, array> $keyEntries entries relative to the keys folder of $source
+	 * @param array<array-key, array> $keyEntries entries relative to the keys folder of $source
 	 * @return array<string, array> for one file (path relative to $source, '' for $source itself)
 	 */
 	public static function keysOf(array $keyEntries, string $relPath): array {

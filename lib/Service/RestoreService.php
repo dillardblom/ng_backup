@@ -181,6 +181,7 @@ final class RestoreService {
 		}
 		$destExisted = $parentRel === '' || $userFolder->nodeExists($parentRel);
 		$dest = $this->ensureFolder($userFolder, $parentRel);
+		/** @var array<array-key, array{p:string, s:int, m:int, b:list<string>}> $names a file called "2026" is an integer key */
 		$names = $single ? [basename($rel) => $entries['']] : $entries;
 
 		// The folders with something in them that this restore creates get their time back; one that
@@ -314,8 +315,8 @@ final class RestoreService {
 		// (isLocal() says false here: the trash bin and encryption layers wrap the local storage.)
 		$storage = $folder->getStorage();
 		$homeId = 'home::' . $uid;
-		$home = rtrim((string)$user->getHome(), '/');
-		$inUser = trim((string)$userFolder->getRelativePath($folder->getPath()), '/');
+		$home = rtrim($user->getHome(), '/');
+		$inUser = trim($userFolder->getRelativePath($folder->getPath()) ?? '', '/');
 		if ($folder->getMountPoint()->getMountPoint() !== '/' . $uid . '/'
 			|| $storage->getId() !== (strlen($homeId) > 64 ? md5($homeId) : $homeId)
 			|| $folder->getInternalPath() !== trim('files/' . $inUser, '/')

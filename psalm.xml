@@ -29,8 +29,8 @@
     <issueHandlers>
         <MissingDependency>
             <errorLevel type="suppress">
-                <!-- PinnedSftp extends files_external's SFTP storage, provided at runtime (#34). -->
-                <referencedClass name="OCA\NgBackup\Backend\PinnedSftp" />
+                <!-- new PinnedSftp(): it extends files_external's SFTP storage, provided at runtime (#34). -->
+                <file name="lib/Backend/ExternalStorageFactory.php" />
             </errorLevel>
         </MissingDependency>
         <UndefinedClass>
