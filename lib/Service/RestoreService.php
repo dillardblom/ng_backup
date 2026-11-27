@@ -40,6 +40,9 @@ final class RestoreService {
 		private TargetService $targets,
 		private IRootFolder $root,
 		private LeaseService $leases,
+		private \OCP\IUserManager $users,
+		private \OCP\Encryption\IManager $encryption,
+		private \OCP\Files\IMimeTypeDetector $mimeTypes,
 	) {
 	}
 
@@ -120,14 +123,31 @@ final class RestoreService {
 
 		$entries = [];
 		$single = false;
+		// Server-side encryption (#33): the keys of the files, under files_encryption/keys/files/<same path>/.
+		$keysSource = 'data/' . $uid . '/files_encryption/keys/files' . ($rel === '' ? '' : '/' . $rel);
+		$keyEntries = [];
 		foreach ($repo->entries($snapshotId) as $e) {
 			if ($e['p'] === $source) {
 				$single = true;
 				$entries[''] = $e;
-				break;
-			}
-			if (str_starts_with($e['p'], $source . '/')) {
+			} elseif (str_starts_with($e['p'], $source . '/')) {
 				$entries[substr($e['p'], strlen($source) + 1)] = $e;
+			} elseif (str_starts_with($e['p'], $keysSource . '/')) {
+				$keyEntries[substr($e['p'], strlen($keysSource) + 1)] = $e;
+			}
+		}
+		if ($single) {
+			$entries = ['' => $entries['']];
+		}
+		$encrypted = [];
+		if ($keyEntries !== []) {
+			$encrypted = EncryptedFiles::fromDump($repo, $snapshotId, $uid, $source);
+			if ($encrypted !== [] && !$this->encryption->isEnabled()) {
+				throw new \RuntimeException('These files were encrypted by Nextcloud\'s server-side encryption when they were backed up, and it is off now: turn it on again (occ encryption:enable) to restore them, or restore them raw with occ backup:restore -d');
+			}
+			if ($encrypted !== [] && !self::usesMasterKey()) {
+				// Per-user keys only open in that user's own session: not for an admin, occ or cron.
+				throw new \RuntimeException('These files were encrypted with per-user keys (server-side encryption without a master key), which only open in the user\'s own session. NG Backup can restore them only with master key encryption (the default); restore them raw with occ backup:restore -d, or restore the whole server');
 			}
 		}
 		// Folders without anything in them, relative to $source ('' when $source itself is one).
@@ -169,8 +189,15 @@ final class RestoreService {
 		$this->cleaned = [];
 		$restored = 0;
 		foreach ($names as $relPath => $entry) {
+			// for a single file its entry is under '' in $encrypted and $keyEntries
+			$sourceRel = $single ? '' : (string)$relPath;
 			try {
-				$this->writeFile($repo, $dest, (string)$relPath, $entry);
+				if (isset($encrypted[$sourceRel])) {
+					$this->writeEncryptedFile($repo, $uid, $userFolder, $dest, (string)$relPath, $entry,
+						$encrypted[$sourceRel], EncryptedFiles::keysOf($keyEntries, $sourceRel));
+				} else {
+					$this->writeFile($repo, $dest, (string)$relPath, $entry);
+				}
 			} catch (\OCA\NgBackup\Repository\RepositoryException|\OCA\NgBackup\Backend\BackendException|\OCA\NgBackup\Crypto\CryptoException $e) {
 				// Damaged or missing on the location (writeFile removed its temporary)
 				if ($skipped === null) {
@@ -240,21 +267,188 @@ final class RestoreService {
 		}, 3600);
 	}
 
-	private function writeFile(Repository $repo, Folder $dest, string $relPath, array $entry): void {
+	private function folderFor(Folder $dest, string $relPath): Folder {
 		$dir = dirname($relPath);
 		$folder = $dir === '.' ? $dest : $this->ensureFolder($dest, $dir);
 		if (!isset($this->cleaned[$folder->getPath()])) {
 			$this->removeStaleTemporaries($folder);
 			$this->cleaned[$folder->getPath()] = true;
 		}
+		return $folder;
+	}
+
+	private function writeFile(Repository $repo, Folder $dest, string $relPath, array $entry): void {
+		// each blob is verified on read
+		$this->writeContent($this->folderFor($dest, $relPath), $relPath, $repo->readBlobs($entry['b']), (int)$entry['s'], (int)$entry['m']);
+	}
+
+	/**
+	 * A file that server-side encryption had encrypted (#33): its encrypted bytes and keys go back
+	 * as they were, under a temporary name in the same folder, with the encryption version and
+	 * size from the database dump. Reading it through the Files API then gives the content, which
+	 * is written like any other file; the temporary goes to the trash, as other temporaries do.
+	 *
+	 * @param array{version: int, size: int} $info
+	 * @param array<string, array> $keys "<module>/<key file>" => snapshot entry
+	 */
+	private function writeEncryptedFile(Repository $repo, string $uid, Folder $userFolder, Folder $dest, string $relPath, array $entry, array $info, array $keys): void {
+		$folder = $this->folderFor($dest, $relPath);
+		if ($keys === []) {
+			throw new \OCA\NgBackup\Repository\RepositoryException("The encryption keys of $relPath are not in this restore point");
+		}
+		$user = $this->users->get($uid);
+		if ($user === null) {
+			throw new \RuntimeException("User $uid does not exist");
+		}
+		// The bytes go straight to disk, past Nextcloud's encryption: only the user's own home
+		// storage on the local disk can take them that way (not a share or another mount).
+		// (isLocal() says false here: the trash bin and encryption layers wrap the local storage.)
+		$storage = $folder->getStorage();
+		$homeId = 'home::' . $uid;
+		$home = rtrim((string)$user->getHome(), '/');
+		$inUser = trim((string)$userFolder->getRelativePath($folder->getPath()), '/');
+		if ($folder->getMountPoint()->getMountPoint() !== '/' . $uid . '/'
+			|| $storage->getId() !== (strlen($homeId) > 64 ? md5($homeId) : $homeId)
+			|| $folder->getInternalPath() !== trim('files/' . $inUser, '/')
+			|| !is_dir($home . '/files/' . $inUser)) {
+			throw new \RuntimeException("$relPath was encrypted by server-side encryption; it can only be restored into the user's own files on this server's disk, not into a share or another storage");
+		}
+		$stageName = '.' . basename($relPath) . '.ngb-restore-' . bin2hex(random_bytes(3));
+		$stageRel = ($inUser === '' ? '' : $inUser . '/') . $stageName;
+		$stageFile = $home . '/files/' . $stageRel;
+		$stageKeys = $home . '/files_encryption/keys/files/' . $stageRel;
+		try {
+			if (!is_dir(dirname($stageFile))) {
+				throw new \RuntimeException("The folder of $relPath is not on the local disk where it was expected");
+			}
+			$this->writeRaw($stageFile, $repo->readBlobs($entry['b']), (int)$entry['s'], $relPath);
+			foreach ($keys as $keyPath => $keyEntry) {
+				$this->writeRaw($stageKeys . '/' . $keyPath, $repo->readBlobs($keyEntry['b']), (int)$keyEntry['s'], $relPath . ' (key)');
+			}
+			$head = (string)file_get_contents($stageFile, false, null, 0, strlen(EncryptedFiles::HEADER));
+			$isEncrypted = $head === EncryptedFiles::HEADER;
+			// Into the file cache directly, with the encryption version and size from the dump: a scan
+			// would go through the encryption layer, which then remembers the file as not encrypted.
+			$internal = trim($folder->getInternalPath() . '/' . $stageName, '/');
+			$cache = $storage->getCache();
+			$cache->put($internal, [
+				'mtime' => time(), 'storage_mtime' => (int)filemtime($stageFile),
+				'size' => $isEncrypted ? $info['size'] : (int)$entry['s'],
+				'mimetype' => $this->mimeTypes->detectPath($stageName),
+				'etag' => bin2hex(random_bytes(8)),
+				'permissions' => \OCP\Constants::PERMISSION_ALL & ~\OCP\Constants::PERMISSION_CREATE,
+				'encrypted' => $isEncrypted, 'encryptedVersion' => $isEncrypted ? $info['version'] : 0,
+				'unencrypted_size' => $isEncrypted ? $info['size'] : 0,
+			]);
+			$stage = $folder->get($stageName);
+			if (!$stage instanceof File) {
+				throw new \RuntimeException("Nextcloud does not see the restored file $relPath");
+			}
+			$in = $stage->fopen('rb');
+			if (!is_resource($in)) {
+				throw new \RuntimeException("Nextcloud cannot read the restored file $relPath");
+			}
+			try {
+				$this->writeContent($folder, $relPath, self::chunks($in, $relPath), $isEncrypted ? $info['size'] : (int)$entry['s'], (int)$entry['m']);
+			} finally {
+				fclose($in);
+			}
+		} finally {
+			// Put there past the Files API, removed the same way: not to the trash.
+			@unlink($stageFile);
+			self::removeTree($stageKeys);
+			try {
+				$storage->getCache()->remove(trim($folder->getInternalPath() . '/' . $stageName, '/'));
+			} catch (\Throwable) {
+				// a cache entry without a file: the next scan of this folder removes it
+			}
+		}
+	}
+
+	/** A folder of key files this restore made, with everything in it. */
+	private static function removeTree(string $dir): void {
+		if (!is_dir($dir)) {
+			return;
+		}
+		$items = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS), \RecursiveIteratorIterator::CHILD_FIRST);
+		foreach ($items as $item) {
+			$item->isDir() ? @rmdir($item->getPathname()) : @unlink($item->getPathname());
+		}
+		@rmdir($dir);
+	}
+
+	/** Whether the Default Encryption Module uses one master key (its default) rather than keys per user. */
+	private static function usesMasterKey(): bool {
+		try {
+			$value = \OCP\Server::get(\OCP\IAppConfig::class)->getValueString('encryption', 'useMasterKey', '1');
+		} catch (\Throwable) {
+			$value = \OCP\Server::get(\OCP\IAppConfig::class)->getValueBool('encryption', 'useMasterKey', true) ? '1' : '0';
+		}
+		return !in_array(strtolower(trim($value)), ['0', 'false', 'no'], true);
+	}
+
+	/**
+	 * The content of a stream in parts; a read error (a wrong key or version) is a damaged file.
+	 *
+	 * @param resource $in
+	 * @return \Generator<string>
+	 */
+	private static function chunks($in, string $relPath): \Generator {
+		while (!feof($in)) {
+			try {
+				$data = fread($in, 1048576);
+			} catch (\Throwable $e) {
+				throw new \OCA\NgBackup\Repository\RepositoryException("Nextcloud cannot decrypt the restored file $relPath: " . $e->getMessage(), 0, $e);
+			}
+			if ($data === false) {
+				throw new \OCA\NgBackup\Repository\RepositoryException("Nextcloud cannot decrypt the restored file $relPath");
+			}
+			if ($data !== '') {
+				yield $data;
+			}
+		}
+	}
+
+	/** @param iterable<string> $chunks */
+	private function writeRaw(string $file, iterable $chunks, int $size, string $what): void {
+		if (!is_dir(dirname($file)) && !mkdir(dirname($file), 0770, true) && !is_dir(dirname($file))) {
+			throw new \RuntimeException("Cannot write $what (disk full, or no permission?)");
+		}
+		$out = fopen($file, 'xb');
+		if ($out === false) {
+			throw new \RuntimeException("Cannot write $what (disk full, or no permission?)");
+		}
+		$written = 0;
+		foreach ($chunks as $data) {
+			if (fwrite($out, $data) !== strlen($data)) {
+				fclose($out);
+				throw new \RuntimeException("Write failed for $what");
+			}
+			$written += strlen($data);
+		}
+		if (!fclose($out)) {
+			throw new \RuntimeException("Write failed for $what");
+		}
+		if ($written !== $size) {
+			throw new \OCA\NgBackup\Repository\RepositoryException("Size mismatch restoring $what");
+		}
+	}
+
+	/**
+	 * Write content to $folder/<name of $relPath>: to a temporary name first, renamed into place
+	 * (or put into the existing file, whose content becomes a version) only when all of it was
+	 * read and has the expected size.
+	 *
+	 * @param iterable<string> $chunks
+	 */
+	private function writeContent(Folder $folder, string $relPath, iterable $chunks, int $size, int $mtime): void {
 		$name = basename($relPath);
-		// Stage under a temporary name; only rename into place after every blob was verified.
 		$tmpName = '.' . $name . '.ngb-restore-' . bin2hex(random_bytes(3));
 		$tmp = $folder->newFile($tmpName);
 		try {
 			$out = $tmp->fopen('wb');
 			$written = 0;
-			foreach ($repo->readBlobs($entry['b']) as $data) { // each blob is verified on read
+			foreach ($chunks as $data) {
 				if (fwrite($out, $data) !== strlen($data)) {
 					throw new \RuntimeException('Write failed for ' . $relPath);
 				}
@@ -263,7 +457,7 @@ final class RestoreService {
 			if (!fclose($out)) {
 				throw new \RuntimeException('Write failed for ' . $relPath);
 			}
-			if ($written !== $entry['s']) {
+			if ($written !== $size) {
 				throw new \OCA\NgBackup\Repository\RepositoryException("Size mismatch restoring $relPath");
 			}
 			if ($folder->nodeExists($name)) {
@@ -278,10 +472,10 @@ final class RestoreService {
 					fclose($in);
 				}
 				$tmp->delete();
-				$existing->touch($entry['m']);
+				$existing->touch($mtime);
 			} else {
 				$tmp->move($folder->getPath() . '/' . $name);
-				$folder->get($name)->touch($entry['m']);
+				$folder->get($name)->touch($mtime);
 			}
 		} catch (\Throwable $e) {
 			try {
