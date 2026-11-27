@@ -42,6 +42,13 @@
 							<NcButton :disabled="busy" @click="pinKeys(target, [])">{{ t('ng_backup', 'Stop checking the host key') }}</NcButton>
 						</div>
 					</template>
+					<template v-else-if="unpinned(keys[target.id]).length">
+						<span class="ngb-err">{{ t('ng_backup', 'The server also offers host keys that are not pinned. Which key a connection gets depends on the Nextcloud version: after an upgrade, backups to this location may be refused. Pin all of the server\'s keys; all administrators are notified.') }}</span>
+						<code v-for="key in unpinned(keys[target.id])" :key="key.fingerprint">{{ key.type }} {{ key.fingerprint }}</code>
+						<div class="ngb-row">
+							<NcButton variant="primary" :disabled="busy" @click="pinKeys(target, keys[target.id].server)">{{ t('ng_backup', 'Pin all host keys') }}</NcButton>
+						</div>
+					</template>
 					<template v-else>
 						<span class="ngb-ok">{{ t('ng_backup', 'Host key pinned and matching.') }}</span>
 						<NcButton variant="tertiary" :disabled="busy" @click="pinKeys(target, [])">{{ t('ng_backup', 'Stop checking the host key') }}</NcButton>
@@ -115,6 +122,7 @@ const newKeys = ref(null) // host keys of the server of a location being added (
 const form = reactive({ name: '', path: 'ng_backup', options: {}, maxGb: '' })
 
 const matches = (k) => k.server.some((key) => k.pinned.includes(key.fingerprint))
+const unpinned = (k) => k.server.filter((key) => !k.pinned.includes(key.fingerprint))
 // Read again when the server changes: the keys shown must be those of the server that is added.
 watch(() => [backend.value?.id, form.options.host, form.options.port], () => { newKeys.value = null })
 

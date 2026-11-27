@@ -79,7 +79,12 @@ HELP);
 				$output->writeln('<error>' . $e->getMessage() . '</error>');
 				return 1;
 			}
-			$output->writeln('Pinned for ' . $target->getName() . ': ' . implode(', ', $this->targets->pinnedHostKeys($target)) . ($pinned !== [] ? '. All admins were notified.' : '.'));
+			$now = $this->targets->pinnedHostKeys($target);
+			if (TargetService::sameKeys($pinned, $now)) {
+				$output->writeln('These keys are already pinned for ' . $target->getName() . ': nothing changed.');
+				return 0;
+			}
+			$output->writeln('Pinned for ' . $target->getName() . ': ' . implode(', ', $now) . ($pinned !== [] ? '. All admins were notified.' : '.'));
 			return 0;
 		}
 

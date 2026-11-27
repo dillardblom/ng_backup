@@ -365,8 +365,8 @@ final class TargetService {
 		$new = $fingerprints === [] ? [] : HostKeys::parse($fingerprints);
 		$options = $this->options($target);
 		$old = HostKeys::pinned($options);
-		if ($old === $new) {
-			return $target;
+		if (self::sameKeys($old, $new)) {
+			return $target; // the same set, maybe in another order: nothing changes, nobody is told
 		}
 		unset($options[HostKeys::OPTION]);
 		if ($new !== []) {
@@ -386,8 +386,21 @@ final class TargetService {
 	}
 
 	/**
+	 * Whether two lists of fingerprints hold the same keys, in any order.
+	 *
+	 * @param list<string> $a
+	 * @param list<string> $b
+	 */
+	public static function sameKeys(array $a, array $b): bool {
+		sort($a);
+		sort($b);
+		return $a === $b;
+	}
+
+	/**
 	 * Options with the pinned host keys, if any, in their stored form; pins on a connection
-	 * type without host keys are refused.
+	 * type without host keys are refused, and so is a value that is not a string or a list of
+	 * strings (a security setting is never read as "none" because it was sent wrongly).
 	 *
 	 * @param array<string, mixed> $options
 	 * @return array<string, mixed>
@@ -395,7 +408,13 @@ final class TargetService {
 	private function withValidPins(string $backend, array $options): array {
 		$given = $options[HostKeys::OPTION] ?? [];
 		unset($options[HostKeys::OPTION]);
-		$given = is_string($given) ? [$given] : (is_array($given) ? array_values(array_filter($given, 'is_string')) : []);
+		if (is_string($given)) {
+			$given = [$given];
+		}
+		if (!is_array($given) || array_filter($given, fn ($f) => !is_string($f)) !== []) {
+			throw new \InvalidArgumentException('Give the host key fingerprints as a list of strings');
+		}
+		$given = array_values($given);
 		if ($given === []) {
 			return $options;
 		}

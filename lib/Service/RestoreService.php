@@ -35,6 +35,8 @@ final class RestoreService {
 
 	/** @var array<string, true> folders of the current restore already cleared of stale temporaries */
 	private array $cleaned = [];
+	/** The current restore may meet files encrypted by server-side encryption (#33). */
+	private bool $sseContext = false;
 
 	public function __construct(
 		private TargetService $targets,
@@ -148,8 +150,18 @@ final class RestoreService {
 			$entries = ['' => $entries['']];
 		}
 		$encrypted = [];
-		if ($keyEntries !== []) {
-			$encrypted = EncryptedFiles::fromDump($repo, $snapshotId, $uid, $source);
+		// With encryption on here, or keys in the restore point, a file can be encrypted even when
+		// its keys are missing (unreadable at the backup): writeFile() then refuses its bytes.
+		$this->sseContext = $keyEntries !== [] || $this->encryption->isEnabled();
+		if ($this->sseContext) {
+			try {
+				$encrypted = EncryptedFiles::fromDump($repo, $snapshotId, $uid, $source);
+			} catch (\RuntimeException $e) {
+				if ($keyEntries !== []) {
+					throw $e;
+				}
+				// no usable dump and no keys: plain files restore as usual, encrypted bytes are refused per file
+			}
 			if ($encrypted !== [] && !$this->encryption->isEnabled()) {
 				throw new \RuntimeException('These files were encrypted by Nextcloud\'s server-side encryption when they were backed up, and it is off now: turn it on again (occ encryption:enable) to restore them, or restore them raw with occ backup:restore -d');
 			}
@@ -288,7 +300,30 @@ final class RestoreService {
 
 	private function writeFile(Repository $repo, Folder $dest, string $relPath, array $entry): void {
 		// each blob is verified on read
-		$this->writeContent($this->folderFor($dest, $relPath), $relPath, $repo->readBlobs($entry['b']), (int)$entry['s'], (int)$entry['m']);
+		$chunks = $repo->readBlobs($entry['b']);
+		$this->writeContent($this->folderFor($dest, $relPath), $relPath,
+			$this->sseContext ? self::refuseEncrypted($chunks, $relPath) : $chunks, (int)$entry['s'], (int)$entry['m']);
+	}
+
+	/**
+	 * The content as it is, unless it starts as a file encrypted by server-side encryption: such
+	 * bytes without their keys or version would be encrypted a second time (#33).
+	 *
+	 * @param iterable<string> $chunks
+	 * @return \Generator<string>
+	 */
+	private static function refuseEncrypted(iterable $chunks, string $relPath): \Generator {
+		$first = true;
+		foreach ($chunks as $data) {
+			if ($first && str_starts_with($data, EncryptedFiles::HEADER)) {
+				$head = substr($data, 0, 8192);
+				if (str_contains($head, 'oc_encryption_module') && str_contains($head, 'HEND')) {
+					throw new \OCA\NgBackup\Repository\RepositoryException("$relPath was encrypted by server-side encryption, but its keys or encryption version are not in this restore point; restore it raw with occ backup:restore -d");
+				}
+			}
+			$first = false;
+			yield $data;
+		}
 	}
 
 	/**

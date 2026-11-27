@@ -54,7 +54,7 @@ CODE=$(occ backup:key:kit | docker exec -i "$NC" php -r 'echo json_decode(stream
 occ backup:key:confirm -u admin --code="$CODE" --confirm="Yes, I confirm" >/dev/null || fail "confirm"
 occ backup:target:add ci local -a null::null -o datadir=/tmp/ngb-sse-target --path=repo >/dev/null || fail "target add"
 occ backup:run ci -l sse >/dev/null || fail "backup"
-SNAP=$(occ backup:list ci | awk -F'|' '/ sse /{gsub(/ /,"",$3); print $3; exit}')
+LIST=$(occ backup:list ci); SNAP=$(echo "$LIST" | awk -F'|' '/ sse /{gsub(/ /,"",$3); print $3; exit}')
 [ -n "$SNAP" ] || fail "snapshot not listed"
 ok "backup"
 
@@ -89,6 +89,17 @@ put Docs/report.txt /tmp/v1
 occ backup:restore ci "$SNAP" "data/$U/files/Docs/report.txt" -m merge >/dev/null || fail "restore in place"
 [ "$(sum Docs/report.txt)" = "$SUM_REPORT" ] || fail "restore in place: not the original content"
 ok "restore in place over a changed file"
+
+# An encrypted file whose keys did not make it into the backup: refused, never written as
+# encrypted bytes encrypted once more.
+put Docs/nokeys.txt /tmp/v2
+docker exec "$NC" rm -rf "$DATA/$U/files_encryption/keys/files/Docs/nokeys.txt"
+occ backup:run ci -l nokeys >/dev/null || fail "backup without the keys of one file"
+LIST=$(occ backup:list ci); SNAP2=$(echo "$LIST" | awk -F'|' '/ nokeys /{gsub(/ /,"",$3); print $3; exit}')
+OUT=$(occ backup:restore ci "$SNAP2" "data/$U/files/Docs/nokeys.txt" -m new-folder 2>&1) && fail "restored an encrypted file without its keys: $OUT"
+echo "$OUT" | grep -qi "keys" || fail "no clear message for missing keys: $OUT"
+docker exec "$NC" sh -c "find $DATA/$U/files -name nokeys.txt -path '*Restored*'" | grep -q . && fail "the file without keys was written anyway"
+ok "an encrypted file without its keys is refused"
 
 # Per-user keys: refused with a clear message, nothing written.
 occ config:app:set encryption useMasterKey --value=0 >/dev/null
