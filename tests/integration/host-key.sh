@@ -109,7 +109,8 @@ ok "--set pins the given keys, quietly"
 
 # Editing the location keeps its pins; another connection type drops them, and says so.
 occ backup:target:edit pinned -o password=ngbackuppw >/dev/null || fail "edit the pinned location"
-[ "$(occ backup:target:host-key pinned | sed -n '/^Pinned:/,/^The server/p' | grep -c SHA256)" = "$(echo "$B_KEYS" | wc -l)" ] || fail "an edit lost the pins"
+AFTER=$(occ backup:target:host-key pinned | sed -n '/^Pinned:/,/^The server/p' | grep -o 'SHA256:[^ ]*' | sort)
+[ "$AFTER" = "$B_KEYS" ] || fail "an edit changed the pins: $AFTER"
 ok "an edit keeps the pins"
 occ backup:target:edit pinned -b local -a null::null -o datadir=/srv/hk-upload >/dev/null || fail "change the pinned location to a local folder"
 [ "$(notifications host_key_removed)" = 2 ] || fail "dropping the pins with another connection type did not notify the admins"
