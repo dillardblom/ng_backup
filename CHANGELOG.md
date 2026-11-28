@@ -11,6 +11,34 @@ Each heading starts with that `<version>`, once: the app store shows a release t
 whose heading starts with its `x.y.z` and ignores anything after it, so `## [1.0.0-rc.6]` would be
 shown under 1.0.0. The git tag of a release candidate goes after the date.
 
+## [1.1.1] - 2026-11-28
+
+### Security
+- SFTP locations can pin the server's host keys (#34). Nextcloud's SFTP connection does not check
+  the host key for scheduled backups, `occ` and cron, so any server under the host name was
+  accepted (nextcloud/server#14108). With pinned keys NG Backup checks the key in every context
+  before it sends the password or signs in, and refuses another key with an error that names both
+  fingerprints. When you add an SFTP location, the page and `occ backup:target:add` show the
+  server's keys and ask whether to pin them; `--host-key-fingerprint` pins them up front. All of
+  the server's keys are pinned, so a Nextcloud upgrade that picks another key type keeps working.
+  New command `occ backup:target:host-key` to show, pin, change or remove them; on the admin page
+  the Test button offers the same. Changing or removing pinned keys notifies all administrators.
+  A location without pins works as before and shows "host key not pinned".
+
+### Fixed
+- Restoring single files or folders on a server with server-side encryption gave files that
+  downloaded as "HBEGIN:oc_encryption_module..." (#33): the encrypted bytes from the backup were
+  encrypted a second time. They now come back with their original content, encrypted again by
+  Nextcloud, from the web interface and `occ backup:restore` alike, also from restore points made
+  with earlier versions. NG Backup puts the encrypted file and its keys back under a temporary
+  name with the encryption version from the restore point's database dump, and Nextcloud decrypts
+  it with its own keys; NG Backup does no decryption itself. This needs master key encryption
+  (the default): with per-user keys, which only open in the user's own session, the restore stops
+  with a message that says so. A full restore and restoring a whole user were not affected.
+
+### Changed
+- The app store description asks for a star right below its first paragraph.
+
 ## [1.1.0] - 2026-11-09
 
 ### Added

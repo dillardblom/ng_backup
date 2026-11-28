@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace OCA\NgBackup\Service;
 
 use OCA\NgBackup\Backend\ExternalStorageFactory;
+use OCA\NgBackup\Backend\HostKeys;
 use OCA\NgBackup\Backend\IBackend;
 use OCA\NgBackup\Backend\StorageBackend;
 use OCA\NgBackup\Db\Snapshot;
@@ -43,7 +44,7 @@ final class TargetService {
 	) {
 	}
 
-	/** @return list<array{id:string, name:string, auth:list<array{id:string, name:string, parameters:array}>, parameters:array}> */
+	/** @return list<array{id:string, name:string, auth:list<array{id:string, name:string, parameters:array}>, parameters:array, hostKeys:bool}> */
 	public function availableBackends(): array {
 		return $this->factory()->describeBackends();
 	}
@@ -59,6 +60,7 @@ final class TargetService {
 	public function add(string $name, string $backend, string $auth, array $options, string $basePath, ?callable $progress = null, bool $repairConfig = false): array {
 		$this->validateName($name);
 		$this->requireUsableBackend($backend);
+		$options = $this->withValidPins($backend, $options);
 		$keys = $this->keys->keyRing();
 		$storageBackend = $this->buildBackend($backend, $auth, $options, $basePath, !$repairConfig);
 		try {
@@ -102,6 +104,11 @@ final class TargetService {
 		$target->setScheduleZone($first?->getScheduleZone());
 		$target->setScheduleSince(time());
 		$target = $this->mapper->insert($target);
+		$pins = HostKeys::pinned($options);
+		if ($pins !== []) {
+			// Pinned while the location is made: no notification, only the audit log.
+			$this->alerts->securityEvent('host_key_pinned', ['target' => $name, 'fingerprints' => implode(' ', $pins)], false);
+		}
 		if (!$created) {
 			// Disaster recovery: occ backup:list reads this local cache, not the repository
 			// directly, so a snapshot made by another installation must be backfilled here too.
@@ -188,6 +195,9 @@ final class TargetService {
 		}
 		$this->validateName($name);
 		$this->requireUsableBackend($backend);
+		// Pins checked before the first connection: a bad one must fail before the key is adopted,
+		// and valid ones protect this connection too.
+		$options = $this->withValidPins($backend, $options);
 		$storageBackend = $this->buildBackend($backend, $auth, $options, $basePath, false);
 		if (!$storageBackend->exists('config')) {
 			throw new \InvalidArgumentException("No NG Backup repository found in folder '" . trim($basePath, '/') . "'");
@@ -253,6 +263,14 @@ final class TargetService {
 				}
 			}
 		}
+		// Pinned host keys only change through setHostKeys(), which tells the other admins. They
+		// stay while the connection type is SFTP: a new host then has to match them, or the pins
+		// are removed first.
+		unset($options[HostKeys::OPTION]);
+		$pins = HostKeys::pinned($stored);
+		if ($pins !== [] && $this->factory()->isSftp($backend)) {
+			$options[HostKeys::OPTION] = $pins;
+		}
 		// Do not create the folder: a typo in the path must not leave an empty folder behind.
 		$storageBackend = $this->buildBackend($backend, $auth, $options, $basePath, false);
 		if (!$storageBackend->exists('config')) {
@@ -265,12 +283,26 @@ final class TargetService {
 		if ($target->getRepositoryId() !== null && $repo->id() !== $target->getRepositoryId()) {
 			throw new \InvalidArgumentException('These settings lead to a different repository than the one of this location');
 		}
+		// The pins as stored now, not as read before the connection test: another admin may have
+		// changed them in the meantime, and this edit must not put the old ones back.
+		$pins = HostKeys::pinned($this->options($this->mapper->find($target->getId())));
+		unset($options[HostKeys::OPTION]);
+		$keepPins = $pins !== [] && $this->factory()->isSftp($backend);
+		if ($keepPins) {
+			$options[HostKeys::OPTION] = $pins;
+		}
 		$target->setName($name);
 		$target->setBackend($backend);
 		$target->setAuth($auth);
 		$target->setOptions($this->crypto->encrypt(json_encode($options, JSON_THROW_ON_ERROR)));
 		$target->setBasePath(trim($basePath, '/'));
-		return $this->mapper->update($target);
+		$target = $this->mapper->update($target);
+		if ($pins !== [] && !$keepPins) {
+			// Another connection type has no host keys: the pins are gone, and a change back to
+			// SFTP would start unchecked. Tell the admins, as when the pins are removed.
+			$this->alerts->securityEvent('host_key_removed', ['target' => $name, 'old' => implode(' ', $pins), 'new' => '']);
+		}
+		return $target;
 	}
 
 	/**
@@ -298,11 +330,115 @@ final class TargetService {
 			}
 		}
 		$options = $this->options($target);
+		unset($options[HostKeys::OPTION]);
 		foreach ($options as $key => $value) {
 			if (isset($secret[$key])) {
 				$options[$key] = null;
 			}
 		}
+		return $options;
+	}
+
+	/** Whether the location connects over SFTP, the only connection type with host keys. */
+	public function hasHostKeys(Target $target): bool {
+		return $this->factory()->isSftp($target->getBackend());
+	}
+
+	/** Whether this files_external backend connects over SFTP. */
+	public function isSftpBackend(string $backend): bool {
+		return $this->factory()->isSftp($backend);
+	}
+
+	/** @return list<string> the location's pinned host key fingerprints */
+	public function pinnedHostKeys(Target $target): array {
+		return HostKeys::pinned($this->options($target));
+	}
+
+	/**
+	 * The host keys the SFTP server behind these settings (or this location) offers now.
+	 *
+	 * @param Target|array<string, mixed> $settings
+	 * @return list<array{type: string, fingerprint: string}>
+	 */
+	public function scanHostKeys(Target|array $settings): array {
+		[$host, $port] = HostKeys::endpoint($settings instanceof Target ? $this->options($settings) : $settings);
+		if ($host === '') {
+			throw new \InvalidArgumentException('No host given');
+		}
+		return HostKeys::scan($host, $port);
+	}
+
+	/**
+	 * Pin these host keys on a location, or none. Pinning keys on a location that had none only
+	 * goes to the audit log; changing or removing pinned keys also tells all admins, who can then
+	 * check that it was expected and not a server in the middle being accepted.
+	 *
+	 * @param list<string> $fingerprints
+	 */
+	public function setHostKeys(Target $target, array $fingerprints): Target {
+		if (!$this->hasHostKeys($target)) {
+			throw new \InvalidArgumentException('Only SFTP locations have host keys');
+		}
+		$new = $fingerprints === [] ? [] : HostKeys::parse($fingerprints);
+		$options = $this->options($target);
+		$old = HostKeys::pinned($options);
+		if (self::sameKeys($old, $new)) {
+			return $target; // the same set, maybe in another order: nothing changes, nobody is told
+		}
+		unset($options[HostKeys::OPTION]);
+		if ($new !== []) {
+			$options[HostKeys::OPTION] = $new;
+		}
+		$target->setOptions($this->crypto->encrypt(json_encode($options, JSON_THROW_ON_ERROR)));
+		$target = $this->mapper->update($target);
+		$params = ['target' => $target->getName(), 'old' => implode(' ', $old), 'new' => implode(' ', $new)];
+		if ($old === []) {
+			$this->alerts->securityEvent('host_key_pinned', $params, false);
+		} elseif ($new === []) {
+			$this->alerts->securityEvent('host_key_removed', $params);
+		} else {
+			$this->alerts->securityEvent('host_key_changed', $params);
+		}
+		return $target;
+	}
+
+	/**
+	 * Whether two lists of fingerprints hold the same keys, in any order.
+	 *
+	 * @param list<string> $a
+	 * @param list<string> $b
+	 */
+	public static function sameKeys(array $a, array $b): bool {
+		sort($a);
+		sort($b);
+		return $a === $b;
+	}
+
+	/**
+	 * Options with the pinned host keys, if any, in their stored form; pins on a connection
+	 * type without host keys are refused, and so is a value that is not a string or a list of
+	 * strings (a security setting is never read as "none" because it was sent wrongly).
+	 *
+	 * @param array<string, mixed> $options
+	 * @return array<string, mixed>
+	 */
+	private function withValidPins(string $backend, array $options): array {
+		$given = $options[HostKeys::OPTION] ?? [];
+		unset($options[HostKeys::OPTION]);
+		if (is_string($given)) {
+			$given = trim($given) === '' ? [] : [$given]; // an empty field: no pins
+		}
+		if (!is_array($given) || array_filter($given, fn ($f) => !is_string($f)) !== []) {
+			throw new \InvalidArgumentException('Give the host key fingerprints as a list of strings');
+		}
+		$given = array_values($given);
+		if ($given === []) {
+			return $options;
+		}
+		if (!$this->factory()->isSftp($backend)) {
+			throw new \InvalidArgumentException('Host keys can only be pinned for SFTP locations');
+		}
+		$options[HostKeys::OPTION] = HostKeys::parse($given);
 		return $options;
 	}
 
