@@ -23,7 +23,8 @@ shown under 1.0.0. The git tag of a release candidate goes after the date.
   the server's keys are pinned, so a Nextcloud upgrade that picks another key type keeps working.
   New command `occ backup:target:host-key` to show, pin, change or remove them; on the admin page
   the Test button offers the same. Changing or removing pinned keys notifies all administrators.
-  A location without pins works as before and shows "host key not pinned".
+  A location without pins works as before and shows "host key not pinned". Thanks to Your Lifelines
+  for finding and reporting this.
 
 ### Fixed
 - Restoring single files or folders on a server with server-side encryption gave files that
