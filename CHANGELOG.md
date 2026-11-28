@@ -11,7 +11,7 @@ Each heading starts with that `<version>`, once: the app store shows a release t
 whose heading starts with its `x.y.z` and ignores anything after it, so `## [1.0.0-rc.6]` would be
 shown under 1.0.0. The git tag of a release candidate goes after the date.
 
-## [1.1.1] - Unreleased
+## [1.1.1] - 2026-11-28
 
 ### Security
 - SFTP locations can pin the server's host keys (#34). Nextcloud's SFTP connection does not check
