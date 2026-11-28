@@ -26,7 +26,7 @@ final class ExternalStorageFactory {
 	}
 
 	/**
-	 * @return list<array{id:string, name:string, auth:list<array{id:string, name:string, parameters:array}>, parameters:array<string, mixed>}>
+	 * @return list<array{id:string, name:string, auth:list<array{id:string, name:string, parameters:array}>, parameters:array<string, mixed>, hostKeys:bool}>
 	 *         available backends, to build the settings form from
 	 */
 	public function describeBackends(): array {
@@ -53,6 +53,7 @@ final class ExternalStorageFactory {
 				'name' => $backend->getText(),
 				'auth' => $auth,
 				'parameters' => array_map(fn ($p) => $p->jsonSerialize(), $backend->getParameters()),
+				'hostKeys' => self::isSftpClass($backend->getStorageClass()),
 			];
 		}
 		return $result;
@@ -75,6 +76,8 @@ final class ExternalStorageFactory {
 		if (is_string($options['private_key'] ?? null)) {
 			$options['private_key'] = self::normalizePrivateKey($options['private_key']);
 		}
+		$pins = HostKeys::pinned($options);
+		unset($options[HostKeys::OPTION]);
 
 		$config = new StorageConfig();
 		$config->setBackend($backend);
@@ -86,9 +89,27 @@ final class ExternalStorageFactory {
 		$backend->manipulateStorageConfig($config, $admin);
 
 		$class = $backend->getStorageClass();
-		$storage = new $class($config->getBackendOptions());
+		if ($pins !== [] && self::isSftpClass($class)) {
+			// Checked here, before anything else uses the storage: files_external's own calls
+			// would hide the refusal (#34).
+			$storage = new PinnedSftp($config->getBackendOptions() + [HostKeys::OPTION => $pins]);
+			$storage->connect();
+		} else {
+			$storage = new $class($config->getBackendOptions());
+		}
 		$storage = $backend->wrapStorage($storage);
 		return $auth->wrapStorage($storage);
+	}
+
+	/** Whether a backend uses files_external's SFTP storage (password and key auth alike): only those have host keys. */
+	public function isSftp(string $backendId): bool {
+		$backend = $this->backends->getBackend($backendId);
+		return $backend !== null && self::isSftpClass($backend->getStorageClass());
+	}
+
+	private static function isSftpClass(string $class): bool {
+		$class = ltrim($class, '\\'); // files_external writes its storage classes with a leading backslash
+		return $class === \OCA\Files_External\Lib\Storage\SFTP::class || is_subclass_of($class, \OCA\Files_External\Lib\Storage\SFTP::class);
 	}
 
 	/**

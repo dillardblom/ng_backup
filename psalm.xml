@@ -27,6 +27,12 @@
     </extraFiles>
 
     <issueHandlers>
+        <MissingDependency>
+            <errorLevel type="suppress">
+                <!-- new PinnedSftp(): it extends files_external's SFTP storage, provided at runtime (#34). -->
+                <file name="lib/Backend/ExternalStorageFactory.php" />
+            </errorLevel>
+        </MissingDependency>
         <UndefinedClass>
             <errorLevel type="suppress">
                 <!-- Provided by files_external at runtime; not a composer dependency (PLAN.md 3.5). -->

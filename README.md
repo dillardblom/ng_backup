@@ -144,12 +144,46 @@ What you should do on the location (strongly recommended):
 - Use **credentials without delete rights** for the backup location where the storage supports it.
 - **SFTP / storage boxes:** enable the provider's own snapshots (e.g. daily, kept 30-90 days) and
   give the backup user access to its own folder only, without a shell.
+- **SFTP: pin the server's host key.** See below.
 - Keep at least one location **off-site**, on a different network than the Nextcloud server.
+
+### SFTP host keys
+
+Nextcloud's SFTP connection (the External storage app) only checks a server's host key against
+a list in the logged-in user's own folder, which it never creates. Scheduled backups, `occ` and
+cron run without a logged-in user, so they accept **any** server that answers under the host name
+(nextcloud/server#14108). With key authentication a server in the middle gets no usable secret;
+with password authentication it gets the password. The repository is encrypted and authenticated
+either way, but such a server can still accept or withhold backups.
+
+NG Backup closes this gap from 1.1.1 on: an SFTP location can hold the SHA-256 fingerprints of its
+server's host keys.
+
+- **Pinned:** the key is checked in every context (web, `occ`, cron) **before** the password is sent
+  or the key signs in. Another key stops the backup with an error that names the expected and the
+  received fingerprint, and the administrators get the usual failed-backup notification.
+- **Not pinned:** nothing changes; the location shows "host key not pinned" on the admin page and
+  in `occ backup:status`. Nothing is pinned automatically.
+- **Pinning:** when you add an SFTP location, NG Backup shows the server's host keys and asks
+  whether to pin them; **compare them with what your provider publishes**. Later: test the location
+  on the admin page, or
+  `occ backup:target:host-key <location> --pin`. On the command line also
+  `occ backup:target:add ... --host-key-fingerprint=SHA256:...`, repeatable; `ssh-keyscan` output
+  works too.
+- **All** of the server's keys are pinned, not only the one the current connection uses: which key
+  type a connection gets depends on the Nextcloud version (Nextcloud 32 to 34 use the RSA key,
+  Nextcloud 35 the Ed25519 key of the same Storage Box), so one key alone would break the location
+  at the next upgrade.
+- **Changing or removing pinned keys** (a provider that really changed its keys, or to let a backup
+  through for now) notifies all administrators, so someone can check that it was expected.
+  Pinning keys on a location without them only goes to the audit log.
 
 ## Restore
 
 - **Files and folders** of a user: in the web interface or `occ backup:restore`, into a new folder
-  ("Restored <date>"), merged into the original place, or replacing it.
+  ("Restored <date>"), merged into the original place, or replacing it. With server-side
+  encryption (master key, the default) the files come back readable from 1.1.1 on; see Known
+  limitations for per-user keys.
 - **Raw restore** of any path (for example `config/`) to a local directory: `occ backup:restore ... --to-directory=DIR`.
 - **Whole server** (disaster recovery onto a fresh installation): `occ backup:restore:full`, see
   [docs/DISASTER-RECOVERY.md](docs/DISASTER-RECOVERY.md). It runs in maintenance mode, so that
@@ -308,6 +342,18 @@ On the backlog; know them before you rely on NG Backup:
   newest catalog generation, so a location rolled back to an older state looks valid there.
 - Location passwords passed with `-o password=...` are visible in the process list and shell
   history while the command runs.
+- **SFTP private keys:** the External storage app only accepts RSA private keys, and none with a
+  passphrase (it loads the key with Nextcloud's own secret or none). For an unattended backup the
+  passphrase would have to be on the same server anyway. This is about the key NG Backup signs in
+  with, not about the server's host keys, which can be of any type.
+- **Server-side encryption with per-user keys** (no master key): single files and folders cannot
+  be restored into a running instance, because those keys only open in the user's own session.
+  The restore stops with a message; restore the whole server, or the files raw with
+  `occ backup:restore ... -d` and put them back by hand. Even with master key encryption (the
+  default), encrypted files only go back into the user's own files, not into a share or another
+  storage.
+- **SFTP host keys are only checked when pinned** (see "SFTP host keys"). Changing the host of a
+  pinned location means removing the pins first, or the new server is refused.
 - Temporary files of a restore into a user's files end up in that user's trash.
 - **Restoring a whole user or the whole server needs `occ`** (shell access); see "Without shell
   access" above.
@@ -323,6 +369,7 @@ On the backlog; know them before you rely on NG Backup:
 | `backup:key:init`, `backup:key:kit`, `backup:key:confirm` | create the key, recovery kit, confirmation |
 | `backup:key:slots`, `backup:key:slot:add/replace/remove` | passphrase slots |
 | `backup:target:backends/add/edit/list/remove/append-only` | backup locations |
+| `backup:target:host-key` | SFTP: show, pin, change or remove the server's host keys |
 | `backup:target:schedule` | when a location is backed up: off, daily, or every N hours |
 | `backup:run`, `backup:status`, `backup:list` | back up, status (runs of the last 7 days; `--all` for all), restore points |
 | `backup:cancel <run>` | stop a running backup |
